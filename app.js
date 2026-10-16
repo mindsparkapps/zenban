@@ -3675,7 +3675,7 @@ const SYNC_KEYS = {
   DELETED: 'zenban_deleted_projects',
   CLIENT_ID: 'zenban_google_client_id'
 };
-const DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.appdata openid email profile';
+const DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.appdata openid email profile';
 const DATA_FILE_NAME = 'zenban-data.json';
 
 function googleClientId() {
@@ -3825,7 +3825,8 @@ async function onTokenResponse(resp) {
   localStorage.setItem(SYNC_KEYS.ENABLED, '1');
   renderAccount();
   showToast('Sesión iniciada. Sincronizando con Google Drive…', 'success');
-  syncNow();
+  await syncNow();
+  if (typeof checkSharedInvites === 'function') checkSharedInvites();
 }
 
 function signOutGoogle() {
@@ -3843,37 +3844,73 @@ function signOutGoogle() {
   showToast('Sesión cerrada. Tus datos siguen en este dispositivo.', 'info');
 }
 
-// ----- Google Drive (carpeta de datos de la app) -----
+// ----- Espacio de datos: personal (carpeta oculta de tu Drive) o compartido (carpeta de Drive compartida) -----
+const DRIVE_API = 'https://www.googleapis.com/drive/v3';
+
+function currentSpace() {
+  try { return JSON.parse(localStorage.getItem('zenban_space') || 'null') || { mode: 'personal' }; } catch (e) { return { mode: 'personal' }; }
+}
+
+function inShared() {
+  const s = currentSpace();
+  return s.mode === 'shared' && !!s.folderId;
+}
+
+function setSpace(space) {
+  localStorage.setItem('zenban_space', JSON.stringify(space));
+  SYNC.fileId = null;
+  SYNC.imageFiles = null;
+}
+
+function spaceQuery(cond) {
+  if (inShared()) {
+    const q = `'${currentSpace().folderId}' in parents and trashed=false and ${cond}`;
+    return `q=${encodeURIComponent(q)}&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+  }
+  return `spaces=appDataFolder&q=${encodeURIComponent(cond)}`;
+}
+
+function spaceParent() {
+  return inShared() ? currentSpace().folderId : 'appDataFolder';
+}
+
+// ----- Google Drive -----
 async function driveFetch(url, opts = {}) {
   if (!SYNC.token || Date.now() > SYNC.tokenExp) {
     SYNC.token = null;
     throw new Error('auth');
   }
   const r = await fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${SYNC.token}` } });
-  if (r.status === 401 || r.status === 403) {
+  if (r.status === 401) {
     SYNC.token = null;
     throw new Error('auth');
   }
-  if (!r.ok) throw new Error(`drive ${r.status}`);
+  if (r.status === 403) {
+    // Puede ser un permiso que falta en la sesión (hay que reconectar) o un archivo sin acceso
+    let reason = '';
+    try { const j = await r.clone().json(); reason = ((j.error && j.error.errors && j.error.errors[0]) || {}).reason || ''; } catch (e) {}
+    if (/scope|auth/i.test(reason)) { SYNC.token = null; throw new Error('auth'); }
+    const err = new Error('forbidden'); err.status = 403; throw err;
+  }
+  if (!r.ok) { const err = new Error(`drive ${r.status}`); err.status = r.status; throw err; }
   return r;
 }
 
 async function findDataFile() {
-  const q = encodeURIComponent(`name='${DATA_FILE_NAME}'`);
-  const r = await driveFetch(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,modifiedTime)`);
+  const r = await driveFetch(`${DRIVE_API}/files?${spaceQuery(`name='${DATA_FILE_NAME}'`)}&orderBy=createdTime&fields=files(id,modifiedTime,version)`);
   const j = await r.json();
   return (j.files && j.files[0]) || null;
 }
 
 async function driveUpload(name, blob, existingId = null) {
   if (existingId) {
-    await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`, { method: 'PATCH', body: blob });
+    await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media&supportsAllDrives=true`, { method: 'PATCH', body: blob });
     return existingId;
   }
   const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify({ name, parents: ['appDataFolder'] })], { type: 'application/json' }));
+  form.append('metadata', new Blob([JSON.stringify({ name, parents: [spaceParent()] })], { type: 'application/json' }));
   form.append('file', blob);
-  const r = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', { method: 'POST', body: form });
+  const r = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id', { method: 'POST', body: form });
   return (await r.json()).id;
 }
 
@@ -3881,8 +3918,7 @@ async function listDriveImages() {
   const map = new Map();
   let pageToken = '';
   do {
-    const q = encodeURIComponent("name contains 'img-'");
-    const r = await driveFetch(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&pageSize=1000&fields=nextPageToken,files(id,name)${pageToken ? `&pageToken=${pageToken}` : ''}`);
+    const r = await driveFetch(`${DRIVE_API}/files?${spaceQuery("name contains 'img-'")}&pageSize=1000&fields=nextPageToken,files(id,name)${pageToken ? `&pageToken=${pageToken}` : ''}`);
     const j = await r.json();
     (j.files || []).forEach(f => map.set(f.name, f.id));
     pageToken = j.nextPageToken || '';
@@ -3890,23 +3926,116 @@ async function listDriveImages() {
   return map;
 }
 
+// ----- Copia de la última sincronización: permite combinar los cambios de varias personas -----
+const SyncBase = {
+  db: null,
+  open() {
+    if (this.db) return Promise.resolve(this.db);
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('zenban_sync', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('kv');
+      req.onsuccess = () => { this.db = req.result; resolve(this.db); };
+      req.onerror = () => reject(req.error);
+    });
+  },
+  key() { return 'base:' + (inShared() ? currentSpace().folderId : 'personal'); },
+  async get() {
+    try {
+      const db = await this.open();
+      return await new Promise((resolve) => {
+        const q = db.transaction('kv').objectStore('kv').get(this.key());
+        q.onsuccess = () => resolve(q.result || null);
+        q.onerror = () => resolve(null);
+      });
+    } catch (e) { return null; }
+  },
+  async set(value) {
+    try {
+      const db = await this.open();
+      await new Promise((resolve) => {
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put(JSON.parse(JSON.stringify(value)), this.key());
+        tx.oncomplete = resolve;
+        tx.onerror = resolve;
+      });
+    } catch (e) {}
+  }
+};
+
 // ----- Datos: empaquetar, combinar y aplicar -----
 function localPayload() {
   return { version: 1, projects, tags: tagLibrary, deletedProjects: deletedProjects() };
 }
 
-function mergePayloads(local, remote) {
+function sameJson(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// Combina listas de objetos con id (tareas, columnas, tableros, dibujos, imágenes):
+// lo que cambió solo aquí se queda, lo que cambió solo en Drive se trae, y si cambió en ambos gana lo de aquí
+function mergeArrays(L, R, B) {
+  L = L || [];
+  R = R || [];
+  const hasIds = arr => arr.every(x => x && typeof x === 'object' && x.id != null);
+  if (!hasIds(L) || !hasIds(R) || (B && !hasIds(B))) return B && sameJson(L, B) ? R : L;
+  const lm = new Map(L.map(x => [x.id, x]));
+  const rm = new Map(R.map(x => [x.id, x]));
+  const bm = new Map((B || []).map(x => [x.id, x]));
+  const out = new Map();
+  for (const id of new Set([...lm.keys(), ...rm.keys(), ...bm.keys()])) {
+    const l = lm.get(id), r = rm.get(id), b = bm.get(id);
+    let v;
+    if (!B || b === undefined) v = l !== undefined ? l : r;
+    else if (sameJson(l, b)) v = r;
+    else if (sameJson(r, b)) v = l;
+    else v = l !== undefined ? l : r; // cambió en ambos lados; si uno lo borró y el otro lo editó, se conserva la edición
+    if (v !== undefined) out.set(id, v);
+  }
+  // Si aquí no se cambió el orden, se respeta el orden que viene de Drive
+  const common = id => lm.has(id) && rm.has(id) && bm.has(id);
+  const localOrderKept = B && sameJson(L.map(x => x.id).filter(common), B.map(x => x.id).filter(common));
+  const order = localOrderKept ? [...R, ...L] : [...L, ...R];
+  const result = [];
+  const seen = new Set();
+  order.forEach(x => {
+    if (out.has(x.id) && !seen.has(x.id)) {
+      seen.add(x.id);
+      result.push(out.get(x.id));
+    }
+  });
+  return result;
+}
+
+function mergeProject(l, r, b) {
+  const out = {};
+  const newer = (l.updatedAt || 0) >= (r.updatedAt || 0) ? l : r;
+  const older = newer === l ? r : l;
+  for (const k of new Set([...Object.keys(l), ...Object.keys(r)])) {
+    if (k === 'updatedAt') continue;
+    if (Array.isArray(l[k]) || Array.isArray(r[k])) out[k] = mergeArrays(l[k], r[k], b ? b[k] : null);
+    else if (b) out[k] = sameJson(l[k], b[k]) ? r[k] : l[k];
+    else out[k] = k in newer ? newer[k] : older[k];
+  }
+  out.updatedAt = Math.max(l.updatedAt || 0, r.updatedAt || 0);
+  return out;
+}
+
+function mergePayloads(local, remote, base = null) {
   const tombs = new Map();
   [...(remote.deletedProjects || []), ...(local.deletedProjects || [])].forEach(t => {
     if (!tombs.has(t.id) || tombs.get(t.id) < t.at) tombs.set(t.id, t.at);
   });
-  const byId = new Map();
-  (remote.projects || []).forEach(p => byId.set(p.id, p));
-  (local.projects || []).forEach(p => {
-    const r = byId.get(p.id);
-    if (!r || (p.updatedAt || 0) >= (r.updatedAt || 0)) byId.set(p.id, p);
+  const lm = new Map((local.projects || []).map(p => [p.id, p]));
+  const bm = new Map(((base && base.projects) || []).map(p => [p.id, p]));
+  const merged = [];
+  const seen = new Set();
+  [...(remote.projects || []), ...(local.projects || [])].forEach(p => {
+    if (seen.has(p.id)) return;
+    seen.add(p.id);
+    const l = lm.get(p.id);
+    const r = (remote.projects || []).find(x => x.id === p.id);
+    merged.push(l && r ? mergeProject(l, r, bm.get(p.id) || null) : (l || r));
   });
-  const merged = [...byId.values()].filter(p => !tombs.has(p.id) || (p.updatedAt || 0) > tombs.get(p.id));
 
   const tagMap = new Map();
   (remote.tags || []).forEach(t => tagMap.set(t.name.toLowerCase(), t));
@@ -3914,7 +4043,7 @@ function mergePayloads(local, remote) {
 
   return {
     version: 1,
-    projects: merged,
+    projects: merged.filter(p => !tombs.has(p.id) || (p.updatedAt || 0) > tombs.get(p.id)),
     tags: [...tagMap.values()],
     deletedProjects: [...tombs.entries()].map(([id, at]) => ({ id, at }))
   };
@@ -3947,6 +4076,10 @@ function applyPayload(data) {
   }
 }
 
+function dataPart(p) {
+  return { projects: p.projects || [], tags: p.tags || [], deletedProjects: p.deletedProjects || [] };
+}
+
 // ----- Ciclo de sincronización -----
 async function syncNow() {
   if (!syncEnabled()) return;
@@ -3966,42 +4099,51 @@ async function syncNow() {
   SYNC.busy = true;
   setSyncStatus('syncing');
   try {
+    const gen = SYNC.gen;
+    if (inShared() && typeof checkSharedFolder === 'function' && !(await checkSharedFolder())) return;
     const file = await findDataFile();
     SYNC.fileId = file ? file.id : null;
-    let remote = null;
-    if (file) {
-      remote = await (await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`)).json();
-    }
+    const remote = file ? await (await driveFetch(`${DRIVE_API}/files/${file.id}?alt=media&supportsAllDrives=true`)).json() : null;
+    const local = localPayload();
 
-    if (remote && (remote.savedAt || 0) > lastSyncedAt()) {
+    let result = local;
+    if (remote && Array.isArray(remote.projects) && remote.projects.length) {
       if (lastSyncedAt() === 0) {
-        // Primera vez en este dispositivo y ya hay datos en Drive: nunca se pisa nada sin preguntar
-        const useDrive = confirm('Ya tienes datos de ZenBan en tu Google Drive.\n\nAceptar: usar los datos de Drive en este dispositivo (lo que hay aquí se reemplaza).\nCancelar: combinar Drive con lo que hay en este dispositivo (no se pierde nada).');
-        if (useDrive) {
-          applyPayload(remote);
-          setDirty(false);
-        } else {
-          applyPayload(mergePayloads(localPayload(), remote));
-          setDirty(true);
-        }
-      } else if (isDirty()) {
-        applyPayload(mergePayloads(localPayload(), remote));
-        setDirty(true);
+        // Primera vez con estos datos en este dispositivo: nunca se pisa nada sin preguntar
+        const where = inShared() ? `la carpeta compartida "${currentSpace().folderName || 'ZenBan'}"` : 'tu Google Drive';
+        const useDrive = confirm(`Ya hay datos de ZenBan en ${where}.\n\nAceptar: usar esos datos en este dispositivo (lo que hay aquí se reemplaza).\nCancelar: combinar esos datos con lo que hay en este dispositivo (no se pierde nada).`);
+        result = useDrive ? dataPart(remote) : mergePayloads(local, remote, null);
       } else {
-        applyPayload(remote);
+        const base = await SyncBase.get();
+        // Sin copia de la última sincronización y sin cambios aquí: Drive manda (evita revivir lo borrado en otro lado)
+        result = !base && !isDirty() ? dataPart(remote) : mergePayloads(local, remote, base);
       }
     }
 
-    if (isDirty() || !file) {
-      const gen = SYNC.gen;
-      const data = localPayload();
-      data.savedAt = Date.now();
-      SYNC.fileId = await driveUpload(DATA_FILE_NAME, new Blob([JSON.stringify(data)], { type: 'application/json' }), SYNC.fileId);
-      localStorage.setItem(SYNC_KEYS.LAST, String(data.savedAt));
-      if (SYNC.gen === gen) setDirty(false);
-    } else if (remote) {
-      localStorage.setItem(SYNC_KEYS.LAST, String(remote.savedAt || Date.now()));
+    // Si hubo cambios aquí mientras se descargaba, se vuelve a empezar para no perderlos
+    if (SYNC.gen !== gen) {
+      SYNC.again = true;
+      return;
     }
+
+    if (!sameJson(dataPart(result), dataPart(local))) applyPayload(result);
+    else localStorage.setItem(SYNC_KEYS.DELETED, JSON.stringify(result.deletedProjects || []));
+
+    if (!remote || !sameJson(dataPart(result), dataPart(remote))) {
+      // Si otra persona guardó mientras tanto, se vuelve a combinar antes de subir para no pisar su cambio
+      if (file) {
+        const now = await (await driveFetch(`${DRIVE_API}/files/${file.id}?fields=version&supportsAllDrives=true`)).json();
+        if (String(now.version) !== String(file.version)) {
+          SYNC.again = true;
+          return;
+        }
+      }
+      const data = { ...dataPart(result), version: 1, savedAt: Date.now() };
+      SYNC.fileId = await driveUpload(DATA_FILE_NAME, new Blob([JSON.stringify(data)], { type: 'application/json' }), SYNC.fileId);
+    }
+    await SyncBase.set(dataPart(result));
+    localStorage.setItem(SYNC_KEYS.LAST, String(Date.now()));
+    if (SYNC.gen === gen) setDirty(false);
 
     await syncImages();
     setSyncStatus(isDirty() ? 'syncing' : 'ok');
@@ -4038,7 +4180,7 @@ async function syncImages() {
     if (local && !SYNC.imageFiles.has(id)) {
       SYNC.imageFiles.set(id, await driveUpload(id, local));
     } else if (!local && SYNC.imageFiles.has(id)) {
-      const r = await driveFetch(`https://www.googleapis.com/drive/v3/files/${SYNC.imageFiles.get(id)}?alt=media`);
+      const r = await driveFetch(`${DRIVE_API}/files/${SYNC.imageFiles.get(id)}?alt=media&supportsAllDrives=true`);
       await ImageStore.put(id, await r.blob());
       downloaded++;
     }
@@ -4077,7 +4219,14 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && SYNC.token) syncNow();
 });
 window.addEventListener('online', () => { if (SYNC.token) syncNow(); });
-setInterval(() => { if (SYNC.token && document.visibilityState === 'visible') syncNow(); }, 45000);
+// Con datos compartidos se revisan los cambios de los demás cada 15 segundos; si no, cada 45
+let lastPoll = 0;
+setInterval(() => {
+  if (!SYNC.token || document.visibilityState !== 'visible') return;
+  if (Date.now() - lastPoll < (inShared() ? 15000 : 45000)) return;
+  lastPoll = Date.now();
+  syncNow();
+}, 5000);
 
 // ----- Ventana de configuración (ID de cliente) -----
 const googleSetupModal = document.getElementById('googleSetupModal');
