@@ -3755,6 +3755,12 @@ function setSyncStatus(status) {
     const t = new Date(lastSyncedAt());
     syncStatusText.textContent += ` · ${t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   }
+  // Muestra con qué datos se sincroniza: si dos dispositivos dicen cosas distintas aquí, no ven lo mismo
+  if (status !== 'off') {
+    syncStatusText.textContent += inShared()
+      ? ` · Datos compartidos "${currentSpace().folderName || 'ZenBan'}"`
+      : ' · Datos personales';
+  }
   accountChip.title = SYNC_STATUS_TEXT[status] || 'Cuenta';
 }
 

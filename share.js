@@ -108,12 +108,12 @@ function leaveSharedSpace() {
   syncNow();
 }
 
-// Al iniciar sesión: si alguien compartió datos contigo, se te ofrecen
+// Al iniciar sesión: si hay datos compartidos (de otra persona, o tuyos creados desde otro dispositivo), se te ofrecen
 async function checkSharedInvites() {
   if (inShared() || !SYNC.token) return;
   try {
     const dismissed = dismissedInvites();
-    const invites = (await findSharedSpaces()).filter(f => !f.ownedByMe && !dismissed.includes(f.id));
+    const invites = (await findSharedSpaces()).filter(f => !dismissed.includes(f.id));
     if (invites.length) openShareModal(invites);
   } catch (e) {
     console.warn('Buscar datos compartidos', e);
@@ -172,10 +172,12 @@ async function openShareModal(invites = null) {
   // Alguien compartió datos contigo
   if (invites && invites.length) {
     body.innerHTML = `
-      <p class="share-text">Te compartieron tableros de ZenBan. Si los usas, verás y editarás lo mismo que las demás personas.</p>
+      <p class="share-text">${invites.every(f => f.ownedByMe)
+        ? 'En otro dispositivo usas tus tableros como datos compartidos. Úsalos aquí también para ver lo mismo en todos tus dispositivos.'
+        : 'Te compartieron tableros de ZenBan. Si los usas, verás y editarás lo mismo que las demás personas.'}</p>
       <div class="share-list">${invites.map(f => {
         const o = (f.owners && f.owners[0]) || {};
-        return `<div class="share-row"><div><strong>${shareEsc(f.name)}</strong><small>De ${shareEsc(o.displayName || o.emailAddress || 'otra cuenta')}</small></div>
+        return `<div class="share-row"><div><strong>${shareEsc(f.name)}</strong><small>${f.ownedByMe ? 'Tuya (creada en otro dispositivo)' : 'De ' + shareEsc(o.displayName || o.emailAddress || 'otra cuenta')}</small></div>
           <button class="btn btn-primary share-btn-sm" data-join="${shareEsc(f.id)}">Usar</button></div>`;
       }).join('')}</div>
       <div class="share-actions"><button class="btn btn-ghost" data-later>Ahora no</button></div>`;
