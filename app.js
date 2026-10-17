@@ -3673,7 +3673,8 @@ const SYNC_KEYS = {
   DIRTY: 'zenban_sync_dirty',
   LAST: 'zenban_sync_last',
   DELETED: 'zenban_deleted_projects',
-  CLIENT_ID: 'zenban_google_client_id'
+  CLIENT_ID: 'zenban_google_client_id',
+  STATE: 'zenban_oauth_state'
 };
 const DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.appdata openid email profile';
 const DATA_FILE_NAME = 'zenban-data.json';
@@ -3791,9 +3792,48 @@ function initTokenClient() {
   return true;
 }
 
+// En la app instalada (pantalla completa) la ventana emergente de Google no siempre
+// devuelve la sesión, así que ahí se usa el inicio de sesión por redirección
+function isInstalledApp() {
+  return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+}
+
+function signInWithRedirect() {
+  const state = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  localStorage.setItem(SYNC_KEYS.STATE, state);
+  const user = savedUser();
+  const params = new URLSearchParams({
+    client_id: googleClientId(),
+    redirect_uri: location.origin + location.pathname.replace(/index\.html$/, ''),
+    response_type: 'token',
+    scope: DRIVE_SCOPES,
+    include_granted_scopes: 'true',
+    state
+  });
+  if (user && user.email) params.set('login_hint', user.email);
+  else params.set('prompt', 'select_account');
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+}
+
+// Al volver de Google por redirección, el token llega en la dirección (#access_token=...)
+function consumeRedirectToken() {
+  if (!location.hash || location.hash.indexOf('access_token=') === -1 && location.hash.indexOf('error=') === -1) return null;
+  const h = new URLSearchParams(location.hash.slice(1));
+  history.replaceState(null, '', location.pathname + location.search);
+  const expected = localStorage.getItem(SYNC_KEYS.STATE);
+  localStorage.removeItem(SYNC_KEYS.STATE);
+  if (!expected || h.get('state') !== expected) return null;
+  if (h.get('error')) return { error: h.get('error') };
+  return { access_token: h.get('access_token'), expires_in: h.get('expires_in') };
+}
+
 function signInWithGoogle() {
   if (!googleClientId()) {
     openGoogleSetup();
+    return;
+  }
+  if (isInstalledApp()) {
+    signInWithRedirect();
     return;
   }
   if (!initTokenClient()) {
@@ -4254,6 +4294,8 @@ document.getElementById('googleSetupForm').addEventListener('submit', (e) => {
 });
 
 renderAccount();
+const redirectedToken = consumeRedirectToken();
+if (redirectedToken) onTokenResponse(redirectedToken);
 
 // =============================================================================
 // 8. Search, Filtering & Theme Switcher
