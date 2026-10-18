@@ -718,8 +718,32 @@ function stopCardAutoScroll() {
   dragState.scrollContainer = null;
 }
 
+// Cerca de los bordes de la pantalla el lienzo se desplaza solo, para llevar la tarea a tableros alejados
+const CARD_PAN_EDGE = 60;   // px de pantalla desde el borde del lienzo
+const CARD_PAN_MAX = 16;    // px de pantalla por cuadro, con el puntero en el borde mismo
+
+function cardEdgePanStep() {
+  const vp = viewportArea.getBoundingClientRect();
+  const x = dragState.lastX;
+  const y = dragState.lastY;
+  const pull = (dist) => Math.min(1, Math.max(0, dist) / CARD_PAN_EDGE);
+  let dx = 0;
+  let dy = 0;
+  if (x < vp.left + CARD_PAN_EDGE) dx = pull(vp.left + CARD_PAN_EDGE - x);
+  else if (x > vp.right - CARD_PAN_EDGE) dx = -pull(x - (vp.right - CARD_PAN_EDGE));
+  if (y < vp.top + CARD_PAN_EDGE) dy = pull(vp.top + CARD_PAN_EDGE - y);
+  else if (y > vp.bottom - CARD_PAN_EDGE) dy = -pull(y - (vp.bottom - CARD_PAN_EDGE));
+  if (!dx && !dy) return false;
+  panX += dx * CARD_PAN_MAX;
+  panY += dy * CARD_PAN_MAX;
+  applyTransform();
+  return true;
+}
+
 function cardAutoScrollStep() {
   if (!dragState.active) { dragState.autoScrollRaf = null; return; }
+  // El lienzo se movió bajo el puntero: se recalcula sobre qué columna está la tarjeta
+  if (cardEdgePanStep()) updateCardDrag(dragState.lastX, dragState.lastY);
   const box = dragState.scrollContainer;
   if (box && box.scrollHeight > box.clientHeight) {
     const r = box.getBoundingClientRect();
@@ -755,15 +779,19 @@ function updateCardDrag(clientX, clientY) {
   const elemBelow = document.elementFromPoint(clientX, clientY);
   dragState.ghostElement.style.display = '';
 
-  if (!elemBelow) { dragState.scrollContainer = null; return; }
-
-  const targetColumn = elemBelow.closest('.kanban-column');
+  const targetColumn = elemBelow ? elemBelow.closest('.kanban-column') : null;
   dragState.scrollContainer = targetColumn ? targetColumn.querySelector('.column-cards') : null;
+  if (!targetColumn) {
+    // Fuera de las columnas (lienzo vacío, otro objeto…): si se suelta aquí, la tarea vuelve a su lugar
+    returnPlaceholderToOrigin();
+    return;
+  }
   if (targetColumn) {
     const targetColId = targetColumn.dataset.columnId;
     const cardsContainer = targetColumn.querySelector('.column-cards');
     if (!cardsContainer) return;
 
+    restoreEmptyStateIfLeaving(cardsContainer);
     dragState.targetColId = targetColId;
 
     // Determine target index inside column
@@ -789,6 +817,26 @@ function updateCardDrag(clientX, clientY) {
     const emptyState = cardsContainer.querySelector('.column-empty');
     if (emptyState) emptyState.style.display = 'none';
   }
+}
+
+// Si el hueco deja una columna vacía, vuelve a mostrar su aviso de "sin tareas"
+function restoreEmptyStateIfLeaving(nextContainer) {
+  const ph = dragState.placeholder;
+  const prev = ph && ph.parentNode;
+  if (!prev || prev === nextContainer) return;
+  const emptyState = prev.querySelector('.column-empty');
+  const others = prev.querySelectorAll('.kanban-card:not(.is-dragging)').length;
+  if (emptyState && others === 0 && prev !== (dragState.cardElement && dragState.cardElement.parentNode)) emptyState.style.display = '';
+}
+
+// Devuelve el hueco a donde estaba la tarjeta: soltar fuera de una columna no la mueve
+function returnPlaceholderToOrigin() {
+  const card = dragState.cardElement;
+  const ph = dragState.placeholder;
+  if (!card || !ph || !card.parentNode) return;
+  restoreEmptyStateIfLeaving(card.parentNode);
+  if (card.nextSibling !== ph) card.after(ph);
+  dragState.targetColId = dragState.sourceColId;
 }
 
 // La tarjeta recién soltada rebota y brilla un momento para ver dónde quedó
@@ -820,7 +868,8 @@ function finishCardDrag() {
   if (targetColId && placeholder && placeholder.parentNode) {
     // Calculate new index in target column
     const parent = placeholder.parentNode;
-    const cardsInCol = Array.from(parent.children).filter(el => el.classList.contains('kanban-card') || el === placeholder);
+    // Posición entre las demás tarjetas (sin contar la que se arrastra, que moveTask saca antes de insertarla)
+    const cardsInCol = Array.from(parent.children).filter(el => (el.classList.contains('kanban-card') && el !== cardElement) || el === placeholder);
     const newIndex = cardsInCol.indexOf(placeholder);
 
     // Remove placeholder
@@ -4846,7 +4895,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '44';
+const APP_VERSION = '45';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
