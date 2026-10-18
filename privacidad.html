@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Política de privacidad • MindSpark</title>
+  <link rel="icon" type="image/png" href="icons/favicon.png">
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #e2e8f0;
+      --accent: #6366f1;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --border: #334155;
+        --accent: #818cf8;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      line-height: 1.6;
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 32px 16px 64px;
+    }
+    h1 { font-size: 1.8rem; margin: 0 0 4px; }
+    h2 { font-size: 1.15rem; margin: 32px 0 8px; }
+    p, li { color: var(--muted); }
+    strong { color: var(--text); }
+    .updated { font-size: 0.9rem; margin: 0 0 24px; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+    }
+    a { color: var(--accent); }
+    code { font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Política de privacidad</h1>
+    <p class="updated">Apps de MindSpark: ZenBan, ApiTrack y TotalStats. Última actualización: 18 de octubre de 2026.</p>
+
+    <div class="card">
+      <p><strong>En resumen:</strong> tus datos se guardan en tu dispositivo y en tu propia cuenta de Google Drive. MindSpark no tiene una base de datos con tu información, no la vende, no la comparte con terceros y no la usa para publicidad.</p>
+    </div>
+
+    <h2>Qué datos usan las apps</h2>
+    <ul>
+      <li><strong>Lo que tú creas en la app</strong> (por ejemplo tareas, tableros, notas, registros e imágenes). Se guarda en tu navegador y, si inicias sesión con Google, en tu Google Drive.</li>
+      <li><strong>Tu nombre, correo y foto de Google</strong>, solo para mostrar con qué cuenta iniciaste sesión.</li>
+    </ul>
+
+    <h2>Cómo se usa Google Drive</h2>
+    <p>Al iniciar sesión con Google, la app guarda una copia de tus datos en una carpeta oculta de la app dentro de tu Drive, para sincronizarlos entre tus dispositivos. Si decides compartir tus datos con otras personas, la app crea una carpeta en tu Drive y la comparte solo con los correos que tú indiques. La app solo lee y escribe sus propios archivos; no lee ni modifica el resto de tus archivos de Drive.</p>
+    <p>El uso de la información recibida de las APIs de Google cumple la <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Política de datos de usuario de los servicios de API de Google</a>, incluidos sus requisitos de uso limitado.</p>
+
+    <h2>Conector de ZenBan para Claude</h2>
+    <p>Si conectas ZenBan como conector en Claude, un pequeño servidor de MindSpark alojado en Cloudflare agrega las tareas que dictas a la Bandeja de tu ZenBan, en tu Google Drive. Ese servidor:</p>
+    <ul>
+      <li>Solo acepta las cuentas de Google autorizadas por el dueño de la app.</li>
+      <li>Guarda únicamente los permisos de acceso de Google necesarios para escribir tus tareas, cifrados.</li>
+      <li>No guarda copias de tus tareas ni de tus datos.</li>
+    </ul>
+    <p>Lo que le dices a Claude se rige por la política de privacidad de Anthropic.</p>
+
+    <h2>Cómo quitar el acceso y borrar tus datos</h2>
+    <ul>
+      <li>Para quitar el acceso de las apps a tu cuenta de Google, entra a <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a> y elimina MindSpark.</li>
+      <li>Puedes cerrar sesión en la app en cualquier momento; tus datos siguen en tu dispositivo.</li>
+      <li>Para borrar los datos guardados en Drive, en Google Drive ve a Configuración → Administrar aplicaciones y elige "Borrar datos ocultos de la app". Las carpetas compartidas se borran como cualquier carpeta de tu Drive.</li>
+      <li>Para borrar los datos de tu dispositivo, borra los datos del sitio en tu navegador o desinstala la app.</li>
+    </ul>
+
+    <h2>Contacto</h2>
+    <p>Si tienes preguntas sobre esta política, escribe a <a href="mailto:andres.gonzalez.prat@gmail.com">andres.gonzalez.prat@gmail.com</a>.</p>
+
+    <p><a href="./">← Volver a ZenBan</a></p>
+  </main>
+</body>
+</html>
