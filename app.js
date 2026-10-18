@@ -4276,13 +4276,13 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '27';
+const APP_VERSION = '28';
 const APP_REPO = 'mindsparkapps/zenban';
 
+// Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
 async function renderAppVersion() {
-  const box = document.getElementById('appVersion');
-  if (!box) return;
-  box.textContent = `ZenBan v${APP_VERSION}`;
+  const boxes = ['appVersion', 'brandVersion'].map(id => document.getElementById(id)).filter(Boolean);
+  boxes.forEach(box => { box.textContent = `ZenBan v${APP_VERSION}`; });
   // El commit se pregunta a GitHub (último publicado en main) y se guarda unos minutos
   let commit = null;
   try { commit = JSON.parse(sessionStorage.getItem('zenban_commit') || 'null'); } catch (e) {}
@@ -4295,14 +4295,25 @@ async function renderAppVersion() {
       try { sessionStorage.setItem('zenban_commit', JSON.stringify(commit)); } catch (e) {}
     } catch (e) { return; }
   }
-  const a = document.createElement('a');
-  a.href = commit.url;
-  a.target = '_blank';
-  a.rel = 'noopener';
-  a.title = 'Último cambio publicado en GitHub';
-  a.textContent = commit.sha.slice(0, 7);
-  box.append(' · ', a);
+  boxes.forEach(box => {
+    const a = document.createElement('a');
+    a.href = commit.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.title = 'Último cambio publicado en GitHub';
+    a.textContent = commit.sha.slice(0, 7);
+    box.append(' · ', a);
+  });
 }
+
+const brandVersion = document.getElementById('brandVersion');
+document.querySelector('.brand').addEventListener('click', (e) => {
+  if (e.target.closest('#brandVersion')) return;
+  brandVersion.hidden = !brandVersion.hidden;
+});
+document.addEventListener('click', (e) => {
+  if (!brandVersion.hidden && !e.target.closest('.brand')) brandVersion.hidden = true;
+});
 
 // ----- Ventana de configuración (ID de cliente) -----
 const googleSetupModal = document.getElementById('googleSetupModal');

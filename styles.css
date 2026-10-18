@@ -138,10 +138,38 @@ h1, h2, h3, h4, .brand-title {
 }
 
 .brand {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.65rem;
   cursor: pointer;
+}
+
+/* Globo con la versión al tocar el logo */
+.brand-version {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 200;
+  white-space: nowrap;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 0.45rem 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+.brand-version[hidden] {
+  display: none;
+}
+
+.brand-version a {
+  color: var(--accent-primary);
+  text-decoration: none;
 }
 
 .brand-icon {
@@ -1563,21 +1591,8 @@ body.theme-light .moon-icon { display: none; }
     align-items: center;
   }
 
-  /* En el celular solo queda la versión, sin la ayuda de mouse */
   .hud-gesture-hint {
-    background: none;
-    backdrop-filter: none;
-    border: none;
-    box-shadow: none;
-    padding: 0;
-  }
-
-  .hud-gesture-hint .hint-text {
-    display: none;
-  }
-
-  .app-version {
-    margin-top: 0;
+    display: none; /* Keep clean on small mobile screens (la versión se ve tocando el logo) */
   }
 
   .modal-card {
