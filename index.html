@@ -209,6 +209,13 @@
               <strong id="accountName">—</strong>
               <small id="accountEmail"></small>
             </div>
+            <div class="space-indicator" id="spaceIndicator" data-mode="personal">
+              <span class="space-indicator-icon" id="spaceIndicatorIcon">👤</span>
+              <span class="space-indicator-text">
+                <small>Estás en</small>
+                <strong id="spaceIndicatorName">Datos personales</strong>
+              </span>
+            </div>
             <div class="account-menu-status" id="syncStatusText">Sin sincronizar</div>
             <button type="button" id="syncNowBtn" class="account-menu-btn">Sincronizar ahora</button>
             <button type="button" id="signOutBtn" class="account-menu-btn is-danger">Cerrar sesión</button>
@@ -581,6 +588,12 @@
             <input type="hidden" id="projectColorInput" value="#6366f1">
           </div>
 
+          <div class="form-group" id="projectSpaceGroup" style="display:none;">
+            <label for="projectSpaceSelect">Espacio</label>
+            <select id="projectSpaceSelect"></select>
+            <small class="project-space-hint" id="projectSpaceHint">Elige "Compartido" para que lo vean las personas con las que compartes tus datos. Al cambiarlo, el proyecto se mueve con todo su contenido.</small>
+          </div>
+
           <div class="form-group" id="projectTemplateGroup">
             <label for="projectTemplateSelect">Columnas iniciales</label>
             <select id="projectTemplateSelect">
@@ -764,8 +777,9 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=38"></script>
+  <script src="app.js?v=39"></script>
   <script src="share.js?v=3"></script>
-  <script src="transfer.js?v=1"></script>
+  <script src="transfer.js?v=2"></script>
+  <script src="spaces.js?v=1"></script>
 </body>
 </html>

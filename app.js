@@ -4233,12 +4233,8 @@ function setSyncStatus(status) {
     const t = new Date(lastSyncedAt());
     syncStatusText.textContent += ` · ${t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   }
-  // Muestra con qué datos se sincroniza: si dos dispositivos dicen cosas distintas aquí, no ven lo mismo
-  if (status !== 'off') {
-    syncStatusText.textContent += inShared()
-      ? ` · Datos compartidos "${currentSpace().folderName || 'ZenBan'}"`
-      : ' · Datos personales';
-  }
+  // Con qué datos se sincroniza: se muestra en grande y con color (spaces.js)
+  if (typeof renderSpaceIndicator === 'function') renderSpaceIndicator();
   accountChip.title = SYNC_STATUS_TEXT[status] || 'Cuenta';
 }
 
@@ -4771,7 +4767,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '38';
+const APP_VERSION = '39';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
