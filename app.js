@@ -3798,10 +3798,13 @@ function initTokenClient() {
   return true;
 }
 
-// En la app instalada (pantalla completa) la ventana emergente de Google no siempre
-// devuelve la sesión, así que ahí se usa el inicio de sesión por redirección
+// En la app instalada en el celular la ventana emergente de Google no siempre
+// devuelve la sesión, así que ahí se usa el inicio de sesión por redirección.
+// En el PC (instalada o no) la ventana emergente funciona bien.
 function isInstalledApp() {
-  return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  if (window.navigator.standalone === true) return true; // iPhone / iPad
+  const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  return mobile && !!window.matchMedia && matchMedia('(display-mode: standalone)').matches;
 }
 
 function signInWithRedirect() {
@@ -4276,7 +4279,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '28';
+const APP_VERSION = '29';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
