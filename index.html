@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=30">
+  <link rel="stylesheet" href="styles.css?v=31">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -761,6 +761,15 @@
             </select>
             <p class="setup-text">Hasta dónde puedes alejar el lienzo. Se guarda en este dispositivo.</p>
           </div>
+          <div class="form-group">
+            <label class="settings-check" for="settingToolsAutoHide">
+              <input type="checkbox" id="settingToolsAutoHide">
+              <span>Esconder las herramientas cuando no las uso</span>
+            </label>
+            <label for="settingToolsOpacity" class="settings-range-label">Visibilidad al esconderse: <strong id="settingToolsOpacityValue">20%</strong></label>
+            <input type="range" id="settingToolsOpacity" min="0" max="100" step="5" value="20">
+            <p class="setup-text">La barra de herramientas y la de zoom se ven así mientras no pasas el mouse; al acercarlo vuelven a verse completas. 0% las oculta del todo. En el celular aparecen al tocarlas.</p>
+          </div>
           <div class="modal-actions">
             <div class="spacer"></div>
             <button type="button" id="cancelSettingsBtn" class="btn btn-ghost">Cancelar</button>
@@ -777,7 +786,7 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=39"></script>
+  <script src="app.js?v=40"></script>
   <script src="share.js?v=3"></script>
   <script src="transfer.js?v=2"></script>
   <script src="spaces.js?v=1"></script>

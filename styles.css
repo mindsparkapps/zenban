@@ -3498,3 +3498,35 @@ select option:checked {
     padding: 0 0.65rem;
   }
 }
+
+/* ==========================================================================
+   Herramientas que se esconden solas (Configuración)
+   ========================================================================== */
+.autohide-on {
+  transition: opacity 0.3s ease;
+}
+
+.autohide-on.is-autohidden {
+  opacity: var(--tools-hidden-opacity, 0.2);
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.settings-range-label {
+  display: block;
+  margin-top: 12px;
+}
+
+#settingToolsOpacity {
+  width: 100%;
+  accent-color: var(--accent-primary);
+}
+
+#settingToolsOpacity:disabled {
+  opacity: 0.45;
+}

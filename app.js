@@ -309,7 +309,7 @@ const btnPanMode = document.getElementById('btnPanMode');
 
 // Configuración de este dispositivo (ventana ⚙️ que se abre desde el logo)
 const SETTINGS_KEY = 'zenban_settings_v1';
-const DEFAULT_SETTINGS = { zoomMin: 0.5 };
+const DEFAULT_SETTINGS = { zoomMin: 0.5, toolsAutoHide: false, toolsHiddenOpacity: 20 };
 let appSettings = { ...DEFAULT_SETTINGS, ...loadData(SETTINGS_KEY, {}) };
 
 const ZOOM_CONFIG = {
@@ -4767,7 +4767,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '39';
+const APP_VERSION = '40';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -4818,12 +4818,88 @@ function openSettings() {
     settingZoomMin.add(new Option(`${Math.round(appSettings.zoomMin * 100)}%`, value));
   }
   settingZoomMin.value = value;
+  settingToolsAutoHide.checked = !!appSettings.toolsAutoHide;
+  settingToolsOpacity.value = String(appSettings.toolsHiddenOpacity);
+  syncToolsOpacityField();
   settingsModal.style.display = 'flex';
 }
 
 function closeSettings() {
   settingsModal.style.display = 'none';
+  applyToolsAutoHide(); // deshace la vista previa si se canceló
 }
+
+// ----- Esconder las herramientas (barra lateral y barra de zoom) cuando no se usan -----
+const settingToolsAutoHide = document.getElementById('settingToolsAutoHide');
+const settingToolsOpacity = document.getElementById('settingToolsOpacity');
+const settingToolsOpacityValue = document.getElementById('settingToolsOpacityValue');
+const autoHideBars = [toolbox, document.getElementById('zoomHud')];
+const AUTOHIDE_DELAY_MS = 700;      // al sacar el mouse
+const AUTOHIDE_TOUCH_MS = 3500;     // después de tocarlas en el celular
+let autoHidePreview = null;         // { on, opacity } mientras se mueve el control en Configuración
+
+function autoHideState() {
+  return autoHidePreview || { on: !!appSettings.toolsAutoHide, opacity: Number(appSettings.toolsHiddenOpacity) };
+}
+
+function applyToolsAutoHide() {
+  autoHidePreview = null;
+  refreshAutoHide();
+}
+
+function refreshAutoHide() {
+  const { on, opacity } = autoHideState();
+  document.documentElement.style.setProperty('--tools-hidden-opacity', String(Math.max(0, Math.min(100, opacity)) / 100));
+  autoHideBars.forEach(bar => {
+    if (!bar) return;
+    bar.classList.toggle('autohide-on', on);
+    if (!on) bar.classList.remove('is-autohidden');
+    else if (!bar.matches(':hover') && !bar.contains(document.activeElement)) bar.classList.add('is-autohidden');
+  });
+}
+
+function syncToolsOpacityField() {
+  settingToolsOpacityValue.textContent = `${settingToolsOpacity.value}%`;
+  settingToolsOpacity.disabled = !settingToolsAutoHide.checked;
+}
+
+autoHideBars.forEach(bar => {
+  if (!bar) return;
+  let timer = null;
+  const show = () => { clearTimeout(timer); bar.classList.remove('is-autohidden'); };
+  const hideLater = (ms) => {
+    clearTimeout(timer);
+    if (!autoHideState().on) return;
+    timer = setTimeout(() => {
+      if (bar.matches(':hover') || bar.contains(document.activeElement)) return;
+      bar.classList.add('is-autohidden');
+    }, ms);
+  };
+  bar.addEventListener('pointerenter', (e) => { if (e.pointerType !== 'touch') show(); });
+  bar.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch') hideLater(AUTOHIDE_DELAY_MS); });
+  // Con el dedo no hay "pasar por encima": al tocarla se muestra y se vuelve a esconder sola
+  bar.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    show();
+    hideLater(AUTOHIDE_TOUCH_MS);
+  });
+  bar.addEventListener('focusin', show);
+  bar.addEventListener('focusout', () => hideLater(AUTOHIDE_DELAY_MS));
+});
+
+// Vista previa mientras se ajusta en Configuración
+settingToolsAutoHide.addEventListener('change', () => {
+  syncToolsOpacityField();
+  autoHidePreview = { on: settingToolsAutoHide.checked, opacity: Number(settingToolsOpacity.value) };
+  refreshAutoHide();
+});
+settingToolsOpacity.addEventListener('input', () => {
+  syncToolsOpacityField();
+  autoHidePreview = { on: settingToolsAutoHide.checked, opacity: Number(settingToolsOpacity.value) };
+  refreshAutoHide();
+});
+
+refreshAutoHide();
 
 document.getElementById('openSettingsBtn').addEventListener('click', openSettings);
 document.getElementById('closeSettingsBtn').addEventListener('click', closeSettings);
@@ -4831,12 +4907,14 @@ document.getElementById('cancelSettingsBtn').addEventListener('click', closeSett
 document.getElementById('settingsForm').addEventListener('submit', (e) => {
   e.preventDefault();
   appSettings.zoomMin = Number(settingZoomMin.value) || DEFAULT_SETTINGS.zoomMin;
+  appSettings.toolsAutoHide = settingToolsAutoHide.checked;
+  appSettings.toolsHiddenOpacity = Number(settingToolsOpacity.value);
   saveData(SETTINGS_KEY, appSettings);
   ZOOM_CONFIG.MIN = appSettings.zoomMin;
   // Si ahora la vista está más alejada que el nuevo mínimo, se acerca hasta el mínimo
   if (zoom < ZOOM_CONFIG.MIN) zoomAtCenter(ZOOM_CONFIG.MIN / zoom);
   closeSettings();
-  showToast(`Zoom mínimo: ${Math.round(appSettings.zoomMin * 100)}%`, 'success');
+  showToast('Configuración guardada', 'success');
 });
 
 // ----- Ventana de configuración (ID de cliente) -----
