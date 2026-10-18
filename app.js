@@ -1456,6 +1456,7 @@ window.openTaskModal = function(taskId = null, defaultColId = null, event = null
     currentModalSubtasks = JSON.parse(JSON.stringify(task.subtasks || []));
     currentModalImages = JSON.parse(JSON.stringify(task.images || []));
     deleteTaskBtn.style.display = 'block';
+    document.getElementById('sendTaskBtn').style.display = 'block';
   } else {
     modalTitle.textContent = 'Nueva Tarea';
     taskIdInput.value = '';
@@ -1469,6 +1470,7 @@ window.openTaskModal = function(taskId = null, defaultColId = null, event = null
     currentModalSubtasks = [];
     currentModalImages = [];
     deleteTaskBtn.style.display = 'none';
+    document.getElementById('sendTaskBtn').style.display = 'none';
   }
 
   renderModalSubtasks();
@@ -4769,7 +4771,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '37';
+const APP_VERSION = '38';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
