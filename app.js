@@ -4545,6 +4545,23 @@ function mergeProject(l, r, b) {
   return out;
 }
 
+// Etiquetas: combinación en tres vías por id (como las tareas), para que una etiqueta borrada o
+// renombrada en otro dispositivo (o desde el conector de Claude) no reaparezca. Sin ids, unión por nombre.
+function mergeTags(L, R, B) {
+  L = L || [];
+  R = R || [];
+  const withIds = arr => arr.every(t => t && t.id != null);
+  const merged = withIds(L) && withIds(R) && (!B || withIds(B))
+    ? mergeArrays(L, R, B)
+    : [...R, ...L];
+  const seen = new Map();
+  merged.forEach(t => {
+    const key = String(t.name || '').toLowerCase();
+    if (!seen.has(key) || L.includes(t)) seen.set(key, t);
+  });
+  return [...seen.values()];
+}
+
 function mergePayloads(local, remote, base = null) {
   const tombs = new Map();
   [...(remote.deletedProjects || []), ...(local.deletedProjects || [])].forEach(t => {
@@ -4562,14 +4579,10 @@ function mergePayloads(local, remote, base = null) {
     merged.push(l && r ? mergeProject(l, r, bm.get(p.id) || null) : (l || r));
   });
 
-  const tagMap = new Map();
-  (remote.tags || []).forEach(t => tagMap.set(t.name.toLowerCase(), t));
-  (local.tags || []).forEach(t => tagMap.set(t.name.toLowerCase(), t));
-
   return {
     version: 1,
     projects: merged.filter(p => !tombs.has(p.id) || (p.updatedAt || 0) > tombs.get(p.id)),
-    tags: [...tagMap.values()],
+    tags: mergeTags(local.tags, remote.tags, base ? base.tags : null),
     deletedProjects: [...tombs.entries()].map(([id, at]) => ({ id, at }))
   };
 }
@@ -4756,7 +4769,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '36';
+const APP_VERSION = '37';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
