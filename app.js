@@ -4833,7 +4833,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '42';
+const APP_VERSION = '43';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -4968,6 +4968,13 @@ settingToolsOpacity.addEventListener('input', () => {
 refreshAutoHide();
 
 document.getElementById('openSettingsBtn').addEventListener('click', openSettings);
+// Recargar: útil en la app instalada del celular, que no tiene botón de recargar del navegador.
+// Los datos ya están guardados en el dispositivo, así que no se pierde nada.
+document.getElementById('reloadAppBtn').addEventListener('click', () => {
+  brandVersion.hidden = true;
+  if (editingTextId) finishTextEdit();
+  location.reload();
+});
 document.getElementById('closeSettingsBtn').addEventListener('click', closeSettings);
 document.getElementById('cancelSettingsBtn').addEventListener('click', closeSettings);
 document.getElementById('settingsForm').addEventListener('submit', (e) => {
