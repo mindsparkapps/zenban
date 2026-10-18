@@ -459,6 +459,7 @@ body.theme-light .moon-icon { display: none; }
    ========================================================================== */
 .viewport-area {
   flex: 1;
+  touch-action: none; /* los gestos del dedo los maneja la app (las columnas siguen desplazándose) */
   width: 100%;
   height: calc(100vh - 64px);
   position: relative;

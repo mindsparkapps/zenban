@@ -503,6 +503,7 @@ let initialPinchDistance = 0;
 let initialPinchZoom = 1.0;
 let pinchMidpoint = { x: 0, y: 0 };
 let isTouchPanning = false;
+let cancelSelectGesture = null; // cancela la selección o arrastre en curso (al poner un segundo dedo)
 let touchStartX = 0;
 let touchStartY = 0;
 
@@ -517,10 +518,14 @@ function getTouchesMidpoint(t1, t2) {
   };
 }
 
+// Gestos con el dedo: dos dedos mueven el lienzo (y pellizcar hace zoom);
+// un dedo selecciona y arrastra objetos (salvo con la herramienta Mano)
 viewportArea.addEventListener('touchstart', (e) => {
-  // Two finger pinch-to-zoom
   if (e.touches.length === 2) {
     e.preventDefault();
+    // El primer dedo pudo empezar una selección o un arrastre: se cancela
+    if (cancelSelectGesture) cancelSelectGesture();
+    isTouchPanning = false;
     initialPinchDistance = getTouchesDistance(e.touches[0], e.touches[1]);
     initialPinchZoom = zoom;
     pinchMidpoint = getTouchesMidpoint(e.touches[0], e.touches[1]);
@@ -530,14 +535,10 @@ viewportArea.addEventListener('touchstart', (e) => {
     return;
   }
 
-  // 1 Finger Touch Pan if on empty canvas background or pan mode
+  // Un dedo solo mueve el lienzo con la herramienta Mano
   if (e.touches.length === 1 && !dragState.active && !isDrawingTool() && !selectGestureActive) {
-    const isCard = e.target.closest('.kanban-card');
     const isInput = e.target.closest('button, input, select, textarea');
-    const isCardsCol = e.target.closest('.column-cards');
-
-    const isBgImage = e.target.closest('.bg-image, .canvas-text');
-    if (isPanModeActive || (!isCard && !isInput && !isCardsCol && !isBgImage)) {
+    if (isPanModeActive && !isInput) {
       isTouchPanning = true;
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
@@ -559,11 +560,11 @@ viewportArea.addEventListener('touchmove', (e) => {
     // Apply zoom centered at current midpoint
     zoomAtPoint(currentMidpoint.x, currentMidpoint.y, targetZoom);
 
-    // Also pan slightly with two fingers
+    // El lienzo sigue a los dos dedos
     const dx = currentMidpoint.x - pinchMidpoint.x;
     const dy = currentMidpoint.y - pinchMidpoint.y;
-    panX += dx * 0.5;
-    panY += dy * 0.5;
+    panX += dx;
+    panY += dy;
     pinchMidpoint = currentMidpoint;
     applyTransform();
     return;
@@ -577,7 +578,11 @@ viewportArea.addEventListener('touchmove', (e) => {
     panX = initialPanX + dx;
     panY = initialPanY + dy;
     applyTransform();
+    return;
   }
+
+  // Seleccionando o arrastrando con un dedo: que el navegador no desplace la página
+  if (selectGestureActive && e.touches.length === 1) e.preventDefault();
 }, { passive: false });
 
 viewportArea.addEventListener('touchend', (e) => {
@@ -2962,6 +2967,7 @@ function startGroupDrag(e) {
     viewportArea.removeEventListener('pointerup', onUp);
     viewportArea.removeEventListener('pointercancel', onUp);
     selectGestureActive = false;
+    cancelSelectGesture = null;
     brds.forEach(o => o.el && o.el.classList.remove('is-moving'));
     highlightDropCard(null);
     if (!moved) return;
@@ -2983,6 +2989,23 @@ function startGroupDrag(e) {
   viewportArea.addEventListener('pointermove', onMove);
   viewportArea.addEventListener('pointerup', onUp);
   viewportArea.addEventListener('pointercancel', onUp);
+
+  // Segundo dedo: se deja todo donde estaba
+  cancelSelectGesture = () => {
+    cancelSelectGesture = null;
+    viewportArea.removeEventListener('pointermove', onMove);
+    viewportArea.removeEventListener('pointerup', onUp);
+    viewportArea.removeEventListener('pointercancel', onUp);
+    selectGestureActive = false;
+    brds.forEach(o => {
+      o.b.x = o.x; o.b.y = o.y;
+      if (o.el) { o.el.classList.remove('is-moving'); o.el.style.left = `${o.x}px`; o.el.style.top = `${o.y}px`; }
+    });
+    strokes.forEach(o => o.el && o.el.removeAttribute('transform'));
+    imgs.forEach(o => { o.i.x = o.x; o.i.y = o.y; if (o.el) { o.el.style.left = `${o.x}px`; o.el.style.top = `${o.y}px`; } });
+    txts.forEach(o => { o.t.x = o.x; o.t.y = o.y; if (o.el) { o.el.style.left = `${o.x}px`; o.el.style.top = `${o.y}px`; } });
+    highlightDropCard(null);
+  };
 }
 
 // ----- Arrastrar una columna: reordenar dentro del tablero o pasarla a otro -----
@@ -3122,12 +3145,24 @@ function startMarquee(e, additive) {
     viewportArea.removeEventListener('pointerup', onUp);
     viewportArea.removeEventListener('pointercancel', onUp);
     selectGestureActive = false;
+    cancelSelectGesture = null;
     box.remove();
     if (selection.size > 1) showToast(`${selection.size} elementos seleccionados`, 'info');
   };
   viewportArea.addEventListener('pointermove', onMove);
   viewportArea.addEventListener('pointerup', onUp);
   viewportArea.addEventListener('pointercancel', onUp);
+
+  // Segundo dedo: se vuelve a la selección anterior
+  cancelSelectGesture = () => {
+    cancelSelectGesture = null;
+    viewportArea.removeEventListener('pointermove', onMove);
+    viewportArea.removeEventListener('pointerup', onUp);
+    viewportArea.removeEventListener('pointercancel', onUp);
+    selectGestureActive = false;
+    box.remove();
+    setSelection([...base]);
+  };
 }
 
 // ----- Textos libres del lienzo -----
@@ -3330,6 +3365,7 @@ viewportArea.addEventListener('pointerdown', (e) => {
 // Doble clic: sobre un texto lo edita; en un espacio vacío crea uno nuevo
 viewportArea.addEventListener('dblclick', (e) => {
   if (currentTool !== 'select' || isPanModeActive) return;
+  if (lastPointerType === 'touch') return; // con el dedo, el doble toque abre el menú
   const under = document.elementsFromPoint(e.clientX, e.clientY);
   const textEl = under.find(n => n.classList && n.classList.contains('canvas-text'));
   if (textEl) {
@@ -3393,6 +3429,7 @@ ctxTextColor.addEventListener('change', () => persist());
 // Herramienta Seleccionar (botón izquierdo): decide qué se toma con cada clic
 viewportArea.addEventListener('pointerdown', (e) => {
   if (currentTool !== 'select' || isSpacePressed || isPanModeActive || e.button !== 0) return;
+  if (e.pointerType === 'touch' && !e.isPrimary) return; // segundo dedo: es para mover el lienzo
   const t = e.target;
   if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle')) return;
   if (t.closest('button, input, select, textarea, a, label')) return;
@@ -3446,11 +3483,8 @@ viewportArea.addEventListener('pointerdown', (e) => {
 
   if (t.closest('.board-empty')) return;
   if (!e.shiftKey) focusBoard(null);
-  // Con el dedo en un espacio vacío se mueve el lienzo (como antes)
-  if (e.pointerType === 'touch') {
-    if (selection.size) setSelection([]);
-    return;
-  }
+  // Con el dedo en un espacio vacío también se selecciona con un recuadro
+  // (el lienzo se mueve con dos dedos)
   e.preventDefault();
   e.stopPropagation();
   startMarquee(e, e.shiftKey);
@@ -3943,6 +3977,32 @@ function openCanvasMenu(clientX, clientY, target) {
 function closeCanvasMenu() {
   canvasMenu.hidden = true;
 }
+
+// En el celular, doble toque abre el menú contextual (equivale al clic derecho)
+let tapStart = null;
+let lastTap = null;
+let lastPointerType = 'mouse';
+viewportArea.addEventListener('pointerdown', (e) => {
+  lastPointerType = e.pointerType;
+  if (e.pointerType !== 'touch') return;
+  tapStart = e.isPrimary ? { x: e.clientX, y: e.clientY, time: Date.now(), target: e.target } : null;
+  if (!e.isPrimary) lastTap = null; // dos dedos no cuentan como toque
+}, true);
+viewportArea.addEventListener('pointerup', (e) => {
+  if (e.pointerType !== 'touch' || !tapStart || !e.isPrimary) return;
+  const start = tapStart;
+  tapStart = null;
+  const isTap = Math.hypot(e.clientX - start.x, e.clientY - start.y) < 12 && Date.now() - start.time < 350;
+  if (!isTap || !['select', 'hand'].includes(currentTool)) { lastTap = null; return; }
+  if (start.target.closest('.toolbox, .zoom-hud, .mobile-fab, .kanban-card, button, input, select, textarea, a, label')) { lastTap = null; return; }
+  const now = Date.now();
+  if (lastTap && now - lastTap.time < 400 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
+    lastTap = null;
+    openCanvasMenu(e.clientX, e.clientY, start.target);
+    return;
+  }
+  lastTap = { x: e.clientX, y: e.clientY, time: now };
+}, true);
 
 canvasMenu.addEventListener('contextmenu', (e) => e.preventDefault());
 canvasMenu.addEventListener('click', async (e) => {
@@ -4622,7 +4682,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '30';
+const APP_VERSION = '31';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
