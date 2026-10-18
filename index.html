@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=28">
+  <link rel="stylesheet" href="styles.css?v=29">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -42,7 +42,10 @@
             <h1 class="brand-title">Zen<span>Ban</span></h1>
             <span class="brand-tag">Todo Kanban Pro</span>
           </div>
-          <div class="brand-version" id="brandVersion" hidden></div>
+          <div class="brand-version" id="brandVersion" hidden>
+            <span id="brandVersionText"></span>
+            <button type="button" class="brand-settings-btn" id="openSettingsBtn">⚙️ Configuración</button>
+          </div>
         </div>
 
         <!-- Project Switcher -->
@@ -721,6 +724,36 @@
       </div>
     </div>
 
+    <!-- Modal: configuración (se abre desde el logo) -->
+    <div class="modal-backdrop" id="settingsModal" style="display: none;">
+      <div class="modal-card modal-sm">
+        <div class="modal-header">
+          <h2>⚙️ Configuración</h2>
+          <button class="modal-close-btn" id="closeSettingsBtn" aria-label="Cerrar">&times;</button>
+        </div>
+        <form id="settingsForm">
+          <div class="form-group">
+            <label for="settingZoomMin">Zoom mínimo</label>
+            <select id="settingZoomMin">
+              <option value="0.1">10%</option>
+              <option value="0.2">20%</option>
+              <option value="0.25">25%</option>
+              <option value="0.35">35%</option>
+              <option value="0.5">50% (recomendado)</option>
+              <option value="0.75">75%</option>
+              <option value="1">100%</option>
+            </select>
+            <p class="setup-text">Hasta dónde puedes alejar el lienzo. Se guarda en este dispositivo.</p>
+          </div>
+          <div class="modal-actions">
+            <div class="spacer"></div>
+            <button type="button" id="cancelSettingsBtn" class="btn btn-ghost">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Toast Notification Banner -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -728,7 +761,7 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=31"></script>
+  <script src="app.js?v=32"></script>
   <script src="share.js?v=3"></script>
 </body>
 </html>

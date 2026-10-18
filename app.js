@@ -307,8 +307,13 @@ const btnZoomReset = document.getElementById('btnZoomReset');
 const btnZoomFit = document.getElementById('btnZoomFit');
 const btnPanMode = document.getElementById('btnPanMode');
 
+// Configuración de este dispositivo (ventana ⚙️ que se abre desde el logo)
+const SETTINGS_KEY = 'zenban_settings_v1';
+const DEFAULT_SETTINGS = { zoomMin: 0.5 };
+let appSettings = { ...DEFAULT_SETTINGS, ...loadData(SETTINGS_KEY, {}) };
+
 const ZOOM_CONFIG = {
-  MIN: 0.35,
+  MIN: appSettings.zoomMin,
   MAX: 2.2,
   STEP: 0.15,
   WHEEL_FACTOR: 0.0012
@@ -4682,12 +4687,12 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '31';
+const APP_VERSION = '32';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
 async function renderAppVersion() {
-  const boxes = ['appVersion', 'brandVersion'].map(id => document.getElementById(id)).filter(Boolean);
+  const boxes = ['appVersion', 'brandVersionText'].map(id => document.getElementById(id)).filter(Boolean);
   boxes.forEach(box => { box.textContent = `ZenBan v${APP_VERSION}`; });
   // El commit se pregunta a GitHub (último publicado en main) y se guarda unos minutos
   let commit = null;
@@ -4719,6 +4724,39 @@ document.querySelector('.brand').addEventListener('click', (e) => {
 });
 document.addEventListener('click', (e) => {
   if (!brandVersion.hidden && !e.target.closest('.brand')) brandVersion.hidden = true;
+});
+
+// ----- Ventana de configuración -----
+const settingsModal = document.getElementById('settingsModal');
+const settingZoomMin = document.getElementById('settingZoomMin');
+
+function openSettings() {
+  brandVersion.hidden = true;
+  const value = String(appSettings.zoomMin);
+  // Si el valor guardado no está en la lista, se agrega para no perderlo
+  if (![...settingZoomMin.options].some(o => o.value === value)) {
+    settingZoomMin.add(new Option(`${Math.round(appSettings.zoomMin * 100)}%`, value));
+  }
+  settingZoomMin.value = value;
+  settingsModal.style.display = 'flex';
+}
+
+function closeSettings() {
+  settingsModal.style.display = 'none';
+}
+
+document.getElementById('openSettingsBtn').addEventListener('click', openSettings);
+document.getElementById('closeSettingsBtn').addEventListener('click', closeSettings);
+document.getElementById('cancelSettingsBtn').addEventListener('click', closeSettings);
+document.getElementById('settingsForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  appSettings.zoomMin = Number(settingZoomMin.value) || DEFAULT_SETTINGS.zoomMin;
+  saveData(SETTINGS_KEY, appSettings);
+  ZOOM_CONFIG.MIN = appSettings.zoomMin;
+  // Si ahora la vista está más alejada que el nuevo mínimo, se acerca hasta el mínimo
+  if (zoom < ZOOM_CONFIG.MIN) zoomAtCenter(ZOOM_CONFIG.MIN / zoom);
+  closeSettings();
+  showToast(`Zoom mínimo: ${Math.round(appSettings.zoomMin * 100)}%`, 'success');
 });
 
 // ----- Ventana de configuración (ID de cliente) -----

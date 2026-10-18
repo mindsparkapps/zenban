@@ -172,6 +172,24 @@ h1, h2, h3, h4, .brand-title {
   text-decoration: none;
 }
 
+.brand-settings-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.brand-settings-btn:hover {
+  background: var(--bg-surface-hover);
+}
+
 .brand-icon {
   width: 36px;
   height: 36px;
@@ -3435,6 +3453,7 @@ select option:checked {
   color: var(--accent-danger);
 }
 
+#settingsForm,
 #googleSetupForm {
   padding: 1.5rem;
   display: flex;
