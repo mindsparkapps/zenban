@@ -650,7 +650,11 @@ const dragState = {
   offsetX: 0,
   offsetY: 0,
   isPointerDown: false,
-  touchTimer: null
+  touchTimer: null,
+  lastX: 0,
+  lastY: 0,
+  scrollContainer: null, // columna bajo la tarjeta, para desplazarla sola cerca de sus bordes
+  autoScrollRaf: null
 };
 
 const CARD_LONG_PRESS_MS = 350; // tiempo que hay que mantener el dedo para tomar una tarjeta
@@ -699,8 +703,47 @@ function startCardDrag(cardEl, clientX, clientY) {
   if (navigator.vibrate) navigator.vibrate(35);
 }
 
+// Mientras se arrastra una tarjeta, la columna se desplaza sola si la tarjeta se acerca a su borde
+// de arriba o de abajo (más rápido mientras más cerca), para poder ordenarla en columnas largas
+const CARD_AUTOSCROLL_EDGE = 70;  // px de pantalla desde el borde donde empieza a desplazarse
+const CARD_AUTOSCROLL_MAX = 18;   // px de pantalla por cuadro, con la tarjeta en el borde mismo
+
+function startCardAutoScroll() {
+  if (!dragState.autoScrollRaf) dragState.autoScrollRaf = requestAnimationFrame(cardAutoScrollStep);
+}
+
+function stopCardAutoScroll() {
+  if (dragState.autoScrollRaf) cancelAnimationFrame(dragState.autoScrollRaf);
+  dragState.autoScrollRaf = null;
+  dragState.scrollContainer = null;
+}
+
+function cardAutoScrollStep() {
+  if (!dragState.active) { dragState.autoScrollRaf = null; return; }
+  const box = dragState.scrollContainer;
+  if (box && box.scrollHeight > box.clientHeight) {
+    const r = box.getBoundingClientRect();
+    const edge = Math.min(CARD_AUTOSCROLL_EDGE, r.height / 3);
+    const y = dragState.lastY;
+    let speed = 0;
+    if (y < r.top + edge) speed = -Math.min(1, (r.top + edge - y) / edge);
+    else if (y > r.bottom - edge) speed = Math.min(1, (y - (r.bottom - edge)) / edge);
+    if (speed) {
+      const scale = (r.height / box.offsetHeight) || 1; // zoom del lienzo
+      const before = box.scrollTop;
+      box.scrollTop += (speed * CARD_AUTOSCROLL_MAX) / scale;
+      // El contenido se movió bajo el dedo: se recalcula dónde caería la tarjeta
+      if (box.scrollTop !== before) updateCardDrag(dragState.lastX, dragState.lastY);
+    }
+  }
+  dragState.autoScrollRaf = requestAnimationFrame(cardAutoScrollStep);
+}
+
 function updateCardDrag(clientX, clientY) {
   if (!dragState.active || !dragState.ghostElement) return;
+  dragState.lastX = clientX;
+  dragState.lastY = clientY;
+  startCardAutoScroll();
 
   // Move ghost
   dragState.ghostElement.style.left = `${clientX - dragState.offsetX}px`;
@@ -712,9 +755,10 @@ function updateCardDrag(clientX, clientY) {
   const elemBelow = document.elementFromPoint(clientX, clientY);
   dragState.ghostElement.style.display = '';
 
-  if (!elemBelow) return;
+  if (!elemBelow) { dragState.scrollContainer = null; return; }
 
   const targetColumn = elemBelow.closest('.kanban-column');
+  dragState.scrollContainer = targetColumn ? targetColumn.querySelector('.column-cards') : null;
   if (targetColumn) {
     const targetColId = targetColumn.dataset.columnId;
     const cardsContainer = targetColumn.querySelector('.column-cards');
@@ -749,6 +793,7 @@ function updateCardDrag(clientX, clientY) {
 
 function finishCardDrag() {
   if (!dragState.active) return;
+  stopCardAutoScroll();
 
   const { cardId, sourceColId, targetColId, placeholder, cardElement, ghostElement } = dragState;
 
@@ -1480,7 +1525,10 @@ window.openTaskModal = function(taskId = null, defaultColId = null, event = null
   setTagPanelOpen(false);
   renderTagPicker();
   taskModal.style.display = 'flex';
-  setTimeout(() => taskTitleInput.focus(), 60);
+  // En el celular, al abrir una tarea existente no se enfoca el título: abriría el teclado y taparía la tarea.
+  // Solo al crear una tarea nueva se enfoca para escribir de inmediato.
+  const isTouchScreen = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+  if (!(taskIdInput.value && isTouchScreen)) setTimeout(() => taskTitleInput.focus(), 60);
 };
 
 function closeTaskModal() {
@@ -4767,7 +4815,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '40';
+const APP_VERSION = '41';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
