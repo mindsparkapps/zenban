@@ -965,7 +965,25 @@ function moveTask(taskId, sourceColId, targetColId, targetIndex) {
 // 5. Board Rendering & UI Generation
 // =============================================================================
 
+// Redibuja el tablero conservando el scroll de cada columna (por ejemplo, al soltar una tarea
+// en una columna larga, la columna queda donde estaba en vez de volver al principio)
 function renderBoard() {
+  const projectId = activeProjectId;
+  const scrolls = new Map();
+  kanbanBoard.querySelectorAll('.kanban-column').forEach(col => {
+    const box = col.querySelector('.column-cards');
+    if (box && box.scrollTop) scrolls.set(col.dataset.columnId, box.scrollTop);
+  });
+  renderBoardContent();
+  if (!scrolls.size || projectId !== activeProjectId) return;
+  kanbanBoard.querySelectorAll('.kanban-column').forEach(col => {
+    const box = col.querySelector('.column-cards');
+    const top = scrolls.get(col.dataset.columnId);
+    if (box && top) box.scrollTop = top;
+  });
+}
+
+function renderBoardContent() {
   kanbanBoard.innerHTML = '';
   refreshTagFilterOptions();
   ensureBoards();
@@ -4815,7 +4833,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '41';
+const APP_VERSION = '42';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
