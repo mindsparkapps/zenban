@@ -288,6 +288,7 @@ function undoLastChange() {
   renderProjectSwitcher();
   renderBoard();
   renderBgImages();
+  renderTexts();
   renderDrawings();
   showToast('Cambio deshecho', 'info');
 }
@@ -535,7 +536,7 @@ viewportArea.addEventListener('touchstart', (e) => {
     const isInput = e.target.closest('button, input, select, textarea');
     const isCardsCol = e.target.closest('.column-cards');
 
-    const isBgImage = e.target.closest('.bg-image');
+    const isBgImage = e.target.closest('.bg-image, .canvas-text');
     if (isPanModeActive || (!isCard && !isInput && !isCardsCol && !isBgImage)) {
       isTouchPanning = true;
       touchStartX = e.touches[0].clientX;
@@ -1778,6 +1779,7 @@ function switchProject(projectId) {
   renderProjectSwitcher();
   renderBoard();
   renderBgImages();
+  renderTexts();
   undoStack.length = 0;
   renderDrawings();
   resetHistory();
@@ -2392,6 +2394,10 @@ document.addEventListener('paste', (e) => {
   if (imageItem) {
     e.preventDefault();
     addBgImageFromFile(imageItem.getAsFile());
+  } else if (text && text !== CANVAS_CLIPBOARD_MARK && text.trim()) {
+    // Texto copiado en otra app: se agrega como texto del lienzo donde está el puntero
+    e.preventDefault();
+    addText(text);
   } else if (canvasClipboard && !text) {
     e.preventDefault();
     pasteClipboard();
@@ -2438,6 +2444,7 @@ function setTool(tool) {
   viewportArea.classList.toggle('pan-mode', isPanModeActive);
   viewportArea.classList.toggle('tool-pen', tool === 'pen');
   viewportArea.classList.toggle('tool-eraser', tool === 'eraser');
+  viewportArea.classList.toggle('tool-text', tool === 'text');
   penOptions.hidden = tool !== 'pen';
 
   if (isDrawingTool() && selection.size) setSelection([]);
@@ -2657,7 +2664,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const map = { v: 'select', p: 'pen', e: 'eraser', h: 'hand' };
+  const map = { v: 'select', p: 'pen', e: 'eraser', h: 'hand', t: 'text' };
   const tool = map[e.key.toLowerCase()];
   if (tool) setTool(tool);
 });
@@ -2774,7 +2781,7 @@ boardForm.addEventListener('submit', (e) => {
     showToast('Tablero actualizado', 'info');
   } else {
     // Se crea a la derecha de todo el contenido, sin encimarse con otros tableros
-    const hasContent = boards.length > 0 || getBgImages().length > 0 || getDrawings().length > 0;
+    const hasContent = boards.length > 0 || getBgImages().length > 0 || getDrawings().length > 0 || getTexts().length > 0;
     const bounds = getContentBounds();
     const board = {
       id: generateId('board'),
@@ -2838,6 +2845,10 @@ function getContentBounds() {
     extend(b.x, b.y, el ? el.offsetWidth : 600, el ? el.offsetHeight : 300);
   });
   getBgImages().forEach(i => extend(i.x, i.y, i.w, i.h));
+  getTexts().forEach(t => {
+    const el = getTextEl(t.id);
+    extend(t.x, t.y, el ? el.offsetWidth : t.w, el ? el.offsetHeight : t.size * 1.3);
+  });
   getDrawings().forEach(s => s.points.forEach(([x, y]) => extend(x, y, 0, 0)));
   if (minX === Infinity) return { minX: 0, minY: 0, maxX: 500, maxY: 300 };
   return { minX, minY, maxX, maxY };
@@ -2862,6 +2873,12 @@ function applySelectionVisuals() {
     const sel = selection.has(`img:${el.dataset.imageId}`);
     el.classList.toggle('is-selected', sel);
     el.classList.toggle('is-solo', sel && solo);
+  });
+  const textSolo = selection.size === 1 && [...selection][0].startsWith('text:');
+  textLayer.querySelectorAll('.canvas-text').forEach(el => {
+    const sel = selection.has(`text:${el.dataset.textId}`);
+    el.classList.toggle('is-selected', sel);
+    el.classList.toggle('is-solo', sel && textSolo);
   });
   updateContextBar();
 }
@@ -2902,6 +2919,7 @@ function startGroupDrag(e) {
   const brds = boards.filter(b => selection.has(`board:${b.id}`)).map(b => ({ b, el: getBoardEl(b.id), x: b.x, y: b.y }));
   const strokes = getDrawings().filter(s => selection.has(`stroke:${s.id}`)).map(s => ({ s, el: drawLayer.querySelector(`[data-stroke-id="${s.id}"]`) }));
   const imgs = getBgImages().filter(i => selection.has(`img:${i.id}`)).map(i => ({ i, el: bgImageLayer.querySelector(`.bg-image[data-image-id="${i.id}"]`), x: i.x, y: i.y }));
+  const txts = getTexts().filter(t => selection.has(`text:${t.id}`)).map(t => ({ t, el: getTextEl(t.id), x: t.x, y: t.y }));
   const singleImg = selection.size === 1 && imgs.length === 1 ? imgs[0] : null;
   let moved = false, dx = 0, dy = 0, targetCard = null;
 
@@ -2925,6 +2943,11 @@ function startGroupDrag(e) {
       o.i.x = Math.round(o.x + dx);
       o.i.y = Math.round(o.y + dy);
       if (o.el) { o.el.style.left = `${o.i.x}px`; o.el.style.top = `${o.i.y}px`; }
+    });
+    txts.forEach(o => {
+      o.t.x = Math.round(o.x + dx);
+      o.t.y = Math.round(o.y + dy);
+      if (o.el) { o.el.style.left = `${o.t.x}px`; o.el.style.top = `${o.t.y}px`; }
     });
     if (singleImg) {
       targetCard = document.elementsFromPoint(ev.clientX, ev.clientY).find(n => n.classList && n.classList.contains('kanban-card')) || null;
@@ -3057,6 +3080,10 @@ function itemsInRect(x1, y1, x2, y2) {
     if (el && overlaps(b.x, b.y, el.offsetWidth, el.offsetHeight)) keys.push(`board:${b.id}`);
   });
   getBgImages().forEach(i => { if (overlaps(i.x, i.y, i.w, i.h)) keys.push(`img:${i.id}`); });
+  getTexts().forEach(t => {
+    const el = getTextEl(t.id);
+    if (el && overlaps(t.x, t.y, el.offsetWidth, el.offsetHeight)) keys.push(`text:${t.id}`);
+  });
   getDrawings().forEach(s => {
     if (s.points.some(([x, y]) => x >= x1 && x <= x2 && y >= y1 && y <= y2)) keys.push(`stroke:${s.id}`);
   });
@@ -3103,17 +3130,279 @@ function startMarquee(e, additive) {
   viewportArea.addEventListener('pointercancel', onUp);
 }
 
+// ----- Textos libres del lienzo -----
+// Cada texto: { id, x, y, w (ancho máximo), size (tamaño de letra), color (null = el del tema), text }
+const textLayer = document.getElementById('textLayer');
+const ctxTextColor = document.getElementById('ctxTextColor');
+let editingTextId = null;
+let lastViewportPointer = null; // último punto del puntero sobre el lienzo (para pegar ahí)
+
+function getTexts() {
+  const project = getActiveProject();
+  if (!project.texts) project.texts = [];
+  return project.texts;
+}
+
+function selectedTexts() {
+  return getTexts().filter(t => selection.has(`text:${t.id}`));
+}
+
+function getTextEl(id) {
+  return textLayer.querySelector(`.canvas-text[data-text-id="${id}"]`);
+}
+
+function applyTextStyle(el, t) {
+  el.style.left = `${t.x}px`;
+  el.style.top = `${t.y}px`;
+  el.style.width = 'max-content';
+  el.style.maxWidth = `${t.w}px`;
+  el.style.fontSize = `${t.size}px`;
+  el.style.color = t.color || '';
+}
+
+// Crea un texto en un punto del lienzo (o al centro de la vista). Sin contenido, se abre para escribir.
+function addText(content = '', at = null) {
+  if (!at) {
+    if (lastViewportPointer) {
+      at = screenToCanvas(lastViewportPointer.x, lastViewportPointer.y);
+    } else {
+      const rect = viewportArea.getBoundingClientRect();
+      at = screenToCanvas(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    }
+  }
+  const t = {
+    id: generateId('text'),
+    x: Math.round(at.x),
+    y: Math.round(at.y),
+    w: Math.round(480 / zoom),
+    size: Math.max(4, Math.round(22 / zoom)),
+    color: null,
+    text: content.replace(/\r\n/g, '\n').replace(/\s+$/, '')
+  };
+  getTexts().push(t);
+  if (currentTool === 'text') setTool('select');
+  if (t.text) {
+    selection = new Set([`text:${t.id}`]);
+    persist();
+    renderTexts();
+    showToast('Texto agregado. Arrástralo para moverlo y usa la esquina para cambiar su tamaño.', 'success');
+  } else {
+    renderTexts();
+    editText(t.id);
+  }
+  return t;
+}
+
+// Guarda lo escrito en el texto que se está editando (sin redibujar)
+function commitEditingText() {
+  const id = editingTextId;
+  if (!id) return;
+  editingTextId = null;
+  const t = getTexts().find(x => x.id === id);
+  const el = getTextEl(id);
+  const ta = el && el.querySelector('textarea');
+  if (t && ta) t.text = ta.value.replace(/\s+$/, '');
+  if (t && !t.text.trim()) {
+    getActiveProject().texts = getTexts().filter(x => x.id !== id);
+    selection.delete(`text:${id}`);
+  }
+}
+
+function finishTextEdit() {
+  if (!editingTextId) return;
+  commitEditingText();
+  persist();
+  renderTexts();
+}
+
+function editText(id) {
+  if (editingTextId && editingTextId !== id) finishTextEdit();
+  const t = getTexts().find(x => x.id === id);
+  const el = getTextEl(id);
+  if (!t || !el) return;
+  setSelection([`text:${id}`]);
+  editingTextId = id;
+  el.classList.add('is-editing');
+  el.style.width = `${t.w}px`;
+  el.textContent = '';
+  const ta = document.createElement('textarea');
+  ta.value = t.text;
+  ta.rows = 1;
+  ta.placeholder = 'Escribe aquí…';
+  el.appendChild(ta);
+  const fit = () => {
+    ta.style.height = 'auto';
+    ta.style.height = `${ta.scrollHeight}px`;
+  };
+  ta.addEventListener('input', fit);
+  ta.addEventListener('keydown', (e) => {
+    // Esc o Ctrl+Enter terminan la edición
+    if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+      e.preventDefault();
+      e.stopPropagation(); // que Esc no quite además la selección del lienzo
+      ta.blur();
+    }
+  });
+  ta.addEventListener('blur', () => { if (editingTextId === id) finishTextEdit(); });
+  fit();
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+function renderTexts() {
+  if (editingTextId) commitEditingText();
+  textLayer.innerHTML = '';
+  getTexts().forEach(t => {
+    const el = document.createElement('div');
+    el.className = 'canvas-text';
+    el.dataset.textId = t.id;
+    applyTextStyle(el, t);
+    el.textContent = t.text;
+    const handle = document.createElement('div');
+    handle.className = 'canvas-text-handle';
+    handle.title = 'Arrastra para agrandar o achicar';
+    handle.addEventListener('pointerdown', (e) => startTextResize(e, t, el));
+    el.appendChild(handle);
+    textLayer.appendChild(el);
+  });
+  applySelectionVisuals();
+}
+
+// Agrandar o achicar arrastrando la esquina: escala la letra y el ancho juntos
+function startTextResize(e, t, el) {
+  if (isPanModeActive || isSpacePressed || e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  setSelection([`text:${t.id}`]);
+  const startX = e.clientX;
+  const startWidth = el.offsetWidth;
+  const orig = { w: t.w, size: t.size };
+  el.setPointerCapture(e.pointerId);
+  const onMove = (ev) => {
+    const factor = Math.max(0.1, (startWidth + (ev.clientX - startX) / zoom) / startWidth);
+    t.size = Math.max(4, +(orig.size * factor).toFixed(1));
+    t.w = Math.max(40, Math.round(orig.w * factor));
+    applyTextStyle(el, t);
+  };
+  const onUp = () => {
+    el.removeEventListener('pointermove', onMove);
+    el.removeEventListener('pointerup', onUp);
+    el.removeEventListener('pointercancel', onUp);
+    persist();
+  };
+  el.addEventListener('pointermove', onMove);
+  el.addEventListener('pointerup', onUp);
+  el.addEventListener('pointercancel', onUp);
+}
+
+function scaleSelectedTexts(factor) {
+  selectedTexts().forEach(t => {
+    t.size = Math.max(4, +(t.size * factor).toFixed(1));
+    t.w = Math.max(40, Math.round(t.w * factor));
+    const el = getTextEl(t.id);
+    if (el) applyTextStyle(el, t);
+  });
+  persist();
+}
+
+function rgbToHex(rgb) {
+  const m = String(rgb).match(/\d+/g);
+  if (!m || m.length < 3) return '#f8fafc';
+  return '#' + m.slice(0, 3).map(n => Number(n).toString(16).padStart(2, '0')).join('');
+}
+
+// Herramienta Texto: tocar el lienzo crea un texto ahí (o edita el que se toque)
+viewportArea.addEventListener('pointerdown', (e) => {
+  if (currentTool !== 'text' || isSpacePressed || e.button !== 0) return;
+  const t = e.target;
+  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, button, input, select, textarea, a, label')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const existing = t.closest('.canvas-text');
+  if (existing) {
+    setTool('select');
+    editText(existing.dataset.textId);
+    return;
+  }
+  addText('', screenToCanvas(e.clientX, e.clientY));
+}, true);
+
+// Doble clic: sobre un texto lo edita; en un espacio vacío crea uno nuevo
+viewportArea.addEventListener('dblclick', (e) => {
+  if (currentTool !== 'select' || isPanModeActive) return;
+  const under = document.elementsFromPoint(e.clientX, e.clientY);
+  const textEl = under.find(n => n.classList && n.classList.contains('canvas-text'));
+  if (textEl) {
+    e.preventDefault();
+    editText(textEl.dataset.textId);
+    return;
+  }
+  if (under.some(n => n.closest && n.closest('.board-frame, .bg-image, .toolbox, .zoom-hud, .mobile-fab, button, input, select, textarea'))) return;
+  if (hitStroke(e.clientX, e.clientY)) return;
+  e.preventDefault();
+  addText('', screenToCanvas(e.clientX, e.clientY));
+});
+
+// Tocar fuera del texto que se está escribiendo termina la edición
+// (el lienzo evita el cambio de foco normal, así que no basta con el blur)
+window.addEventListener('pointerdown', (e) => {
+  if (editingTextId && !e.target.closest('.canvas-text.is-editing')) finishTextEdit();
+}, true);
+
+viewportArea.addEventListener('pointermove', (e) => {
+  lastViewportPointer = { x: e.clientX, y: e.clientY };
+}, { passive: true });
+viewportArea.addEventListener('pointerleave', () => { lastViewportPointer = null; });
+
+// Arrastrar texto (de otra app o página) y soltarlo en el lienzo
+viewportArea.addEventListener('dragover', (e) => {
+  const types = Array.from((e.dataTransfer && e.dataTransfer.types) || []);
+  if (types.includes('Files') || !types.includes('text/plain')) return;
+  if (e.target.closest('.kanban-card, input, textarea')) return;
+  e.preventDefault();
+  viewportArea.classList.add('is-drop-target');
+});
+viewportArea.addEventListener('drop', (e) => {
+  const dt = e.dataTransfer;
+  if (!dt || Array.from(dt.types).includes('Files')) return;
+  if (e.target.closest('.kanban-card, input, textarea')) return;
+  const text = dt.getData('text/plain');
+  viewportArea.classList.remove('is-drop-target');
+  if (!text || !text.trim()) return;
+  e.preventDefault();
+  addText(text, screenToCanvas(e.clientX, e.clientY));
+});
+
+document.getElementById('ctxAddText').addEventListener('click', () => addText(''));
+document.getElementById('ctxTextEdit').addEventListener('click', () => {
+  const first = selectedTexts()[0];
+  if (first) editText(first.id);
+});
+document.getElementById('ctxTextBigger').addEventListener('click', () => scaleSelectedTexts(1.2));
+document.getElementById('ctxTextSmaller').addEventListener('click', () => scaleSelectedTexts(1 / 1.2));
+ctxTextColor.addEventListener('input', () => {
+  selectedTexts().forEach(t => {
+    t.color = ctxTextColor.value;
+    const el = getTextEl(t.id);
+    if (el) el.style.color = t.color;
+  });
+  ctxDot.style.background = ctxTextColor.value;
+});
+ctxTextColor.addEventListener('change', () => persist());
+
 // Herramienta Seleccionar (botón izquierdo): decide qué se toma con cada clic
 viewportArea.addEventListener('pointerdown', (e) => {
   if (currentTool !== 'select' || isSpacePressed || isPanModeActive || e.button !== 0) return;
   const t = e.target;
-  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar')) return;
+  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle')) return;
   if (t.closest('button, input, select, textarea, a, label')) return;
 
   let key = null;
   const strokeId = hitStroke(e.clientX, e.clientY);
   if (strokeId) {
     key = `stroke:${strokeId}`;
+  } else if (t.closest('.canvas-text')) {
+    key = `text:${t.closest('.canvas-text').dataset.textId}`;
   } else if (t.closest('.kanban-card')) {
     // Las tarjetas mantienen su propio arrastre entre columnas
     focusBoard(t.closest('.board-frame'));
@@ -3203,6 +3492,7 @@ function getContext() {
   if (keys.length === 1 && types.has('board')) return { type: 'board', boardId: keys[0].slice(6) };
   if (types.size === 1 && types.has('img')) return { type: 'image', count: keys.length };
   if (types.size === 1 && types.has('stroke')) return { type: 'stroke', count: keys.length };
+  if (types.size === 1 && types.has('text')) return { type: 'text', count: keys.length };
   return { type: 'multi', count: keys.length };
 }
 
@@ -3236,7 +3526,8 @@ function updateContextBar() {
   show('board', ctx.type === 'board');
   show('image', ctx.type === 'image');
   show('stroke', ctx.type === 'stroke');
-  show('common', ['image', 'stroke', 'multi'].includes(ctx.type));
+  show('text', ctx.type === 'text');
+  show('common', ['image', 'stroke', 'text', 'multi'].includes(ctx.type));
   contextBar.dataset.ctx = ctx.type;
 
   const pasteEnabled = !!canvasClipboard;
@@ -3272,6 +3563,13 @@ function updateContextBar() {
       const screenSize = first.size * zoom;
       ctxStrokeSize.value = String([2, 4, 8, 14].reduce((best, v) => Math.abs(v - screenSize) < Math.abs(best - screenSize) ? v : best, 4));
     }
+  } else if (ctx.type === 'text') {
+    ctxTitle.textContent = ctx.count === 1 ? 'Texto' : `${ctx.count} textos`;
+    const first = selectedTexts()[0];
+    const el = first && getTextEl(first.id);
+    const color = first && first.color ? first.color : (el ? rgbToHex(getComputedStyle(el).color) : '#f8fafc');
+    ctxTextColor.value = color;
+    ctxDot.style.background = color;
   } else {
     ctxTitle.textContent = `${ctx.count} elementos`;
     ctxDot.style.background = '#a855f7';
@@ -3282,7 +3580,7 @@ function updateContextBar() {
 
 // Copia profunda de lo seleccionado (tableros con columnas y tareas, trazos, imágenes)
 function collectSelection() {
-  const data = { boards: [], columns: [], tasks: [], strokes: [], images: [] };
+  const data = { boards: [], columns: [], tasks: [], strokes: [], images: [], texts: [] };
   boards.filter(b => selection.has(`board:${b.id}`)).forEach(b => {
     data.boards.push(deepClone(b));
     const cols = columns.filter(c => c.boardId === b.id);
@@ -3291,11 +3589,12 @@ function collectSelection() {
   });
   data.strokes = deepClone(selectedStrokes());
   data.images = deepClone(selectedImages());
+  data.texts = deepClone(selectedTexts());
   return data;
 }
 
 function hasSelectionContent(data) {
-  return data.boards.length + data.strokes.length + data.images.length > 0;
+  return data.boards.length + data.strokes.length + data.images.length + (data.texts || []).length > 0;
 }
 
 async function copyImageBlob(oldId) {
@@ -3356,11 +3655,17 @@ async function pasteData(data, offset, offsetY = offset) {
     getBgImages().push(ni);
     newKeys.push(`img:${newId}`);
   }
+  (data.texts || []).forEach(t => {
+    const nt = { ...deepClone(t), id: generateId('text'), x: t.x + offset, y: t.y + offsetY };
+    getTexts().push(nt);
+    newKeys.push(`text:${nt.id}`);
+  });
   selection = new Set(newKeys);
   persist();
   renderBoard();
   renderDrawings();
   renderBgImages();
+  renderTexts();
   renderProjectSwitcher();
 }
 
@@ -3380,6 +3685,7 @@ function clipboardOrigin(data) {
   let minX = Infinity, minY = Infinity;
   data.boards.forEach(b => { minX = Math.min(minX, b.x); minY = Math.min(minY, b.y); });
   data.images.forEach(i => { minX = Math.min(minX, i.x); minY = Math.min(minY, i.y); });
+  (data.texts || []).forEach(t => { minX = Math.min(minX, t.x); minY = Math.min(minY, t.y); });
   data.strokes.forEach(s => s.points.forEach(([x, y]) => { minX = Math.min(minX, x); minY = Math.min(minY, y); }));
   return minX === Infinity ? { x: 0, y: 0 } : { x: minX, y: minY };
 }
@@ -3411,6 +3717,7 @@ async function duplicateSelection() {
 function deleteSelection({ skipConfirm = false } = {}) {
   const strokeIds = selectedStrokes().map(s => s.id);
   const imageIds = selectedImages().map(i => i.id);
+  const textIds = selectedTexts().map(t => t.id);
   const boardIds = boards.filter(b => selection.has(`board:${b.id}`)).map(b => b.id);
 
   if (boardIds.length && !skipConfirm) {
@@ -3435,6 +3742,7 @@ function deleteSelection({ skipConfirm = false } = {}) {
     project.bgImages = getBgImages().filter(img => img.id !== id);
     if (!skipConfirm) ImageStore.del(id); // al cortar, la imagen sigue disponible para pegar
   });
+  if (textIds.length) getActiveProject().texts = getTexts().filter(t => !textIds.includes(t.id));
   if (boardIds.length) {
     const colIds = columns.filter(c => boardIds.includes(c.boardId)).map(c => c.id);
     if (!skipConfirm) tasks.filter(t => colIds.includes(t.columnId)).forEach(deleteTaskImages);
@@ -3449,6 +3757,7 @@ function deleteSelection({ skipConfirm = false } = {}) {
   renderBoard();
   renderDrawings();
   renderBgImages();
+  renderTexts();
   renderProjectSwitcher();
   return true;
 }
@@ -3562,6 +3871,11 @@ window.addEventListener('keydown', (e) => {
     setSelection([]);
     return;
   }
+  if (e.key === 'Enter' && selection.size === 1 && [...selection][0].startsWith('text:')) {
+    e.preventDefault();
+    editText([...selection][0].slice(5));
+    return;
+  }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
     deleteSelection();
@@ -3604,6 +3918,7 @@ function openCanvasMenu(clientX, clientY, target) {
     let key = null;
     const strokeId = hitStroke(clientX, clientY);
     if (strokeId) key = `stroke:${strokeId}`;
+    else if (target.closest('.canvas-text')) key = `text:${target.closest('.canvas-text').dataset.textId}`;
     else if (target.closest('.bg-image')) key = `img:${target.closest('.bg-image').dataset.imageId}`;
     else if (target.closest('.board-frame')) key = `board:${target.closest('.board-frame').dataset.boardId}`;
     if (key && !selection.has(key)) setSelection([key]);
@@ -3614,7 +3929,8 @@ function openCanvasMenu(clientX, clientY, target) {
   const hasSel = selection.size > 0;
   canvasMenu.querySelector('[data-cmd="copy"]').disabled = !hasSel;
   canvasMenu.querySelector('[data-cmd="cut"]').disabled = !hasSel;
-  canvasMenu.querySelector('[data-cmd="paste"]').disabled = !canvasClipboard;
+  // Pegar lee también el portapapeles del sistema (texto o imagen copiados en otra app)
+  canvasMenu.querySelector('[data-cmd="paste"]').disabled = !canvasClipboard && !(navigator.clipboard && navigator.clipboard.readText);
   canvasMenu.querySelector('[data-cmd="undo"]').disabled = historyStack.length === 0;
 
   canvasMenu.hidden = false;
@@ -3636,9 +3952,35 @@ canvasMenu.addEventListener('click', async (e) => {
   closeCanvasMenu();
   if (cmd === 'copy') copySelection();
   if (cmd === 'cut') cutSelection();
-  if (cmd === 'paste') await pasteClipboard(menuCanvasPoint);
+  if (cmd === 'paste') await pasteHere(menuCanvasPoint);
+  if (cmd === 'addText') addText('', menuCanvasPoint);
   if (cmd === 'undo') undoLastChange();
 });
+
+// Pegar desde el menú: texto o imagen copiados en otra app, o lo copiado en el lienzo
+async function pasteHere(point) {
+  let text = '';
+  try { text = await navigator.clipboard.readText(); } catch (e) {}
+  if (text && text !== CANVAS_CLIPBOARD_MARK && text.trim()) {
+    addText(text, point);
+    return;
+  }
+  if (canvasClipboard) {
+    await pasteClipboard(point);
+    return;
+  }
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find(t => t.startsWith('image/'));
+      if (type) {
+        const blob = await item.getType(type);
+        await addBgImageFromFile(new File([blob], 'pegada', { type }));
+        return;
+      }
+    }
+  } catch (e) {}
+  showToast('No hay nada para pegar', 'info');
+}
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !canvasMenu.hidden) closeCanvasMenu();
@@ -4118,6 +4460,7 @@ function applyPayload(data) {
     renderProjectSwitcher();
     renderBoard();
     renderBgImages();
+    renderTexts();
     renderDrawings();
     resetHistory();
   } finally {
@@ -4279,7 +4622,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '29';
+const APP_VERSION = '30';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -4482,6 +4825,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderProjectSwitcher();
   renderBoard();
   renderBgImages();
+  renderTexts();
   renderDrawings();
   applyTransform();
   resetHistory();

@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=26">
+  <link rel="stylesheet" href="styles.css?v=27">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -90,6 +90,7 @@
         <div class="ctx-panel" data-ctx="canvas">
           <button type="button" class="ctx-btn is-primary" id="ctxNewBoard" title="Crear un tablero nuevo en el lienzo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="8" x2="21" y2="8"></line><line x1="12" y1="12" x2="12" y2="18"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg><span>Nuevo tablero</span></button>
           <button type="button" class="ctx-btn " id="ctxAddImage" title="Agregar una imagen de fondo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>Imagen</span></button>
+          <button type="button" class="ctx-btn " id="ctxAddText" title="Agregar un texto (T)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg><span>Texto</span></button>
           <button type="button" class="ctx-btn " id="ctxPasteCanvas" title="Pegar lo copiado (Ctrl+V)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1"></rect></svg><span>Pegar</span></button>
           <button type="button" class="ctx-btn " id="ctxFit" title="Encuadrar todo el contenido"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg><span>Ajustar vista</span></button>
         </div>
@@ -141,6 +142,17 @@
         </div>
 
         <!-- Imagen(es) -->
+        <!-- Texto(s) -->
+        <div class="ctx-panel" data-ctx="text" hidden>
+          <button type="button" class="ctx-btn" id="ctxTextEdit" title="Editar el texto (doble clic)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg><span>Editar</span></button>
+          <button type="button" class="ctx-btn ctx-btn-glyph" id="ctxTextSmaller" title="Achicar" aria-label="Achicar"><b style="font-size:0.75em">A−</b></button>
+          <button type="button" class="ctx-btn ctx-btn-glyph" id="ctxTextBigger" title="Agrandar" aria-label="Agrandar"><b style="font-size:1.05em">A+</b></button>
+          <label class="ctx-color" title="Color del texto">
+            <span>Color</span>
+            <input type="color" id="ctxTextColor" value="#f8fafc">
+          </label>
+        </div>
+
         <div class="ctx-panel" data-ctx="image" hidden>
           <button type="button" class="ctx-btn " id="ctxImgBack" title="Enviar atrás"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 13 12 18 17 13"></polyline><line x1="12" y1="6" x2="12" y2="18"></line></svg><span>Atrás</span></button>
           <button type="button" class="ctx-btn " id="ctxImgFront" title="Traer adelante"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 11 12 6 7 11"></polyline><line x1="12" y1="18" x2="12" y2="6"></line></svg><span>Adelante</span></button>
@@ -237,6 +249,8 @@
           <!-- Columns will be rendered dynamically by JavaScript -->
         </div>
         <!-- Capa de dibujo (trazos vectoriales sobre el lienzo) -->
+        <!-- Capa de textos libres (se mueven y escalan con el lienzo) -->
+        <div class="text-layer" id="textLayer"></div>
         <svg class="draw-layer" id="drawLayer" xmlns="http://www.w3.org/2000/svg"></svg>
       </div>
 
@@ -251,6 +265,9 @@
           </button>
           <button type="button" class="tool-btn" data-tool="eraser" title="Borrador (E)" aria-label="Borrador">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H8l-5-5a2 2 0 0 1 0-2.8L12.2 3a2 2 0 0 1 2.8 0l6 6a2 2 0 0 1 0 2.8L13 20"></path><line x1="6" y1="11" x2="13" y2="18"></line></svg>
+          </button>
+          <button type="button" class="tool-btn" data-tool="text" title="Texto (T): toca el lienzo para escribir" aria-label="Texto">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
           </button>
           <button type="button" class="tool-btn" data-tool="hand" title="Mover lienzo (H)" aria-label="Mover lienzo">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"></path><path d="M14 10V4a2 2 0 0 0-4 0v7"></path><path d="M10 10.5V6a2 2 0 0 0-4 0v8"></path><path d="M18 11a2 2 0 0 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.4L2.4 16.6a2 2 0 0 1 2.8-2.8L7 15.5"></path></svg>
@@ -676,6 +693,7 @@
       <button type="button" data-cmd="copy" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span>Copiar</span><kbd>Ctrl+C</kbd></button>
       <button type="button" data-cmd="cut" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg><span>Cortar</span><kbd>Ctrl+X</kbd></button>
       <button type="button" data-cmd="paste" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1"></rect></svg><span>Pegar aquí</span><kbd>Ctrl+V</kbd></button>
+      <button type="button" data-cmd="addText" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg><span>Agregar texto aquí</span><kbd>T</kbd></button>
       <div class="canvas-menu-sep"></div>
       <button type="button" data-cmd="undo" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg><span>Deshacer</span><kbd>Ctrl+Z</kbd></button>
     </div>
@@ -710,7 +728,7 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=29"></script>
+  <script src="app.js?v=30"></script>
   <script src="share.js?v=3"></script>
 </body>
 </html>
