@@ -1806,11 +1806,6 @@ function switchProject(projectId) {
   columns = project.columns;
   tasks = project.tasks;
 
-  // Volver al inicio del tablero al cambiar de proyecto
-  panX = 0;
-  panY = 0;
-  applyTransform(true);
-
   selection = new Set();
   focusedBoardId = null;
   renderProjectSwitcher();
@@ -1820,6 +1815,9 @@ function switchProject(projectId) {
   undoStack.length = 0;
   renderDrawings();
   resetHistory();
+
+  // Al abrir el proyecto se ajusta todo su contenido a la pantalla (como el botón Ajustar)
+  fitBoardToScreen();
 }
 
 function openProjectMenu() {
@@ -4714,7 +4712,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '33';
+const APP_VERSION = '34';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -4955,6 +4953,8 @@ document.addEventListener('DOMContentLoaded', () => {
   applyTransform();
   resetHistory();
   ImageStore.gc();
+  // Al abrir la app, el proyecto se muestra ajustado a la pantalla
+  fitBoardToScreen();
 });
 
 // =============================================================================
