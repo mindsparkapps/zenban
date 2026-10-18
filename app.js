@@ -411,6 +411,39 @@ function fitBoardToScreen() {
   showToast(`Tablero ajustado (${Math.round(zoom * 100)}%)`, 'info');
 }
 
+// Acerca la vista hasta que un objeto (imagen, texto o tablero) llene la pantalla, centrado
+function fitRectToScreen(x, y, w, h) {
+  const vpRect = viewportArea.getBoundingClientRect();
+  const padding = 24;
+  const scaleX = (vpRect.width - padding * 2) / Math.max(1, w);
+  const scaleY = (vpRect.height - padding * 2) / Math.max(1, h);
+  zoom = Math.min(Math.max(Math.min(scaleX, scaleY), ZOOM_CONFIG.MIN), ZOOM_CONFIG.MAX);
+  // Si ni con el zoom mínimo cabe (p. ej. un tablero ancho en el celular), se muestra desde su esquina
+  panX = w * zoom > vpRect.width - padding * 2 ? padding - x * zoom : (vpRect.width - w * zoom) / 2 - x * zoom;
+  panY = h * zoom > vpRect.height - padding * 2 ? padding - y * zoom : (vpRect.height - h * zoom) / 2 - y * zoom;
+  applyTransform(true);
+}
+
+// Rectángulo (coordenadas del lienzo) del objeto bajo un elemento, si es imagen, texto o tablero
+function objectRectAt(target) {
+  const textEl = target.closest('.canvas-text');
+  if (textEl) {
+    const t = getTexts().find(x => x.id === textEl.dataset.textId);
+    if (t) return { x: t.x, y: t.y, w: textEl.offsetWidth, h: textEl.offsetHeight };
+  }
+  const imgEl = target.closest('.bg-image');
+  if (imgEl) {
+    const i = getBgImages().find(x => x.id === imgEl.dataset.imageId);
+    if (i) return { x: i.x, y: i.y, w: i.w, h: i.h };
+  }
+  const frame = target.closest('.board-frame');
+  if (frame) {
+    const b = boards.find(x => x.id === frame.dataset.boardId);
+    if (b) return { x: b.x, y: b.y, w: frame.offsetWidth, h: frame.offsetHeight };
+  }
+  return null;
+}
+
 // Toggle Pan Mode
 btnPanMode.addEventListener('click', () => {
   setTool(isPanModeActive ? 'select' : 'hand');
@@ -4008,7 +4041,8 @@ function closeCanvasMenu() {
   canvasMenu.hidden = true;
 }
 
-// En el celular, doble toque abre el menú contextual (equivale al clic derecho)
+// En el celular, doble toque sobre una imagen, un texto o un tablero acerca la vista a ese objeto;
+// en un espacio vacío abre el menú contextual (equivale al clic derecho)
 let tapStart = null;
 let lastTap = null;
 let lastPointerType = 'mouse';
@@ -4028,7 +4062,9 @@ viewportArea.addEventListener('pointerup', (e) => {
   const now = Date.now();
   if (lastTap && now - lastTap.time < 400 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
     lastTap = null;
-    openCanvasMenu(e.clientX, e.clientY, start.target);
+    const rect = objectRectAt(start.target);
+    if (rect) fitRectToScreen(rect.x, rect.y, rect.w, rect.h);
+    else openCanvasMenu(e.clientX, e.clientY, start.target);
     return;
   }
   lastTap = { x: e.clientX, y: e.clientY, time: now };
@@ -4712,7 +4748,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '34';
+const APP_VERSION = '35';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
