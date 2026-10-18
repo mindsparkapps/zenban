@@ -3425,10 +3425,10 @@ viewportArea.addEventListener('pointerdown', (e) => {
   addText('', screenToCanvas(e.clientX, e.clientY));
 }, true);
 
-// Doble clic: sobre un texto lo edita; en un espacio vacío crea uno nuevo
+// Doble clic: sobre un texto lo edita; sobre una imagen o un tablero acerca la vista; en un espacio vacío crea un texto
 viewportArea.addEventListener('dblclick', (e) => {
   if (currentTool !== 'select' || isPanModeActive) return;
-  if (lastPointerType === 'touch') return; // con el dedo, el doble toque abre el menú
+  if (lastPointerType === 'touch') return; // con el dedo, el doble toque lo maneja el gesto táctil
   const under = document.elementsFromPoint(e.clientX, e.clientY);
   const textEl = under.find(n => n.classList && n.classList.contains('canvas-text'));
   if (textEl) {
@@ -3436,7 +3436,15 @@ viewportArea.addEventListener('dblclick', (e) => {
     editText(textEl.dataset.textId);
     return;
   }
-  if (under.some(n => n.closest && n.closest('.board-frame, .bg-image, .toolbox, .zoom-hud, .mobile-fab, button, input, select, textarea'))) return;
+  const top = under[0];
+  if (!top || top.closest('.kanban-card, .toolbox, .zoom-hud, .mobile-fab, button, input, select, textarea')) return;
+  // Doble clic sobre una imagen o un tablero: acerca la vista a ese objeto (como el doble toque)
+  const rect = objectRectAt(top);
+  if (rect) {
+    e.preventDefault();
+    fitRectToScreen(rect.x, rect.y, rect.w, rect.h);
+    return;
+  }
   if (hitStroke(e.clientX, e.clientY)) return;
   e.preventDefault();
   addText('', screenToCanvas(e.clientX, e.clientY));
@@ -4748,7 +4756,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '35';
+const APP_VERSION = '36';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
