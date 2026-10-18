@@ -4274,6 +4274,36 @@ setInterval(() => {
   syncNow();
 }, 5000);
 
+// ----- Versión de la app (abajo a la derecha) -----
+// Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
+const APP_VERSION = '27';
+const APP_REPO = 'mindsparkapps/zenban';
+
+async function renderAppVersion() {
+  const box = document.getElementById('appVersion');
+  if (!box) return;
+  box.textContent = `ZenBan v${APP_VERSION}`;
+  // El commit se pregunta a GitHub (último publicado en main) y se guarda unos minutos
+  let commit = null;
+  try { commit = JSON.parse(sessionStorage.getItem('zenban_commit') || 'null'); } catch (e) {}
+  if (!commit || Date.now() - commit.at > 10 * 60 * 1000) {
+    try {
+      const r = await fetch(`https://api.github.com/repos/${APP_REPO}/commits/main`, { headers: { Accept: 'application/vnd.github+json' } });
+      if (!r.ok) return;
+      const j = await r.json();
+      commit = { sha: j.sha, url: j.html_url, at: Date.now() };
+      try { sessionStorage.setItem('zenban_commit', JSON.stringify(commit)); } catch (e) {}
+    } catch (e) { return; }
+  }
+  const a = document.createElement('a');
+  a.href = commit.url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.title = 'Último cambio publicado en GitHub';
+  a.textContent = commit.sha.slice(0, 7);
+  box.append(' · ', a);
+}
+
 // ----- Ventana de configuración (ID de cliente) -----
 const googleSetupModal = document.getElementById('googleSetupModal');
 
@@ -4300,6 +4330,7 @@ document.getElementById('googleSetupForm').addEventListener('submit', (e) => {
 });
 
 renderAccount();
+renderAppVersion();
 const redirectedToken = consumeRedirectToken();
 if (redirectedToken) onTokenResponse(redirectedToken);
 
