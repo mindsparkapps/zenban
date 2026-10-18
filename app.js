@@ -620,6 +620,8 @@ const dragState = {
   touchTimer: null
 };
 
+const CARD_LONG_PRESS_MS = 350; // tiempo que hay que mantener el dedo para tomar una tarjeta
+
 // Create a visual drop indicator
 function createPlaceholder(height = 64) {
   const ph = document.createElement('div');
@@ -753,6 +755,9 @@ function finishCardDrag() {
 kanbanBoard.addEventListener('pointerdown', (e) => {
   if (isPanModeActive || isSpacePressed) return;
 
+  // Con el dedo lo maneja el arrastre táctil (pulsación larga), más abajo
+  if (e.pointerType === 'touch') return;
+
   const card = e.target.closest('.kanban-card');
   const isInteractive = e.target.closest('button, input, select, textarea, .card-check-btn, .card-menu-btn');
 
@@ -795,26 +800,48 @@ kanbanBoard.addEventListener('touchstart', (e) => {
     const touch = e.touches[0];
     dragState.startX = touch.clientX;
     dragState.startY = touch.clientY;
+    let lastX = touch.clientX;
+    let lastY = touch.clientY;
+
+    // Con el dedo, la tarjeta se toma manteniéndola presionada; deslizar sin esperar hace scroll en la columna
+    card.classList.add('is-pressing');
+    let pressTimer = setTimeout(() => {
+      pressTimer = null;
+      card.classList.remove('is-pressing');
+      startCardDrag(card, lastX, lastY);
+    }, CARD_LONG_PRESS_MS);
+    const cancelPress = () => {
+      if (pressTimer) clearTimeout(pressTimer);
+      pressTimer = null;
+      card.classList.remove('is-pressing');
+    };
 
     const onTouchMove = (moveEvt) => {
-      if (moveEvt.touches.length > 1) return;
+      if (moveEvt.touches.length > 1) { cancelPress(); return; }
       const t = moveEvt.touches[0];
-      const dist = Math.hypot(t.clientX - dragState.startX, t.clientY - dragState.startY);
+      lastX = t.clientX;
+      lastY = t.clientY;
 
-      if (!dragState.active && dist > 8) {
-        startCardDrag(card, t.clientX, t.clientY);
+      if (!dragState.active) {
+        // Se movió antes de tiempo: es scroll, no arrastre
+        if (pressTimer && Math.hypot(t.clientX - dragState.startX, t.clientY - dragState.startY) > 10) cancelPress();
+        return;
       }
-
-      if (dragState.active) {
-        moveEvt.preventDefault(); // Prevent scrolling while dragging card
-        updateCardDrag(t.clientX, t.clientY);
-      }
+      moveEvt.preventDefault(); // Prevent scrolling while dragging card
+      updateCardDrag(t.clientX, t.clientY);
     };
 
     const onTouchEnd = () => {
       window.removeEventListener('touchmove', onTouchMove);
       window.removeEventListener('touchend', onTouchEnd);
       window.removeEventListener('touchcancel', onTouchEnd);
+      cancelPress();
+      if (dragState.active) {
+        // Al soltar no debe abrirse la tarea por el clic que sigue
+        const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+        window.addEventListener('click', swallow, { capture: true, once: true });
+        setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 400);
+      }
       finishCardDrag();
     };
 
@@ -4687,7 +4714,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '32';
+const APP_VERSION = '33';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

@@ -751,6 +751,21 @@ body.theme-light .moon-icon { display: none; }
   touch-action: pan-y; /* Allows vertical scrolling inside columns on mobile, handles drag via custom touch */
 }
 
+/* Mantener presionada una tarjeta (celular): se achica un poco hasta que se toma */
+.kanban-card.is-pressing {
+  transform: scale(0.97);
+  transition: transform 0.35s ease-out;
+  border-color: var(--accent-primary);
+}
+
+@media (hover: none) {
+  .kanban-card {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
 .kanban-card:hover {
   transform: translateY(-2px);
   border-color: var(--border-medium);
