@@ -3500,6 +3500,42 @@ select option:checked {
 }
 
 /* ==========================================================================
+   Tarjeta recién soltada: rebota y brilla para ver dónde quedó
+   ========================================================================== */
+.kanban-card.just-dropped {
+  animation:
+    card-drop-bounce 0.9s cubic-bezier(0.28, 0.84, 0.42, 1) both,
+    card-drop-glow 1.6s ease-out both;
+}
+
+@keyframes card-drop-bounce {
+  0%   { transform: translateY(0) scale(1); }
+  18%  { transform: translateY(-10px) scale(1.04); }
+  36%  { transform: translateY(0) scale(0.99); }
+  52%  { transform: translateY(-5px) scale(1.02); }
+  68%  { transform: translateY(0) scale(1); }
+  82%  { transform: translateY(-2px); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes card-drop-glow {
+  0%, 45% {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 45%, transparent), var(--shadow-md);
+  }
+  100% {
+    border-color: var(--border-subtle);
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kanban-card.just-dropped {
+    animation: card-drop-glow 1.6s ease-out both;
+  }
+}
+
+/* ==========================================================================
    Herramientas que se esconden solas (Configuración)
    ========================================================================== */
 .autohide-on {

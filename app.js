@@ -791,6 +791,18 @@ function updateCardDrag(clientX, clientY) {
   }
 }
 
+// La tarjeta recién soltada rebota y brilla un momento para ver dónde quedó
+function highlightDroppedCard(taskId) {
+  const card = kanbanBoard.querySelector(`.kanban-card[data-task-id="${taskId}"]`);
+  if (!card) return;
+  card.classList.remove('just-dropped');
+  void card.offsetWidth; // reinicia la animación si se suelta dos veces seguidas
+  card.classList.add('just-dropped');
+  card.addEventListener('animationend', (e) => {
+    if (e.animationName === 'card-drop-bounce') card.classList.remove('just-dropped');
+  });
+}
+
 function finishCardDrag() {
   if (!dragState.active) return;
   stopCardAutoScroll();
@@ -816,6 +828,7 @@ function finishCardDrag() {
 
     // Apply move in data model
     moveTask(cardId, sourceColId, targetColId, newIndex);
+    highlightDroppedCard(cardId);
   } else if (placeholder && placeholder.parentNode) {
     placeholder.parentNode.removeChild(placeholder);
   }
@@ -4833,7 +4846,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '43';
+const APP_VERSION = '44';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
