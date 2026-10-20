@@ -1732,18 +1732,102 @@ if (fabNewTask) fabNewTask.addEventListener('click', () => openTaskModal(null, d
 // Las ventanas emergentes solo se cierran con los botones Cerrar/Cancelar/Guardar (no al hacer clic fuera)
 
 // Subtasks Management inside Modal
+// Cada subtarea: manija para reordenar, casilla, texto editable ahí mismo, copiar y quitar
 function renderModalSubtasks() {
   modalSubtaskList.innerHTML = '';
   currentModalSubtasks.forEach((st, idx) => {
     const li = document.createElement('li');
     li.className = `subtask-item ${st.completed ? 'completed' : ''}`;
+    li.dataset.subtaskId = st.id;
     li.innerHTML = `
-      <input type="checkbox" ${st.completed ? 'checked' : ''} onchange="toggleModalSubtask(${idx})">
-      <span class="subtask-text">${escapeHtml(st.text)}</span>
-      <button type="button" class="subtask-del-btn" onclick="removeModalSubtask(${idx})">&times;</button>
+      <span class="subtask-handle" title="Arrastra para reordenar" aria-label="Reordenar">⠿</span>
+      <input type="checkbox" ${st.completed ? 'checked' : ''} aria-label="Hecha">
+      <input type="text" class="subtask-text-input" value="${escapeHtml(st.text)}" maxlength="300" aria-label="Texto de la subtarea">
+      <button type="button" class="subtask-copy-btn" title="Copiar texto" aria-label="Copiar texto">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+      </button>
+      <button type="button" class="subtask-del-btn" title="Quitar" aria-label="Quitar">&times;</button>
     `;
+    li.querySelector('input[type="checkbox"]').addEventListener('change', () => toggleModalSubtask(idx));
+    li.querySelector('.subtask-del-btn').addEventListener('click', () => removeModalSubtask(idx));
+
+    const textInput = li.querySelector('.subtask-text-input');
+    textInput.addEventListener('input', () => { st.text = textInput.value; });
+    textInput.addEventListener('keydown', (e) => {
+      // Enter o Esc terminan de editar (sin enviar el formulario de la tarea)
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        textInput.blur();
+      }
+    });
+    textInput.addEventListener('blur', () => {
+      const text = textInput.value.trim();
+      if (!text) {
+        // Vacía: se deja el texto que tenía antes de editar
+        textInput.value = textInput.defaultValue;
+        st.text = textInput.defaultValue;
+      } else {
+        st.text = text;
+        textInput.value = text;
+        textInput.defaultValue = text;
+      }
+    });
+
+    li.querySelector('.subtask-copy-btn').addEventListener('click', async () => {
+      const text = st.text.trim();
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('Subtarea copiada', 'success');
+      } catch (err) {
+        // Sin permiso para el portapapeles moderno: copia clásica y, si tampoco, queda seleccionado
+        textInput.focus();
+        textInput.select();
+        let copied = false;
+        try { copied = document.execCommand('copy'); } catch (e2) {}
+        showToast(copied ? 'Subtarea copiada' : 'Texto seleccionado: usa Copiar', copied ? 'success' : 'info');
+      }
+    });
+
+    li.querySelector('.subtask-handle').addEventListener('pointerdown', (e) => startSubtaskDrag(e, li));
     modalSubtaskList.appendChild(li);
   });
+}
+
+// Reordenar subtareas arrastrando la manija (mouse o dedo)
+function startSubtaskDrag(e, li) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const pointerId = e.pointerId;
+  li.classList.add('is-dragging');
+  // Se escucha en window: al mover el elemento en la lista, el navegador le quitaría la captura del puntero
+  const onMove = (ev) => {
+    if (ev.pointerId !== pointerId) return;
+    const items = [...modalSubtaskList.children].filter(x => x !== li);
+    const before = items.find(x => {
+      const r = x.getBoundingClientRect();
+      return ev.clientY < r.top + r.height / 2;
+    });
+    if (before) {
+      if (li.nextElementSibling !== before) modalSubtaskList.insertBefore(li, before);
+    } else if (modalSubtaskList.lastElementChild !== li) {
+      modalSubtaskList.appendChild(li);
+    }
+  };
+  const onUp = (ev) => {
+    if (ev.pointerId !== pointerId) return;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    li.classList.remove('is-dragging');
+    // El nuevo orden es el de la lista en pantalla
+    const order = [...modalSubtaskList.children].map(x => x.dataset.subtaskId);
+    currentModalSubtasks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    renderModalSubtasks();
+  };
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
 }
 
 function addSubtaskFromInput() {
@@ -5001,7 +5085,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '46';
+const APP_VERSION = '47';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

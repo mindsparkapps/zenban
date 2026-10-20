@@ -1359,6 +1359,85 @@ body.theme-light .moon-icon { display: none; }
   color: var(--text-dim);
 }
 
+/* Texto editable que se ve como texto normal hasta que se toca
+   (selector más específico que el de los campos del formulario) */
+.subtask-list .subtask-item input.subtask-text-input {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  box-shadow: none;
+  padding: 2px 4px;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+}
+
+.subtask-list .subtask-item input.subtask-text-input:hover {
+  border-color: var(--border-subtle);
+}
+
+.subtask-list .subtask-item input.subtask-text-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  background: var(--bg-surface-elevated);
+  box-shadow: none;
+}
+
+.subtask-list .subtask-item.completed input.subtask-text-input:not(:focus) {
+  text-decoration: line-through;
+  color: var(--text-dim);
+}
+
+.subtask-handle {
+  cursor: grab;
+  color: var(--text-dim);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 2px;
+  touch-action: none;
+  user-select: none;
+}
+
+.subtask-item.is-dragging {
+  opacity: 0.85;
+  border-color: var(--accent-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.subtask-item.is-dragging .subtask-handle {
+  cursor: grabbing;
+}
+
+.subtask-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.subtask-copy-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-main);
+}
+
+.subtask-copy-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
 .subtask-del-btn {
   background: none;
   border: none;
