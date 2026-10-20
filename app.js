@@ -2507,15 +2507,24 @@ function renderBgImages() {
     `;
 
     const imgEl = el.querySelector('img');
-    imgEl.decoding = 'async';
+    // Las imágenes del lienzo se dibujan esperando a estar descomprimidas (no "async"): al pasar rápido
+    // de un zoom alto a uno bajo, el celular las mostraba por trozos mientras las volvía a descomprimir
+    imgEl.decoding = 'sync';
     imgEl.style.opacity = typeof data.opacity === 'number' ? data.opacity : 1;
     // En el celular el lienzo usa una versión de tamaño moderado (ver getImageVariantUrl)
     const cached = IS_TOUCH_SCREEN ? cachedImageVariant(data.id, CANVAS_IMAGE_MAX_TOUCH) : bgImageUrls.get(data.id);
+    const setSrc = (url) => {
+      if (!url) return;
+      imgEl.src = url;
+      // Descomprimida completa una vez: el navegador la achica al instante para cualquier zoom
+      // en vez de descomprimirla de nuevo a cada tamaño
+      imgEl.decode().catch(() => {});
+    };
     if (cached) {
-      imgEl.src = cached; // sin esperar, para que no parpadee al redibujar
+      setSrc(cached); // sin esperar, para que no parpadee al redibujar
     } else {
       (IS_TOUCH_SCREEN ? getImageVariantUrl(data.id, CANVAS_IMAGE_MAX_TOUCH) : getImageUrl(data.id))
-        .then(url => { if (url) imgEl.src = url; })
+        .then(setSrc)
         .catch(() => {});
     }
 
@@ -5195,7 +5204,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '53';
+const APP_VERSION = '54';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
