@@ -673,6 +673,7 @@ function startCardDrag(cardEl, clientX, clientY) {
   const sourceColId = colEl ? colEl.dataset.columnId : null;
   if (!cardId || !sourceColId) return;
 
+  if (typeof hidePeek === 'function') hidePeek();
   dragState.active = true;
   dragState.cardId = cardId;
   dragState.sourceColId = sourceColId;
@@ -838,6 +839,111 @@ function returnPlaceholderToOrigin() {
   if (card.nextSibling !== ph) card.after(ph);
   dragState.targetColId = dragState.sourceColId;
 }
+
+// ----- Vista rápida: con el mouse quieto sobre una tarjeta se ve todo su contenido sin abrirla -----
+const PEEK_DELAY_MS = 600;
+const PEEK_PRIORITY = { urgent: 'Urgente', high: 'Alta', medium: 'Media', low: 'Baja', note: 'Nota' };
+let peekEl = null;
+let peekTimer = null;
+let peekHideTimer = null;
+let peekTaskId = null;
+
+function peekPopup() {
+  if (!peekEl) {
+    peekEl = document.createElement('div');
+    peekEl.className = 'card-peek';
+    peekEl.hidden = true;
+    peekEl.addEventListener('pointerenter', () => clearTimeout(peekHideTimer));
+    peekEl.addEventListener('pointerleave', () => scheduleHidePeek());
+    peekEl.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
+    document.body.appendChild(peekEl);
+  }
+  return peekEl;
+}
+
+function hidePeek() {
+  clearTimeout(peekTimer);
+  clearTimeout(peekHideTimer);
+  peekTaskId = null;
+  if (peekEl) peekEl.hidden = true;
+}
+
+function scheduleHidePeek() {
+  clearTimeout(peekTimer);
+  clearTimeout(peekHideTimer);
+  peekHideTimer = setTimeout(hidePeek, 150);
+}
+
+function showPeek(card) {
+  const task = tasks.find(t => t.id === card.dataset.taskId);
+  if (!task || dragState.active || selectGestureActive || !document.body.contains(card)) return;
+  const col = columns.find(c => c.id === task.columnId);
+  const board = col ? boards.find(b => b.id === col.boardId) : null;
+  const subs = task.subtasks || [];
+  const done = subs.filter(s => s.completed).length;
+  const imgs = task.images || [];
+  const today = getRelativeDate(0);
+  const dueClass = task.dueDate && !task.completed && task.dueDate < today ? 'is-overdue' : (task.dueDate === today ? 'is-today' : '');
+  const el = peekPopup();
+  el.innerHTML = `
+    <div class="card-peek-top">
+      <span class="priority-badge priority-${task.priority || 'medium'}">${PEEK_PRIORITY[task.priority || 'medium']}</span>
+      ${task.completed ? '<span class="card-peek-done">✓ Completada</span>' : ''}
+      ${task.dueDate ? `<span class="card-due-date ${dueClass}">📅 ${escapeHtml(task.dueDate)}</span>` : ''}
+    </div>
+    <h4 class="card-peek-title">${escapeHtml(task.title)}</h4>
+    <div class="card-peek-where">${escapeHtml([board && board.title, col && col.title].filter(Boolean).join(' › '))}</div>
+    ${(task.tags || []).length ? `<div class="card-tags">${task.tags.map(t => tagPillHtml(t)).join('')}</div>` : ''}
+    ${task.description ? `<p class="card-peek-desc">${escapeHtml(task.description)}</p>` : ''}
+    ${subs.length ? `
+      <div class="card-peek-subs">
+        <div class="card-peek-label">Subtareas ${done}/${subs.length}</div>
+        <ul>${subs.map(s => `<li class="${s.completed ? 'is-done' : ''}">${s.completed ? '☑' : '☐'} ${escapeHtml(s.text)}</li>`).join('')}</ul>
+      </div>` : ''}
+    ${imgs.length ? `<div class="card-peek-imgs">${imgs.slice(0, 6).map(i => `<img alt="" data-img-id="${escapeHtml(i.id)}">`).join('')}${imgs.length > 6 ? `<span>+${imgs.length - 6}</span>` : ''}</div>` : ''}
+    ${!task.description && !subs.length && !imgs.length ? '<p class="card-peek-empty">Sin descripción ni subtareas.</p>' : ''}`;
+  el.querySelectorAll('img[data-img-id]').forEach(img => getImageUrl(img.dataset.imgId).then(url => { if (url) img.src = url; }));
+
+  // Al lado de la tarjeta: a la derecha o, si no cabe, a la izquierda; siempre dentro de la pantalla
+  el.hidden = false;
+  el.style.left = '0px';
+  el.style.top = '0px';
+  const r = card.getBoundingClientRect();
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  const gap = 10;
+  let left = r.right + gap;
+  if (left + w > window.innerWidth - 8) left = r.left - gap - w;
+  if (left < 8) left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left));
+  const top = Math.max(8, Math.min(window.innerHeight - h - 8, r.top));
+  el.style.left = `${Math.round(left)}px`;
+  el.style.top = `${Math.round(top)}px`;
+  peekTaskId = task.id;
+}
+
+kanbanBoard.addEventListener('pointerover', (e) => {
+  if (e.pointerType !== 'mouse') return;
+  const card = e.target.closest('.kanban-card');
+  if (!card) return;
+  clearTimeout(peekHideTimer);
+  if (peekTaskId === card.dataset.taskId) return;
+  clearTimeout(peekTimer);
+  if (peekEl && !peekEl.hidden) hidePeek();
+  peekTimer = setTimeout(() => showPeek(card), PEEK_DELAY_MS);
+});
+kanbanBoard.addEventListener('pointerout', (e) => {
+  if (e.pointerType !== 'mouse') return;
+  const card = e.target.closest('.kanban-card');
+  if (!card || card.contains(e.relatedTarget)) return;
+  if (peekEl && peekEl.contains(e.relatedTarget)) return;
+  scheduleHidePeek();
+});
+// Cualquier clic, rueda, tecla o arrastre la cierra
+const insidePeek = (target) => !!peekEl && target instanceof Node && peekEl.contains(target);
+window.addEventListener('pointerdown', (e) => { if (!insidePeek(e.target)) hidePeek(); }, true);
+window.addEventListener('wheel', (e) => { if (!insidePeek(e.target)) hidePeek(); }, { passive: true, capture: true });
+window.addEventListener('keydown', hidePeek, true);
+window.addEventListener('blur', hidePeek);
 
 // La tarjeta recién soltada rebota y brilla un momento para ver dónde quedó
 function highlightDroppedCard(taskId) {
@@ -4895,7 +5001,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '45';
+const APP_VERSION = '46';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
