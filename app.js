@@ -342,8 +342,25 @@ function applyTransform(animate = false) {
   }
 
   zoomCanvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
-  zoomCanvas.style.setProperty('--inv-zoom', 1 / zoom);
-  zoomPercentLabel.textContent = `${Math.round(zoom * 100)}%`;
+  scheduleInvZoom();
+  const label = `${Math.round(zoom * 100)}%`;
+  if (zoomPercentLabel.textContent !== label) zoomPercentLabel.textContent = label;
+}
+
+// --inv-zoom (grosor de bordes y manijas de selección) obliga a recalcular el estilo de TODO el lienzo.
+// Mientras se hace zoom continuo (pellizco, rueda) se actualiza al detenerse, no en cada cuadro:
+// en el celular, con muchas tarjetas, recalcularlo en cada cuadro hacía el zoom muy lento.
+let invZoomApplied = null;
+let invZoomTimer = null;
+function scheduleInvZoom() {
+  if (zoom === invZoomApplied) return;
+  clearTimeout(invZoomTimer);
+  const apply = () => {
+    invZoomApplied = zoom;
+    zoomCanvas.style.setProperty('--inv-zoom', 1 / zoom);
+  };
+  if (invZoomApplied === null) apply();
+  else invZoomTimer = setTimeout(apply, 120);
 }
 
 // Zoom towards a specific screen coordinate (cursor or pinch midpoint)
@@ -902,7 +919,7 @@ function showPeek(card) {
       </div>` : ''}
     ${imgs.length ? `<div class="card-peek-imgs">${imgs.slice(0, 6).map(i => `<img alt="" data-img-id="${escapeHtml(i.id)}">`).join('')}${imgs.length > 6 ? `<span>+${imgs.length - 6}</span>` : ''}</div>` : ''}
     ${!task.description && !subs.length && !imgs.length ? '<p class="card-peek-empty">Sin descripción ni subtareas.</p>' : ''}`;
-  el.querySelectorAll('img[data-img-id]').forEach(img => getImageUrl(img.dataset.imgId).then(url => { if (url) img.src = url; }));
+  el.querySelectorAll('img[data-img-id]').forEach(img => getImageVariantUrl(img.dataset.imgId, 160).then(url => { if (url) img.src = url; }));
 
   // Al lado de la tarjeta: a la derecha o, si no cabe, a la izquierda; siempre dentro de la pantalla
   el.hidden = false;
@@ -1431,7 +1448,11 @@ function createCardElement(task) {
 
   if (taskImages.length > 0) {
     const coverImg = card.querySelector('.card-cover img');
-    getImageUrl(taskImages[0].id).then(url => { if (url) coverImg.src = url; });
+    coverImg.decoding = 'async';
+    // La portada se ve chica: versión reducida (sin esperar si ya está lista, para que no parpadee)
+    const coverCached = cachedImageVariant(taskImages[0].id, 480);
+    if (coverCached) coverImg.src = coverCached;
+    else getImageVariantUrl(taskImages[0].id, 480).then(url => { if (url) coverImg.src = url; });
   }
 
   // Clicking on card opens modal (unless check button or menu clicked)
@@ -2469,17 +2490,16 @@ function renderBgImages() {
     `;
 
     const imgEl = el.querySelector('img');
+    imgEl.decoding = 'async';
     imgEl.style.opacity = typeof data.opacity === 'number' ? data.opacity : 1;
-    const cached = bgImageUrls.get(data.id);
+    // En el celular el lienzo usa una versión de tamaño moderado (ver getImageVariantUrl)
+    const cached = IS_TOUCH_SCREEN ? cachedImageVariant(data.id, CANVAS_IMAGE_MAX_TOUCH) : bgImageUrls.get(data.id);
     if (cached) {
-      imgEl.src = cached;
+      imgEl.src = cached; // sin esperar, para que no parpadee al redibujar
     } else {
-      ImageStore.get(data.id).then(blob => {
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        bgImageUrls.set(data.id, url);
-        imgEl.src = url;
-      }).catch(() => {});
+      (IS_TOUCH_SCREEN ? getImageVariantUrl(data.id, CANVAS_IMAGE_MAX_TOUCH) : getImageUrl(data.id))
+        .then(url => { if (url) imgEl.src = url; })
+        .catch(() => {});
     }
 
     el.querySelector('.bg-image-toolbar').addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -2565,6 +2585,57 @@ async function getImageUrl(id) {
   }
 }
 
+// Versiones reducidas de las imágenes para mostrarlas donde se ven chicas (portadas, vista rápida,
+// miniaturas) y, en el celular, también en el lienzo. Una imagen de 2000 px ocupa ~16 MB ya
+// descomprimida: con varias, el celular se quedaba sin memoria gráfica y las dibujaba por trozos.
+// Se generan de a una (para no descomprimir muchas a la vez) y quedan en memoria durante la sesión.
+const imageVariantUrls = new Map();   // "id@tamaño" -> url lista
+const imageVariantJobs = new Map();   // "id@tamaño" -> promesa en curso
+let imageVariantQueue = Promise.resolve();
+const IS_TOUCH_SCREEN = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+const CANVAS_IMAGE_MAX_TOUCH = 1400;
+
+function cachedImageVariant(id, max) {
+  return imageVariantUrls.get(`${id}@${max}`) || null;
+}
+
+function getImageVariantUrl(id, max) {
+  const key = `${id}@${max}`;
+  if (imageVariantUrls.has(key)) return Promise.resolve(imageVariantUrls.get(key));
+  if (imageVariantJobs.has(key)) return imageVariantJobs.get(key);
+  const job = imageVariantQueue
+    .then(() => makeImageVariant(id, max))
+    .catch(() => getImageUrl(id))
+    .then(url => {
+      imageVariantJobs.delete(key);
+      if (url) imageVariantUrls.set(key, url); // si aún no está descargada, se vuelve a intentar después
+      return url;
+    });
+  imageVariantQueue = job.catch(() => {});
+  imageVariantJobs.set(key, job);
+  return job;
+}
+
+async function makeImageVariant(id, max) {
+  const blob = await ImageStore.get(id);
+  if (!blob) return null;
+  let bmp;
+  try { bmp = await createImageBitmap(blob); } catch (e) { return getImageUrl(id); }
+  const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  if (scale > 0.85) { bmp.close(); return getImageUrl(id); } // ya es casi de ese tamaño
+  const w = Math.max(1, Math.round(bmp.width * scale));
+  const h = Math.max(1, Math.round(bmp.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  bmp.close();
+  const out = await new Promise(r => canvas.toBlob(r, 'image/webp', 0.85));
+  canvas.width = 0;
+  canvas.height = 0;
+  return out ? URL.createObjectURL(out) : getImageUrl(id);
+}
+
 // Procesa y guarda un archivo de imagen; devuelve { id, w, h }
 async function storeImageFile(file) {
   const { blob, w, h } = await prepareImageBlob(file);
@@ -2640,7 +2711,8 @@ function renderModalImages() {
       <button type="button" class="task-image-remove" title="Quitar imagen">&times;</button>
     `;
     const imgEl = thumb.querySelector('img');
-    getImageUrl(img.id).then(url => { if (url) imgEl.src = url; });
+    imgEl.decoding = 'async';
+    getImageVariantUrl(img.id, 240).then(url => { if (url) imgEl.src = url; });
     imgEl.addEventListener('click', () => openLightbox(img.id));
     thumb.querySelector('.task-image-remove').addEventListener('click', () => {
       currentModalImages.splice(idx, 1);
@@ -5085,7 +5157,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '47';
+const APP_VERSION = '49';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
