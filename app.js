@@ -342,9 +342,19 @@ function applyTransform(animate = false) {
   }
 
   zoomCanvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  markCanvasTransforming(animate ? 320 : 220);
   scheduleInvZoom();
   const label = `${Math.round(zoom * 100)}%`;
   if (zoomPercentLabel.textContent !== label) zoomPercentLabel.textContent = label;
+}
+
+// Mientras el lienzo se mueve se pinta como una capa aparte (will-change) para que vaya fluido;
+// al detenerse se quita, y el navegador lo vuelve a pintar a la resolución justa para el zoom actual
+let canvasIdleTimer = null;
+function markCanvasTransforming(ms) {
+  if (!zoomCanvas.classList.contains('is-transforming')) zoomCanvas.classList.add('is-transforming');
+  clearTimeout(canvasIdleTimer);
+  canvasIdleTimer = setTimeout(() => zoomCanvas.classList.remove('is-transforming'), ms);
 }
 
 // --inv-zoom (grosor de bordes y manijas de selección) obliga a recalcular el estilo de TODO el lienzo.
@@ -5179,7 +5189,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '51';
+const APP_VERSION = '52';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
