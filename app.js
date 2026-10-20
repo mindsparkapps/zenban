@@ -927,11 +927,11 @@ function showPeek(card) {
     <h4 class="card-peek-title">${escapeHtml(task.title)}</h4>
     <div class="card-peek-where">${escapeHtml([board && board.title, col && col.title].filter(Boolean).join(' › '))}</div>
     ${(task.tags || []).length ? `<div class="card-tags">${task.tags.map(t => tagPillHtml(t)).join('')}</div>` : ''}
-    ${task.description ? `<p class="card-peek-desc">${escapeHtml(task.description)}</p>` : ''}
+    ${task.description ? `<p class="card-peek-desc">${linkify(task.description)}</p>` : ''}
     ${subs.length ? `
       <div class="card-peek-subs">
         <div class="card-peek-label">Subtareas ${done}/${subs.length}</div>
-        <ul>${subs.map(s => `<li class="${s.completed ? 'is-done' : ''}">${s.completed ? '☑' : '☐'} ${escapeHtml(s.text)}</li>`).join('')}</ul>
+        <ul>${subs.map(s => `<li class="${s.completed ? 'is-done' : ''}">${s.completed ? '☑' : '☐'} ${linkify(s.text)}</li>`).join('')}</ul>
       </div>` : ''}
     ${imgs.length ? `<div class="card-peek-imgs">${imgs.slice(0, 6).map(i => `<img alt="" data-img-id="${escapeHtml(i.id)}">`).join('')}${imgs.length > 6 ? `<span>+${imgs.length - 6}</span>` : ''}</div>` : ''}
     ${!task.description && !subs.length && !imgs.length ? '<p class="card-peek-empty">Sin descripción ni subtareas.</p>' : ''}`;
@@ -1038,7 +1038,7 @@ kanbanBoard.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'touch') return;
 
   const card = e.target.closest('.kanban-card');
-  const isInteractive = e.target.closest('button, input, select, textarea, .card-check-btn, .card-menu-btn');
+  const isInteractive = e.target.closest('button, input, select, textarea, a, .card-subtask, .card-check-btn, .card-menu-btn');
 
   if (card && !isInteractive) {
     dragState.isPointerDown = true;
@@ -1073,7 +1073,7 @@ kanbanBoard.addEventListener('touchstart', (e) => {
   if (isPanModeActive || isDrawingTool() || e.touches.length > 1) return;
 
   const card = e.target.closest('.kanban-card');
-  const isInteractive = e.target.closest('button, input, select, textarea, .card-check-btn, .card-menu-btn');
+  const isInteractive = e.target.closest('button, input, select, textarea, a, .card-subtask, .card-check-btn, .card-menu-btn');
 
   if (card && !isInteractive) {
     const touch = e.touches[0];
@@ -1438,7 +1438,7 @@ function createCardElement(task) {
 
     <h4 class="card-title">${escapeHtml(task.title)}</h4>
 
-    ${task.description ? `<p class="card-desc">${escapeHtml(task.description)}</p>` : ''}
+    ${task.description ? `<p class="card-desc">${linkify(task.description)}</p>` : ''}
 
     ${totalSubtasks > 0 ? `
       <div class="card-subtasks">
@@ -1457,9 +1457,12 @@ function createCardElement(task) {
         </div>
         <ul class="card-subtask-list">
           ${task.subtasks.slice(0, CARD_SUBTASKS_SHOWN).map(s => `
-            <li><button type="button" class="card-subtask ${s.completed ? 'is-done' : ''}" data-subtask-id="${escapeHtml(s.id)}" title="${s.completed ? 'Marcar pendiente' : 'Marcar hecha'}">
-              <span class="card-subtask-box">${s.completed ? '☑' : '☐'}</span><span class="card-subtask-text">${escapeHtml(s.text)}</span>
-            </button></li>`).join('')}
+            <li class="card-subtask ${s.completed ? 'is-done' : ''}" data-subtask-id="${escapeHtml(s.id)}" title="${s.completed ? 'Marcar pendiente' : 'Marcar hecha'}">
+              <span class="card-subtask-box">${s.completed ? '☑' : '☐'}</span><span class="card-subtask-text">${linkify(s.text)}</span>
+              <button type="button" class="card-subtask-copy" title="Copiar texto" aria-label="Copiar texto">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+            </li>`).join('')}
           ${totalSubtasks > CARD_SUBTASKS_SHOWN ? `<li class="card-subtask-more">+${totalSubtasks - CARD_SUBTASKS_SHOWN} más</li>` : ''}
         </ul>
       </div>
@@ -1481,20 +1484,29 @@ function createCardElement(task) {
   }
 
   // Tocar una subtarea en la tarjeta la marca hecha / pendiente sin abrir la tarea
-  card.querySelectorAll('.card-subtask').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  // (los links abren su página y el botón de copiar copia el texto, sin marcarla)
+  card.querySelectorAll('.card-subtask').forEach(item => {
+    item.addEventListener('click', (e) => {
       e.stopPropagation();
-      const st = (task.subtasks || []).find(s => s.id === btn.dataset.subtaskId);
+      const st = (task.subtasks || []).find(s => s.id === item.dataset.subtaskId);
       if (!st) return;
+      if (e.target.closest('a')) return;
+      if (e.target.closest('.card-subtask-copy')) {
+        copyTextToClipboard(st.text).then(ok => showToast(ok ? 'Texto copiado' : 'No se pudo copiar', ok ? 'success' : 'error'));
+        return;
+      }
       st.completed = !st.completed;
       persist();
       renderBoard();
     });
   });
 
+  // Los links de la descripción abren su página sin abrir la tarea
+  card.querySelectorAll('.card-desc a').forEach(a => a.addEventListener('click', (e) => e.stopPropagation()));
+
   // Clicking on card opens modal (unless check button or menu clicked)
   card.addEventListener('click', (e) => {
-    if (!e.target.closest('button, input, select')) {
+    if (!e.target.closest('button, input, select, a, .card-subtask')) {
       openTaskModal(task.id);
     }
   });
@@ -3699,7 +3711,8 @@ function getTextEl(id) {
 function applyTextStyle(el, t) {
   el.style.left = `${t.x}px`;
   el.style.top = `${t.y}px`;
-  el.style.width = 'max-content';
+  // Si se le dio ancho con la esquina, la caja mide eso; si no, se ajusta al texto hasta ese ancho
+  el.style.width = t.fixedWidth ? `${t.w}px` : 'max-content';
   el.style.maxWidth = `${t.w}px`;
   el.style.fontSize = `${t.size}px`;
   el.style.color = t.color || '';
@@ -3802,10 +3815,10 @@ function renderTexts() {
     el.className = 'canvas-text';
     el.dataset.textId = t.id;
     applyTextStyle(el, t);
-    el.textContent = t.text;
+    el.innerHTML = linkify(t.text);
     const handle = document.createElement('div');
     handle.className = 'canvas-text-handle';
-    handle.title = 'Arrastra para agrandar o achicar';
+    handle.title = 'Arrastra para cambiar el ancho de la caja';
     handle.addEventListener('pointerdown', (e) => startTextResize(e, t, el));
     el.appendChild(handle);
     textLayer.appendChild(el);
@@ -3813,7 +3826,7 @@ function renderTexts() {
   applySelectionVisuals();
 }
 
-// Agrandar o achicar arrastrando la esquina: escala la letra y el ancho juntos
+// Arrastrar la esquina cambia solo el ancho de la caja (el texto se reacomoda); la letra se cambia con A+ / A−
 function startTextResize(e, t, el) {
   if (isPanModeActive || isSpacePressed || e.button !== 0) return;
   e.preventDefault();
@@ -3821,12 +3834,10 @@ function startTextResize(e, t, el) {
   setSelection([`text:${t.id}`]);
   const startX = e.clientX;
   const startWidth = el.offsetWidth;
-  const orig = { w: t.w, size: t.size };
   el.setPointerCapture(e.pointerId);
   const onMove = (ev) => {
-    const factor = Math.max(0.1, (startWidth + (ev.clientX - startX) / zoom) / startWidth);
-    t.size = Math.max(4, +(orig.size * factor).toFixed(1));
-    t.w = Math.max(40, Math.round(orig.w * factor));
+    t.fixedWidth = true;
+    t.w = Math.max(40, Math.round(startWidth + (ev.clientX - startX) / zoom));
     applyTextStyle(el, t);
   };
   const onUp = () => {
@@ -3840,10 +3851,10 @@ function startTextResize(e, t, el) {
   el.addEventListener('pointercancel', onUp);
 }
 
+// A+ / A− cambian solo el tamaño de la letra; la caja conserva su ancho
 function scaleSelectedTexts(factor) {
   selectedTexts().forEach(t => {
     t.size = Math.max(4, +(t.size * factor).toFixed(1));
-    t.w = Math.max(40, Math.round(t.w * factor));
     const el = getTextEl(t.id);
     if (el) applyTextStyle(el, t);
   });
@@ -5225,7 +5236,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '55';
+const APP_VERSION = '56';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -5589,6 +5600,38 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// Escapa el texto y convierte las direcciones web (https://… o www.…) en links que abren en otra pestaña
+const AUTO_LINK_RE = /\b((?:https?:\/\/|www\.)[^\s<]+)/gi;
+function linkify(str) {
+  return escapeHtml(str).replace(AUTO_LINK_RE, (match) => {
+    // La puntuación al final ("…/docs." o "(…/docs)") no es parte del link
+    const trail = (match.match(/(?:[.,;:!?)\]]|&#39;|&quot;)+$/) || [''])[0];
+    const url = trail ? match.slice(0, -trail.length) : match;
+    const href = /^www\./i.test(url) ? `https://${url}` : url;
+    return `<a class="auto-link" href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>${trail}`;
+  });
+}
+
+// Copia un texto al portapapeles; si el navegador no lo permite, usa la copia clásica
+async function copyTextToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e2) {}
+    ta.remove();
+    return ok;
+  }
 }
 
 // Initial Boot

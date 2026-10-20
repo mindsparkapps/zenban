@@ -988,7 +988,59 @@ body.theme-light .moon-icon { display: none; }
 }
 
 .card-subtask-text {
+  flex: 1;
+  min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Copiar el texto de la subtarea sin abrir la tarea: aparece al pasar el mouse (siempre en táctil) */
+.card-subtask-copy {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  margin: -0.1rem 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.card-subtask-copy svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.card-subtask:hover .card-subtask-copy,
+.card-subtask-copy:focus-visible {
+  opacity: 1;
+}
+
+.card-subtask-copy:hover {
+  color: var(--text-main);
+  background: var(--bg-surface);
+}
+
+@media (pointer: coarse) {
+  .card-subtask-copy { opacity: 0.7; }
+}
+
+/* Direcciones web convertidas en links */
+.auto-link {
+  color: #60a5fa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.auto-link:hover {
+  color: #93c5fd;
 }
 
 .card-subtask.is-done .card-subtask-text {
