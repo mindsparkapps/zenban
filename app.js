@@ -1360,6 +1360,8 @@ function createColumnElement(col, colTasks) {
   return columnEl;
 }
 
+const CARD_SUBTASKS_SHOWN = 5; // subtareas visibles en la tarjeta; el resto se resume en "+N más"
+
 function createCardElement(task) {
   const card = document.createElement('article');
   card.className = `kanban-card ${task.completed ? 'is-completed' : ''}`;
@@ -1453,6 +1455,13 @@ function createCardElement(task) {
         <div class="subtasks-progress-track">
           <div class="subtasks-progress-fill" style="width: ${subtaskPercent}%"></div>
         </div>
+        <ul class="card-subtask-list">
+          ${task.subtasks.slice(0, CARD_SUBTASKS_SHOWN).map(s => `
+            <li><button type="button" class="card-subtask ${s.completed ? 'is-done' : ''}" data-subtask-id="${escapeHtml(s.id)}" title="${s.completed ? 'Marcar pendiente' : 'Marcar hecha'}">
+              <span class="card-subtask-box">${s.completed ? '☑' : '☐'}</span><span class="card-subtask-text">${escapeHtml(s.text)}</span>
+            </button></li>`).join('')}
+          ${totalSubtasks > CARD_SUBTASKS_SHOWN ? `<li class="card-subtask-more">+${totalSubtasks - CARD_SUBTASKS_SHOWN} más</li>` : ''}
+        </ul>
       </div>
     ` : ''}
 
@@ -1470,6 +1479,18 @@ function createCardElement(task) {
     if (coverCached) coverImg.src = coverCached;
     else getImageVariantUrl(taskImages[0].id, 480).then(url => { if (url) coverImg.src = url; });
   }
+
+  // Tocar una subtarea en la tarjeta la marca hecha / pendiente sin abrir la tarea
+  card.querySelectorAll('.card-subtask').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const st = (task.subtasks || []).find(s => s.id === btn.dataset.subtaskId);
+      if (!st) return;
+      st.completed = !st.completed;
+      persist();
+      renderBoard();
+    });
+  });
 
   // Clicking on card opens modal (unless check button or menu clicked)
   card.addEventListener('click', (e) => {
@@ -5204,7 +5225,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '54';
+const APP_VERSION = '55';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

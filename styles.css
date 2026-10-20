@@ -951,6 +951,61 @@ body.theme-light .moon-icon { display: none; }
   border: 1px solid var(--border-subtle);
 }
 
+/* Lista de subtareas en la tarjeta (se marcan tocándolas) */
+.card-subtask-list {
+  margin: 0.2rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.card-subtask {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.15rem 0.2rem;
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.card-subtask:hover {
+  background: var(--bg-surface-hover);
+}
+
+.card-subtask-box {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.card-subtask-text {
+  overflow-wrap: anywhere;
+}
+
+.card-subtask.is-done .card-subtask-text {
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+
+.card-subtask.is-done .card-subtask-box {
+  color: #10b981;
+}
+
+.card-subtask-more {
+  padding: 0.1rem 0.2rem;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
 .subtasks-info {
   display: flex;
   justify-content: space-between;
