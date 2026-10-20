@@ -3793,3 +3793,25 @@ select option:checked {
 #settingToolsOpacity:disabled {
   opacity: 0.45;
 }
+
+.settings-diag summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.settings-diag pre {
+  margin: 0.6rem 0;
+  padding: 0.7rem;
+  max-height: 40vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  user-select: text;
+}

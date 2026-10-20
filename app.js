@@ -2355,7 +2355,8 @@ const ImageStore = {
         (p.tasks || []).forEach(t => (t.images || []).forEach(i => used.add(i.id)));
       });
       const all = await this.keys();
-      for (const k of all || []) if (!used.has(k)) await this.purge(k);
+      // Las versiones reducidas ("id@tamaño") se conservan mientras su imagen original se use
+      for (const k of all || []) if (!used.has(String(k).split('@')[0])) await this.purge(k);
     } catch (e) {
       console.warn('Limpieza de imágenes', e);
     }
@@ -2588,12 +2589,13 @@ async function getImageUrl(id) {
 // Versiones reducidas de las imágenes para mostrarlas donde se ven chicas (portadas, vista rápida,
 // miniaturas) y, en el celular, también en el lienzo. Una imagen de 2000 px ocupa ~16 MB ya
 // descomprimida: con varias, el celular se quedaba sin memoria gráfica y las dibujaba por trozos.
-// Se generan de a una (para no descomprimir muchas a la vez) y quedan en memoria durante la sesión.
+// Se generan de a una (para no descomprimir muchas a la vez), con una pausa entre cada una para no
+// demorar los toques, y se guardan en el dispositivo ("id@tamaño") para no repetirlo en cada inicio.
 const imageVariantUrls = new Map();   // "id@tamaño" -> url lista
 const imageVariantJobs = new Map();   // "id@tamaño" -> promesa en curso
 let imageVariantQueue = Promise.resolve();
 const IS_TOUCH_SCREEN = window.matchMedia && matchMedia('(pointer: coarse)').matches;
-const CANVAS_IMAGE_MAX_TOUCH = 1400;
+const CANVAS_IMAGE_MAX_TOUCH = 1200;
 
 function cachedImageVariant(id, max) {
   return imageVariantUrls.get(`${id}@${max}`) || null;
@@ -2617,10 +2619,15 @@ function getImageVariantUrl(id, max) {
 }
 
 async function makeImageVariant(id, max) {
+  const key = `${id}@${max}`;
+  // Ya generada en otra sesión
+  const stored = await ImageStore.get(key).catch(() => null);
+  if (stored) return URL.createObjectURL(stored);
+  await new Promise(r => setTimeout(r, 40)); // deja pasar los toques pendientes antes de trabajar
   const blob = await ImageStore.get(id);
   if (!blob) return null;
   let bmp;
-  try { bmp = await createImageBitmap(blob); } catch (e) { return getImageUrl(id); }
+  try { bmp = await createImageBitmap(blob); } catch (e) { return getImageUrl(id); } // se descomprime fuera del hilo principal
   const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
   if (scale > 0.85) { bmp.close(); return getImageUrl(id); } // ya es casi de ese tamaño
   const w = Math.max(1, Math.round(bmp.width * scale));
@@ -2633,7 +2640,9 @@ async function makeImageVariant(id, max) {
   const out = await new Promise(r => canvas.toBlob(r, 'image/webp', 0.85));
   canvas.width = 0;
   canvas.height = 0;
-  return out ? URL.createObjectURL(out) : getImageUrl(id);
+  if (!out) return getImageUrl(id);
+  ImageStore.put(key, out).catch(() => {});
+  return URL.createObjectURL(out);
 }
 
 // Procesa y guarda un archivo de imagen; devuelve { id, w, h }
@@ -4526,6 +4535,7 @@ var SYNC = {
   tokenExp: 0,
   tokenClient: null,
   fileId: null,
+  remoteVersion: null, // versión del archivo de Drive con la que se sincronizó por última vez
   imageFiles: null,
   busy: false,
   again: false,
@@ -4748,6 +4758,7 @@ function signOutGoogle() {
   }
   SYNC.token = null;
   SYNC.fileId = null;
+  SYNC.remoteVersion = null;
   SYNC.imageFiles = null;
   localStorage.setItem(SYNC_KEYS.ENABLED, '0');
   localStorage.removeItem(SYNC_KEYS.USER);
@@ -4772,6 +4783,7 @@ function inShared() {
 function setSpace(space) {
   localStorage.setItem('zenban_space', JSON.stringify(space));
   SYNC.fileId = null;
+  SYNC.remoteVersion = null;
   SYNC.imageFiles = null;
 }
 
@@ -5030,6 +5042,12 @@ async function syncNow() {
     if (inShared() && typeof checkSharedFolder === 'function' && !(await checkSharedFolder())) return;
     const file = await findDataFile();
     SYNC.fileId = file ? file.id : null;
+    // Ni Drive ni este dispositivo cambiaron desde la última sincronización: no hay nada que descargar
+    // ni comparar. (Descargar y comparar todo cada 45 s congelaba un momento los toques en el celular.)
+    if (file && SYNC.remoteVersion && String(file.version) === SYNC.remoteVersion && !isDirty() && SYNC.gen === gen && lastSyncedAt()) {
+      setSyncStatus('ok');
+      return;
+    }
     const remote = file ? await (await driveFetch(`${DRIVE_API}/files/${file.id}?alt=media&supportsAllDrives=true`)).json() : null;
     const local = localPayload();
 
@@ -5056,16 +5074,20 @@ async function syncNow() {
     if (!sameJson(dataPart(result), dataPart(local))) applyPayload(result);
     else localStorage.setItem(SYNC_KEYS.DELETED, JSON.stringify(result.deletedProjects || []));
 
+    // Versión de Drive con la que queda sincronizado (si se sube, la siguiente consulta la obtiene)
+    SYNC.remoteVersion = file ? String(file.version) : null;
     if (!remote || !sameJson(dataPart(result), dataPart(remote))) {
       // Si otra persona guardó mientras tanto, se vuelve a combinar antes de subir para no pisar su cambio
       if (file) {
         const now = await (await driveFetch(`${DRIVE_API}/files/${file.id}?fields=version&supportsAllDrives=true`)).json();
         if (String(now.version) !== String(file.version)) {
+          SYNC.remoteVersion = null;
           SYNC.again = true;
           return;
         }
       }
       const data = { ...dataPart(result), version: 1, savedAt: Date.now() };
+      SYNC.remoteVersion = null;
       SYNC.fileId = await driveUpload(DATA_FILE_NAME, new Blob([JSON.stringify(data)], { type: 'application/json' }), SYNC.fileId);
     }
     await SyncBase.set(dataPart(result));
@@ -5157,7 +5179,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '50';
+const APP_VERSION = '51';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -5218,6 +5240,56 @@ function closeSettings() {
   settingsModal.style.display = 'none';
   applyToolsAutoHide(); // deshace la vista previa si se canceló
 }
+
+// ----- Diagnóstico del proyecto (Configuración): qué tiene y cuánto pesa, para revisar el rendimiento -----
+async function projectDiagnostics() {
+  const p = getActiveProject();
+  const kb = (o) => Math.round(JSON.stringify(o || []).length / 1024);
+  const strokes = p.drawings || [];
+  const points = strokes.reduce((n, s) => n + (s.points || []).length, 0);
+  const bg = p.bgImages || [];
+  const taskImgs = (p.tasks || []).flatMap(t => t.images || []);
+  let decoded = 0;
+  let stored = 0;
+  let missing = 0;
+  const big = [];
+  for (const img of [...bg, ...taskImgs]) {
+    const blob = await ImageStore.get(img.id).catch(() => null);
+    if (!blob) { missing++; continue; }
+    stored += blob.size;
+    try {
+      const b = await createImageBitmap(blob);
+      decoded += b.width * b.height * 4;
+      if (Math.max(b.width, b.height) >= 1500) big.push(`${b.width}x${b.height}`);
+      b.close();
+    } catch (e) {}
+  }
+  const mb = (n) => (n / 1048576).toFixed(1);
+  const lines = [
+    `ZenBan v${APP_VERSION} · ${IS_TOUCH_SCREEN ? 'pantalla táctil' : 'mouse'} · pantalla ${screen.width}x${screen.height} @${window.devicePixelRatio}x` +
+      (navigator.deviceMemory ? ` · memoria ~${navigator.deviceMemory} GB` : ''),
+    `Proyecto: ${p.name}`,
+    `Tableros ${(p.boards || []).length} · columnas ${(p.columns || []).length} · tareas ${(p.tasks || []).length}`,
+    `Imágenes: ${bg.length} en el lienzo, ${taskImgs.length} en tareas${missing ? ` (${missing} sin descargar)` : ''}`,
+    `  guardadas ${mb(stored)} MB · descomprimidas ${mb(decoded)} MB${big.length ? ` · grandes: ${big.length}` : ''}`,
+    `Dibujos: ${strokes.length} trazos, ${points} puntos · textos ${(p.texts || []).length}`,
+    `Datos del proyecto: ${kb(p)} KB (dibujos ${kb(strokes)} KB, tareas ${kb(p.tasks)} KB)`,
+    `Todos los proyectos: ${kb(projects)} KB · elementos en pantalla: ${document.querySelectorAll('#zoomCanvas *').length}`
+  ];
+  return lines.join('\n');
+}
+
+document.getElementById('settingsDiag').addEventListener('toggle', async (e) => {
+  if (!e.target.open) return;
+  const out = document.getElementById('diagOutput');
+  out.textContent = 'Calculando…';
+  try { out.textContent = await projectDiagnostics(); } catch (err) { out.textContent = 'No se pudo calcular: ' + err.message; }
+});
+document.getElementById('diagCopyBtn').addEventListener('click', async () => {
+  const text = document.getElementById('diagOutput').textContent;
+  try { await navigator.clipboard.writeText(text); showToast('Diagnóstico copiado', 'success'); }
+  catch (e) { showToast('No se pudo copiar; selecciona el texto y cópialo', 'info'); }
+});
 
 // ----- Esconder las herramientas (barra lateral y barra de zoom) cuando no se usan -----
 const settingToolsAutoHide = document.getElementById('settingToolsAutoHide');

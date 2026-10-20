@@ -210,6 +210,7 @@ async function switchToSpace(target, projectId = null) {
     // 3) Reemplaza los datos locales por los del otro espacio (ya estaba todo subido)
     setSpace(toStoredSpace(target));
     SYNC.fileId = file.id;
+    SYNC.remoteVersion = String(file.version); // los datos locales quedan iguales a esa versión de Drive
     applyPayload(dataPart(data));
     await SyncBase.set(dataPart(data));
     setDirty(false);

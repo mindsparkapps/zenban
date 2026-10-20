@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=37">
+  <link rel="stylesheet" href="styles.css?v=38">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -771,6 +771,11 @@
             <input type="range" id="settingToolsOpacity" min="0" max="100" step="5" value="20">
             <p class="setup-text">La barra de herramientas y la de zoom se ven así mientras no pasas el mouse; al acercarlo vuelven a verse completas. 0% las oculta del todo. En el celular aparecen al tocarlas.</p>
           </div>
+          <details class="settings-diag" id="settingsDiag">
+            <summary>Diagnóstico de este proyecto</summary>
+            <pre id="diagOutput">Calculando…</pre>
+            <button type="button" class="btn btn-ghost" id="diagCopyBtn">Copiar diagnóstico</button>
+          </details>
           <div class="modal-actions">
             <div class="spacer"></div>
             <button type="button" id="cancelSettingsBtn" class="btn btn-ghost">Cancelar</button>
@@ -787,9 +792,9 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=50"></script>
+  <script src="app.js?v=51"></script>
   <script src="share.js?v=3"></script>
   <script src="transfer.js?v=2"></script>
-  <script src="spaces.js?v=1"></script>
+  <script src="spaces.js?v=2"></script>
 </body>
 </html>
