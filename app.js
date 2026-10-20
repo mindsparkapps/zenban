@@ -354,23 +354,29 @@ let canvasIdleTimer = null;
 function markCanvasTransforming(ms) {
   if (!zoomCanvas.classList.contains('is-transforming')) zoomCanvas.classList.add('is-transforming');
   clearTimeout(canvasIdleTimer);
-  canvasIdleTimer = setTimeout(() => zoomCanvas.classList.remove('is-transforming'), ms);
+  canvasIdleTimer = setTimeout(settleCanvas, ms);
+}
+
+// Al detenerse se hacen juntos los dos cambios que obligan a repintar el lienzo (--inv-zoom y quitar
+// la capa), para que se repinte una sola vez en vez de dos seguidas
+function settleCanvas() {
+  applyInvZoom();
+  zoomCanvas.classList.remove('is-transforming');
 }
 
 // --inv-zoom (grosor de bordes y manijas de selección) obliga a recalcular el estilo de TODO el lienzo.
 // Mientras se hace zoom continuo (pellizco, rueda) se actualiza al detenerse, no en cada cuadro:
 // en el celular, con muchas tarjetas, recalcularlo en cada cuadro hacía el zoom muy lento.
 let invZoomApplied = null;
-let invZoomTimer = null;
-function scheduleInvZoom() {
+function applyInvZoom() {
   if (zoom === invZoomApplied) return;
-  clearTimeout(invZoomTimer);
-  const apply = () => {
-    invZoomApplied = zoom;
-    zoomCanvas.style.setProperty('--inv-zoom', 1 / zoom);
-  };
-  if (invZoomApplied === null) apply();
-  else invZoomTimer = setTimeout(apply, 120);
+  invZoomApplied = zoom;
+  zoomCanvas.style.setProperty('--inv-zoom', 1 / zoom);
+}
+
+function scheduleInvZoom() {
+  // La primera vez se aplica al tiro; después, al detenerse (settleCanvas)
+  if (invZoomApplied === null) applyInvZoom();
 }
 
 // Zoom towards a specific screen coordinate (cursor or pinch midpoint)
@@ -5189,7 +5195,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '52';
+const APP_VERSION = '53';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
