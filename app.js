@@ -115,9 +115,9 @@ function generateId(prefix) {
   return prefix + '-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
 }
 
-// Proyecto vacío para empezar un espacio sin datos
+// Proyecto vacío (lienzo sin tableros) para el primer uso o un espacio sin datos
 function blankProject() {
-  return { id: generateId('proj'), name: 'Mi primer proyecto', color: '#6366f1', columns: deepClone(PROJECT_TEMPLATES.basic), tasks: [], createdAt: Date.now() };
+  return { id: generateId('proj'), name: 'Mi primer proyecto', color: '#6366f1', columns: [], tasks: [], boards: [], createdAt: Date.now() };
 }
 
 // Espacio (personal o compartido) al que pertenecen los datos que esta pestaña tiene abiertos.
@@ -133,14 +133,15 @@ function loadProjects() {
   const legacyTasks = loadData(STORAGE_KEYS.TASKS, null);
   const hasLegacy = Array.isArray(legacyColumns) || Array.isArray(legacyTasks);
 
-  const firstProject = {
+  // Primer uso: un lienzo vacío, sin tableros de ejemplo
+  const firstProject = hasLegacy ? {
     id: generateId('proj'),
-    name: hasLegacy ? 'Mi tablero' : 'Mi primer proyecto',
+    name: 'Mi tablero',
     color: '#6366f1',
     columns: Array.isArray(legacyColumns) ? legacyColumns : deepClone(DEFAULT_COLUMNS),
-    tasks: Array.isArray(legacyTasks) ? legacyTasks : deepClone(DEFAULT_TASKS),
+    tasks: Array.isArray(legacyTasks) ? legacyTasks : [],
     createdAt: Date.now()
-  };
+  } : blankProject();
 
   const migrated = [firstProject];
   saveData(STORAGE_KEYS.PROJECTS, migrated);
@@ -1203,26 +1204,8 @@ function renderBoardContent() {
   refreshTagFilterOptions();
   ensureBoards();
 
-  // Proyecto sin tableros: estado vacío con acceso directo
+  // Un lienzo puede no tener tableros: queda vacío (textos, dibujos, flechas e imágenes siguen funcionando)
   if (boards.length === 0) {
-    const emptyEl = document.createElement('div');
-    emptyEl.className = 'board-empty';
-    emptyEl.innerHTML = `
-      <div class="board-empty-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-          <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-          <line x1="9" y1="8" x2="9" y2="20"></line>
-          <line x1="15" y1="8" x2="15" y2="20"></line>
-          <line x1="3" y1="8" x2="21" y2="8"></line>
-        </svg>
-      </div>
-      <h3>Este proyecto aún no tiene tableros</h3>
-      <p>Crea un tablero para empezar a organizar las tareas de <strong>${escapeHtml(getActiveProject().name)}</strong>.</p>
-      <button class="btn btn-primary" onclick="openBoardModal()">Crear tablero</button>
-    `;
-    emptyEl.style.left = `${COLUMN_LAYOUT.ORIGIN_X}px`;
-    emptyEl.style.top = `${COLUMN_LAYOUT.ORIGIN_Y + 40}px`;
-    kanbanBoard.appendChild(emptyEl);
     updateStats();
     return;
   }
@@ -1799,11 +1782,40 @@ window.openTaskModal = function(taskId = null, defaultColId = null, event = null
   setTagPanelOpen(false);
   renderTagPicker();
   taskModal.style.display = 'flex';
-  // En el celular, al abrir una tarea existente no se enfoca el título: abriría el teclado y taparía la tarea.
-  // Solo al crear una tarea nueva se enfoca para escribir de inmediato.
+  // El título se va completando con la descripción mientras no se escriba a mano
+  // (en tareas nuevas, o si el título es justo el inicio de la descripción)
+  titleFollowsDescription = !taskTitleInput.value.trim() || taskTitleInput.value === titleFromDescription(taskDescInput.value);
+  // Se escribe directo en la descripción. En el celular, al abrir una tarea existente no se enfoca nada:
+  // el teclado taparía la tarea. Solo al crear una nueva se enfoca para escribir de inmediato.
   const isTouchScreen = window.matchMedia && matchMedia('(pointer: coarse)').matches;
-  if (!(taskIdInput.value && isTouchScreen)) setTimeout(() => taskTitleInput.focus(), 60);
+  if (!(taskIdInput.value && isTouchScreen)) {
+    setTimeout(() => {
+      taskDescInput.focus();
+      const end = taskDescInput.value.length;
+      taskDescInput.setSelectionRange(end, end);
+    }, 60);
+  }
 };
+
+// Título automático: la primera línea de la descripción, hasta TITLE_FROM_DESC_MAX caracteres (cortando en una palabra)
+const TITLE_FROM_DESC_MAX = 60;
+let titleFollowsDescription = false;
+
+function titleFromDescription(desc) {
+  const line = (String(desc).split('\n').find(l => l.trim()) || '').trim().replace(/\s+/g, ' ');
+  if (line.length <= TITLE_FROM_DESC_MAX) return line;
+  const cut = line.slice(0, TITLE_FROM_DESC_MAX);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > TITLE_FROM_DESC_MAX * 0.6 ? cut.slice(0, lastSpace) : cut).trim()}…`;
+}
+
+taskDescInput.addEventListener('input', () => {
+  if (titleFollowsDescription) taskTitleInput.value = titleFromDescription(taskDescInput.value);
+});
+taskTitleInput.addEventListener('input', () => {
+  // Al escribir el título a mano deja de seguir a la descripción; si se borra, vuelve a seguirla
+  titleFollowsDescription = !taskTitleInput.value.trim();
+});
 
 function closeTaskModal() {
   taskModal.style.display = 'none';
@@ -2980,7 +2992,7 @@ let penPrefs = loadData(PEN_PREFS_KEY, { color: '#f43f5e', size: 4 });
 const undoStack = [];
 
 function isDrawingTool() {
-  return currentTool === 'pen' || currentTool === 'eraser';
+  return currentTool === 'pen' || currentTool === 'eraser' || currentTool === 'arrow';
 }
 
 function getDrawings() {
@@ -2999,7 +3011,9 @@ function setTool(tool) {
   viewportArea.classList.toggle('tool-pen', tool === 'pen');
   viewportArea.classList.toggle('tool-eraser', tool === 'eraser');
   viewportArea.classList.toggle('tool-text', tool === 'text');
-  penOptions.hidden = tool !== 'pen';
+  viewportArea.classList.toggle('tool-arrow', tool === 'arrow');
+  // La flecha usa el mismo color y grosor que el lápiz
+  penOptions.hidden = tool !== 'pen' && tool !== 'arrow';
 
   if (isDrawingTool() && selection.size) setSelection([]);
 }
@@ -3022,9 +3036,28 @@ function strokeToPath(points) {
   return d;
 }
 
+// Flecha: una línea del primer punto al segundo con la punta en el segundo
+function arrowToPath(stroke) {
+  const [[x1, y1], [x2, y2]] = stroke.points.length > 1 ? stroke.points : [stroke.points[0], stroke.points[0]];
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  const head = Math.min(stroke.size * 3.5 + 4, len * 0.5);
+  const spread = Math.PI / 7;
+  const hx1 = x2 - head * Math.cos(angle - spread);
+  const hy1 = y2 - head * Math.sin(angle - spread);
+  const hx2 = x2 - head * Math.cos(angle + spread);
+  const hy2 = y2 - head * Math.sin(angle + spread);
+  const f = (n) => +n.toFixed(1);
+  return `M ${x1} ${y1} L ${x2} ${y2} M ${f(hx1)} ${f(hy1)} L ${x2} ${y2} L ${f(hx2)} ${f(hy2)}`;
+}
+
+function strokePathD(stroke) {
+  return stroke.arrow ? arrowToPath(stroke) : strokeToPath(stroke.points);
+}
+
 function createStrokeEl(stroke) {
   const path = document.createElementNS(SVG_NS, 'path');
-  path.setAttribute('d', strokeToPath(stroke.points));
+  path.setAttribute('d', strokePathD(stroke));
   path.setAttribute('stroke', stroke.color);
   path.setAttribute('stroke-width', stroke.size);
   path.dataset.strokeId = stroke.id;
@@ -3090,7 +3123,10 @@ function eraseAt(clientX, clientY) {
   for (let i = drawings.length - 1; i >= 0; i--) {
     const stroke = drawings[i];
     const reach = radius + stroke.size / 2;
-    const hit = stroke.points.some(([x, y]) => Math.hypot(x - p.x, y - p.y) <= reach);
+    const pts = stroke.points;
+    const hit = stroke.arrow && pts.length > 1
+      ? distToSegment(p.x, p.y, pts[0][0], pts[0][1], pts[1][0], pts[1][1]) <= reach
+      : pts.some(([x, y]) => Math.hypot(x - p.x, y - p.y) <= reach);
     if (hit) {
       erasedInGesture.push({ stroke, index: i });
       drawings.splice(i, 1);
@@ -3117,7 +3153,19 @@ viewportArea.addEventListener('pointerdown', (e) => {
   drawPointerId = e.pointerId;
   viewportArea.setPointerCapture(e.pointerId);
 
-  if (currentTool === 'pen') {
+  if (currentTool === 'arrow') {
+    const p = screenToCanvas(e.clientX, e.clientY);
+    const start = [+p.x.toFixed(1), +p.y.toFixed(1)];
+    activeStroke = {
+      id: generateId('stroke'),
+      arrow: true,
+      color: penPrefs.color,
+      size: +(penPrefs.size / zoom).toFixed(2),
+      points: [start, start.slice()]
+    };
+    activeStrokeEl = createStrokeEl(activeStroke);
+    drawLayer.appendChild(activeStrokeEl);
+  } else if (currentTool === 'pen') {
     const p = screenToCanvas(e.clientX, e.clientY);
     activeStroke = {
       id: generateId('stroke'),
@@ -3135,7 +3183,22 @@ viewportArea.addEventListener('pointerdown', (e) => {
 
 viewportArea.addEventListener('pointermove', (e) => {
   if (e.pointerId !== drawPointerId) return;
-  if (currentTool === 'pen' && activeStroke) {
+  if (currentTool === 'arrow' && activeStroke) {
+    const p = screenToCanvas(e.clientX, e.clientY);
+    const [x1, y1] = activeStroke.points[0];
+    let x2 = p.x;
+    let y2 = p.y;
+    // Con Shift la flecha queda en ángulos de 45°
+    if (e.shiftKey) {
+      const step = Math.PI / 4;
+      const angle = Math.round(Math.atan2(y2 - y1, x2 - x1) / step) * step;
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      x2 = x1 + len * Math.cos(angle);
+      y2 = y1 + len * Math.sin(angle);
+    }
+    activeStroke.points[1] = [+x2.toFixed(1), +y2.toFixed(1)];
+    activeStrokeEl.setAttribute('d', arrowToPath(activeStroke));
+  } else if (currentTool === 'pen' && activeStroke) {
     const p = screenToCanvas(e.clientX, e.clientY);
     const last = activeStroke.points[activeStroke.points.length - 1];
     // Ignora puntos demasiado cercanos para mantener los trazos livianos
@@ -3150,6 +3213,16 @@ viewportArea.addEventListener('pointermove', (e) => {
 function endDrawGesture(e) {
   if (e.pointerId !== drawPointerId) return;
   drawPointerId = null;
+  // Una flecha sin largo (solo un toque) no se guarda
+  if (activeStroke && activeStroke.arrow) {
+    const [[x1, y1], [x2, y2]] = activeStroke.points;
+    if (Math.hypot(x2 - x1, y2 - y1) < 6 / zoom) {
+      if (activeStrokeEl) activeStrokeEl.remove();
+      activeStroke = null;
+      activeStrokeEl = null;
+      return;
+    }
+  }
   if (activeStroke) {
     getDrawings().push(activeStroke);
     undoStack.push({ type: 'add', stroke: activeStroke });
@@ -3201,8 +3274,12 @@ function clearDrawings() {
   showToast('Dibujos borrados (Ctrl+Z para recuperarlos)', 'warning');
 }
 
+// Tocar la herramienta que ya está activa vuelve a Seleccionar (como el botón de la mano de abajo)
 toolbox.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
-  btn.addEventListener('click', () => setTool(btn.dataset.tool));
+  btn.addEventListener('click', () => {
+    const tool = btn.dataset.tool;
+    setTool(tool === currentTool && tool !== 'select' ? 'select' : tool);
+  });
 });
 document.getElementById('toolUndo').addEventListener('click', undoLastChange);
 document.getElementById('toolClear').addEventListener('click', clearDrawings);
@@ -3218,7 +3295,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const map = { v: 'select', p: 'pen', e: 'eraser', h: 'hand', t: 'text' };
+  const map = { v: 'select', p: 'pen', e: 'eraser', h: 'hand', t: 'text', a: 'arrow' };
   const tool = map[e.key.toLowerCase()];
   if (tool) setTool(tool);
 });
@@ -4154,7 +4231,8 @@ function updateContextBar() {
     const first = selectedImages()[0];
     if (first) ctxImgOpacity.value = Math.round((typeof first.opacity === 'number' ? first.opacity : 1) * 100);
   } else if (ctx.type === 'stroke') {
-    ctxTitle.textContent = ctx.count === 1 ? 'Trazo' : `${ctx.count} trazos`;
+    const onlyArrows = selectedStrokes().every(s => s.arrow);
+    ctxTitle.textContent = ctx.count === 1 ? (onlyArrows ? 'Flecha' : 'Trazo') : `${ctx.count} ${onlyArrows ? 'flechas' : 'trazos'}`;
     const first = selectedStrokes()[0];
     if (first) {
       ctxStrokeColor.value = first.color;
@@ -4428,7 +4506,10 @@ ctxStrokeSize.addEventListener('change', () => {
   selectedStrokes().forEach(st => {
     st.size = size;
     const el = drawLayer.querySelector(`[data-stroke-id="${st.id}"]`);
-    if (el) el.setAttribute('stroke-width', size);
+    if (el) {
+      el.setAttribute('stroke-width', size);
+      if (st.arrow) el.setAttribute('d', arrowToPath(st)); // la punta crece con el grosor
+    }
   });
   persist();
 });
@@ -5315,7 +5396,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '59';
+const APP_VERSION = '60';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

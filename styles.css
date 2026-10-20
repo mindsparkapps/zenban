@@ -2914,8 +2914,14 @@ select option:checked {
 }
 
 .viewport-area.tool-pen,
-.viewport-area.tool-pen * {
+.viewport-area.tool-pen *,
+.viewport-area.tool-arrow,
+.viewport-area.tool-arrow * {
   cursor: crosshair !important;
+}
+
+.viewport-area.tool-arrow {
+  touch-action: none;
 }
 
 .viewport-area.tool-eraser,
