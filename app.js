@@ -941,6 +941,7 @@ function showPeek(card) {
     <div class="card-peek-where">${escapeHtml([board && board.title, col && col.title].filter(Boolean).join(' › '))}</div>
     ${(task.tags || []).length ? `<div class="card-tags">${task.tags.map(t => tagPillHtml(t)).join('')}</div>` : ''}
     ${task.description ? `<p class="card-peek-desc">${linkify(task.description)}</p>` : ''}
+    ${youtubePreviews([task.description, ...subs.map(s => s.text)].join('\n'), 3)}
     ${subs.length ? `
       <div class="card-peek-subs">
         <div class="card-peek-label">Subtareas ${done}/${subs.length}</div>
@@ -1453,6 +1454,8 @@ function createCardElement(task) {
 
     ${task.description ? `<p class="card-desc">${linkify(task.description)}</p>` : ''}
 
+    ${youtubePreviews([task.description, ...(task.subtasks || []).map(s => s.text)].join('\n'), 2)}
+
     ${totalSubtasks > 0 ? `
       <div class="card-subtasks">
         <div class="subtasks-info">
@@ -1515,7 +1518,7 @@ function createCardElement(task) {
   });
 
   // Los links de la descripción abren su página sin abrir la tarea
-  card.querySelectorAll('.card-desc a').forEach(a => a.addEventListener('click', (e) => e.stopPropagation()));
+  card.querySelectorAll('.card-desc a, .yt-preview').forEach(a => a.addEventListener('click', (e) => e.stopPropagation()));
 
   // Clicking on card opens modal (unless check button or menu clicked)
   card.addEventListener('click', (e) => {
@@ -3828,7 +3831,7 @@ function renderTexts() {
     el.className = 'canvas-text';
     el.dataset.textId = t.id;
     applyTextStyle(el, t);
-    el.innerHTML = linkify(t.text);
+    el.innerHTML = linkify(t.text) + youtubePreviews(t.text);
     const handle = document.createElement('div');
     handle.className = 'canvas-text-handle';
     handle.title = 'Arrastra para cambiar el ancho de la caja';
@@ -5292,7 +5295,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '57';
+const APP_VERSION = '58';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -5658,16 +5661,41 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-// Escapa el texto y convierte las direcciones web (https://… o www.…) en links que abren en otra pestaña
-const AUTO_LINK_RE = /\b((?:https?:\/\/|www\.)[^\s<]+)/gi;
+// Escapa el texto y convierte las direcciones web (https://… o www.…) en links que abren en otra pestaña.
+// Con [texto](dirección) el link muestra ese texto en vez de la dirección.
+const LINK_RE = /\[([^\]\n]+)\]\(((?:https?:\/\/|www\.)[^\s)<]+)\)|\b((?:https?:\/\/|www\.)[^\s<]+)/gi;
+function linkHref(url) {
+  return /^www\./i.test(url) ? `https://${url}` : url;
+}
 function linkify(str) {
-  return escapeHtml(str).replace(AUTO_LINK_RE, (match) => {
+  return escapeHtml(str).replace(LINK_RE, (match, label, labelUrl, url) => {
+    if (label) {
+      return `<a class="auto-link" href="${linkHref(labelUrl)}" target="_blank" rel="noopener noreferrer" title="${labelUrl}">${label}</a>`;
+    }
     // La puntuación al final ("…/docs." o "(…/docs)") no es parte del link
-    const trail = (match.match(/(?:[.,;:!?)\]]|&#39;|&quot;)+$/) || [''])[0];
-    const url = trail ? match.slice(0, -trail.length) : match;
-    const href = /^www\./i.test(url) ? `https://${url}` : url;
-    return `<a class="auto-link" href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>${trail}`;
+    const trail = (url.match(/(?:[.,;:!?)\]]|&#39;|&quot;)+$/) || [''])[0];
+    if (trail) url = url.slice(0, -trail.length);
+    return `<a class="auto-link" href="${linkHref(url)}" target="_blank" rel="noopener noreferrer">${url}</a>${trail}`;
   });
+}
+
+// Id de los videos de YouTube mencionados en un texto (youtube.com/watch?v=, youtu.be/, /shorts/, /embed/, /live/)
+const YOUTUBE_RE = /(?:youtube\.com\/(?:watch\?(?:[^\s)]*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/gi;
+function youtubeIds(str) {
+  const ids = [];
+  for (const m of String(str || '').matchAll(YOUTUBE_RE)) if (!ids.includes(m[1])) ids.push(m[1]);
+  return ids;
+}
+
+// Imágenes de vista previa de los videos de YouTube de un texto (tocarlas abre el video)
+function youtubePreviews(str, max = 3) {
+  const ids = youtubeIds(str).slice(0, max);
+  if (!ids.length) return '';
+  // Sin espacios entre etiquetas: los textos del lienzo respetan los saltos de línea
+  return `<div class="yt-previews">${ids.map(id =>
+    `<a class="yt-preview" href="https://www.youtube.com/watch?v=${id}" target="_blank" rel="noopener noreferrer" title="Ver en YouTube">` +
+    `<img src="https://i.ytimg.com/vi/${id}/hqdefault.jpg" alt="Video de YouTube" loading="lazy" decoding="async" draggable="false">` +
+    `<span class="yt-play" aria-hidden="true"></span></a>`).join('')}</div>`;
 }
 
 // Copia un texto al portapapeles; si el navegador no lo permite, usa la copia clásica

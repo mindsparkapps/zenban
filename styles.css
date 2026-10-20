@@ -1043,6 +1043,69 @@ body.theme-light .moon-icon { display: none; }
   color: #93c5fd;
 }
 
+/* Vista previa de videos de YouTube: tocarla abre el video */
+.yt-previews {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.4rem 0;
+  white-space: normal;
+}
+
+.yt-preview {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 20em;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-xs, 6px);
+  background: #000;
+  line-height: 0;
+}
+
+.yt-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.yt-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3em;
+  height: 2.1em;
+  transform: translate(-50%, -50%);
+  border-radius: 0.6em;
+  background: rgba(220, 0, 0, 0.9);
+}
+
+.yt-play::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-35%, -50%);
+  border-style: solid;
+  border-width: 0.5em 0 0.5em 0.85em;
+  border-color: transparent transparent transparent #fff;
+}
+
+.yt-preview:hover .yt-play {
+  background: #f00;
+}
+
+.kanban-card .yt-preview {
+  font-size: 0.7rem;
+}
+
+/* En los textos del lienzo la miniatura acompaña al tamaño de la letra */
+.canvas-text .yt-preview {
+  max-width: 12em;
+}
+
 .card-subtask.is-done .card-subtask-text {
   color: var(--text-dim);
   text-decoration: line-through;
