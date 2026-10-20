@@ -1429,7 +1429,7 @@ function createCardElement(task) {
         </span>
       </div>
       <div class="card-top-right">
-        <button type="button" class="card-copy-btn" title="Copiar la tarea (título, descripción y subtareas)" aria-label="Copiar la tarea">
+        <button type="button" class="card-copy-btn" title="Copiar la descripción" aria-label="Copiar la descripción">
           ${COPY_ICON}
         </button>
         <button class="card-menu-btn" title="Editar tarea" onclick="openTaskModal('${task.id}', null, event)">
@@ -1510,10 +1510,14 @@ function createCardElement(task) {
     });
   });
 
-  // Copiar la tarea completa o todas sus subtareas, sin abrirla
+  // Copiar la descripción o todas las subtareas, sin abrir la tarea
   card.querySelector('.card-copy-btn').addEventListener('click', (e) => {
     e.stopPropagation();
-    copyWithToast(taskAsText(task), 'Tarea copiada');
+    if (!(task.description || '').trim()) {
+      showToast('Esta tarea no tiene descripción', 'info');
+      return;
+    }
+    copyWithToast(task.description, 'Descripción copiada');
   });
   const copyAllSubs = card.querySelector('.card-subtasks-copy');
   if (copyAllSubs) copyAllSubs.addEventListener('click', (e) => {
@@ -2509,7 +2513,9 @@ function screenToCanvas(clientX, clientY) {
   return { x: (clientX - rect.left - panX) / zoom, y: (clientY - rect.top - panY) / zoom };
 }
 
-async function addBgImageFromFile(file, clientX = null, clientY = null) {
+// opts.at: punto del lienzo donde va el centro (si no, el punto de pantalla o el centro de la vista);
+// opts.focus: acerca la vista a la imagen; opts.message: aviso al terminar
+async function addBgImageFromFile(file, clientX = null, clientY = null, opts = {}) {
   if (!file || !file.type.startsWith('image/')) return;
   try {
     const { id, w, h } = await storeImageFile(file);
@@ -2518,18 +2524,22 @@ async function addBgImageFromFile(file, clientX = null, clientY = null) {
     const width = Math.min(600, w);
     const height = Math.round(width * (h / w));
     let center;
-    if (clientX !== null) {
+    if (opts.at) {
+      center = opts.at;
+    } else if (clientX !== null) {
       center = screenToCanvas(clientX, clientY);
     } else {
       const rect = viewportArea.getBoundingClientRect();
       center = screenToCanvas(rect.left + rect.width / 2, rect.top + rect.height / 2);
     }
 
-    getBgImages().push({ id, x: Math.round(center.x - width / 2), y: Math.round(center.y - height / 2), w: width, h: height });
+    const img = { id, x: Math.round(center.x - width / 2), y: Math.round(center.y - height / 2), w: width, h: height };
+    getBgImages().push(img);
     persist();
     selection = new Set([`img:${id}`]);
     renderBgImages();
-    showToast('Imagen agregada al fondo. Arrástrala para moverla y usa la esquina para escalarla.', 'success');
+    if (opts.focus) fitRectToScreen(img.x, img.y, img.w, img.h);
+    showToast(opts.message || 'Imagen agregada al fondo. Arrástrala para moverla y usa la esquina para escalarla.', 'success');
   } catch (err) {
     console.error(err);
     showToast('No se pudo agregar la imagen', 'warning');
@@ -4546,6 +4556,15 @@ function applyCanvasColor() {
   if (reset) reset.hidden = !color;
 }
 
+// Abre el selector de color del fondo (desde el menú contextual; la barra puede estar fuera de la vista en el celular)
+function openCanvasColorPicker() {
+  applyCanvasColor();
+  try {
+    if (ctxCanvasColor.showPicker) { ctxCanvasColor.showPicker(); return; }
+  } catch (e) {}
+  ctxCanvasColor.click();
+}
+
 ctxCanvasColor.addEventListener('input', () => {
   getActiveProject().canvasColor = ctxCanvasColor.value;
   applyCanvasColor();
@@ -4775,6 +4794,8 @@ canvasMenu.addEventListener('click', async (e) => {
   if (cmd === 'cut') cutSelection();
   if (cmd === 'paste') await pasteHere(menuCanvasPoint);
   if (cmd === 'addText') addText('', menuCanvasPoint);
+  if (cmd === 'photo') takePhoto(menuCanvasPoint);
+  if (cmd === 'canvasColor') openCanvasColorPicker();
   if (cmd === 'undo') undoLastChange();
 });
 
@@ -5508,7 +5529,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '61';
+const APP_VERSION = '62';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -5988,11 +6009,6 @@ function youtubePreviews(str, max = 3) {
 // Subtareas numeradas: "1. texto", una por línea
 function subtasksAsText(subtasks) {
   return (subtasks || []).map((s, i) => `${i + 1}. ${s.text}`).join('\n');
-}
-
-// Tarea completa como texto: título, descripción y subtareas numeradas
-function taskAsText(task) {
-  return [task.title, task.description, subtasksAsText(task.subtasks)].filter(x => x && x.trim()).join('\n\n');
 }
 
 function copyWithToast(text, okMessage) {
