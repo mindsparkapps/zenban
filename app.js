@@ -115,6 +115,15 @@ function generateId(prefix) {
   return prefix + '-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
 }
 
+// Proyecto vacío para empezar un espacio sin datos
+function blankProject() {
+  return { id: generateId('proj'), name: 'Mi primer proyecto', color: '#6366f1', columns: deepClone(PROJECT_TEMPLATES.basic), tasks: [], createdAt: Date.now() };
+}
+
+// Espacio (personal o compartido) al que pertenecen los datos que esta pestaña tiene abiertos.
+// Si otra pestaña cambia de espacio, esta no guarda ni sube sus datos en el espacio nuevo (los mezclaría).
+let tabSpaceKey = spaceKey(currentSpace());
+
 // Carga los proyectos; si no existen, migra el tablero anterior como primer proyecto
 function loadProjects() {
   const saved = loadData(STORAGE_KEYS.PROJECTS, null);
@@ -215,6 +224,10 @@ function loadData(key, fallback) {
 }
 
 function saveData(key, value) {
+  if ((key === STORAGE_KEYS.PROJECTS || key === STORAGE_KEYS.TAGS) && spaceChangedElsewhere()) {
+    reloadForSpaceChange();
+    return;
+  }
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch (e) {
@@ -4608,6 +4621,7 @@ const SYNC_KEYS = {
   DIRTY: 'zenban_sync_dirty',
   LAST: 'zenban_sync_last',
   DELETED: 'zenban_deleted_projects',
+  SWITCH: 'zenban_space_switch',
   CLIENT_ID: 'zenban_google_client_id',
   STATE: 'zenban_oauth_state'
 };
@@ -4837,7 +4851,36 @@ function inShared() {
   return s.mode === 'shared' && !!s.folderId;
 }
 
+function spaceKey(s) {
+  return s && s.mode === 'shared' && s.folderId ? `shared:${s.folderId}` : 'personal';
+}
+
+// Otra pestaña de este navegador se cambió a otro espacio (los datos guardados ya son de ese espacio)
+function spaceChangedElsewhere() {
+  return spaceKey(currentSpace()) !== tabSpaceKey;
+}
+
+let reloadingForSpace = false;
+function reloadForSpaceChange() {
+  if (reloadingForSpace) return;
+  reloadingForSpace = true;
+  showToast('Se cambió de espacio en otra pestaña. Recargando…', 'info');
+  setTimeout(() => location.reload(), 800);
+}
+
+window.addEventListener('storage', (e) => {
+  if (e.key === 'zenban_space' && spaceChangedElsewhere()) reloadForSpaceChange();
+});
+
+// Al pasar a otro espacio, la primera sincronización usa los datos de ese espacio tal cual:
+// nunca se combinan con los del espacio anterior (si no, un proyecto quedaría en los dos)
+function markSpaceSwitch() {
+  localStorage.setItem(SYNC_KEYS.LAST, '0');
+  localStorage.setItem(SYNC_KEYS.SWITCH, '1');
+}
+
 function setSpace(space) {
+  tabSpaceKey = spaceKey(space);
   localStorage.setItem('zenban_space', JSON.stringify(space));
   SYNC.fileId = null;
   SYNC.remoteVersion = null;
@@ -5092,6 +5135,10 @@ async function syncNow() {
     SYNC.again = true;
     return;
   }
+  if (spaceChangedElsewhere()) {
+    reloadForSpaceChange();
+    return;
+  }
   SYNC.busy = true;
   setSyncStatus('syncing');
   try {
@@ -5109,8 +5156,14 @@ async function syncNow() {
     const local = localPayload();
 
     let result = local;
-    if (remote && Array.isArray(remote.projects) && remote.projects.length) {
-      if (lastSyncedAt() === 0) {
+    const switching = localStorage.getItem(SYNC_KEYS.SWITCH) === '1';
+    if (switching && !(remote && Array.isArray(remote.projects) && remote.projects.length)) {
+      // Se entró a un espacio vacío: empieza con un proyecto nuevo, sin copiar los del espacio anterior
+      result = { projects: [blankProject()], tags: local.tags, deletedProjects: [] };
+    } else if (remote && Array.isArray(remote.projects) && remote.projects.length) {
+      if (switching) {
+        result = dataPart(remote);
+      } else if (lastSyncedAt() === 0) {
         // Primera vez con estos datos en este dispositivo: nunca se pisa nada sin preguntar
         const where = inShared() ? `la carpeta compartida "${currentSpace().folderName || 'ZenBan'}"` : 'tu Google Drive';
         const useDrive = confirm(`Ya hay datos de ZenBan en ${where}.\n\nAceptar: usar esos datos en este dispositivo (lo que hay aquí se reemplaza).\nCancelar: combinar esos datos con lo que hay en este dispositivo (no se pierde nada).`);
@@ -5123,7 +5176,9 @@ async function syncNow() {
     }
 
     // Si hubo cambios aquí mientras se descargaba, se vuelve a empezar para no perderlos
-    if (SYNC.gen !== gen) {
+    // (o si otra pestaña cambió de espacio mientras tanto)
+    if (spaceChangedElsewhere()) return;
+    if (SYNC.gen !== gen && !switching) {
       SYNC.again = true;
       return;
     }
@@ -5149,7 +5204,8 @@ async function syncNow() {
     }
     await SyncBase.set(dataPart(result));
     localStorage.setItem(SYNC_KEYS.LAST, String(Date.now()));
-    if (SYNC.gen === gen) setDirty(false);
+    localStorage.removeItem(SYNC_KEYS.SWITCH);
+    if (SYNC.gen === gen || switching) setDirty(false);
 
     await syncImages();
     setSyncStatus(isDirty() ? 'syncing' : 'ok');
@@ -5236,7 +5292,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '56';
+const APP_VERSION = '57';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

@@ -29,7 +29,7 @@ async function checkSharedFolder() {
   } catch (e) {
     if (e.status === 404 || e.status === 403) {
       setSpace({ mode: 'personal' });
-      localStorage.setItem(SYNC_KEYS.LAST, '0');
+      markSpaceSwitch();
       renderShareState();
       showToast('Ya no tienes acceso a los datos compartidos. Volviste a tus datos personales.', 'warning');
       return false;
@@ -92,7 +92,7 @@ function joinSharedSpace(folder) {
   const owner = (folder.owners && folder.owners[0]) || {};
   setSpace({ mode: 'shared', folderId: folder.id, folderName: folder.name, ownerEmail: owner.emailAddress, ownerName: owner.displayName });
   // Primera sincronización con esa carpeta: se pregunta si usar sus datos o combinarlos con los de aquí
-  localStorage.setItem(SYNC_KEYS.LAST, '0');
+  markSpaceSwitch();
   renderShareState();
   closeShareModal();
   showToast(`Usando los datos compartidos "${folder.name}"`, 'success');
@@ -101,7 +101,7 @@ function joinSharedSpace(folder) {
 
 function leaveSharedSpace() {
   setSpace({ mode: 'personal' });
-  localStorage.setItem(SYNC_KEYS.LAST, '0');
+  markSpaceSwitch();
   renderShareState();
   closeShareModal();
   showToast('Volviste a tus datos personales. Los datos compartidos siguen en la carpeta.', 'info');
