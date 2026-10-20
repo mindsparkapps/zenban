@@ -7,6 +7,9 @@
 // 1. Initial State & Data Persistence
 // =============================================================================
 
+// Ícono de los botones Copiar
+const COPY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+
 const STORAGE_KEYS = {
   PROJECTS: 'zenban_projects_v3',
   ACTIVE_PROJECT: 'zenban_active_project_v3',
@@ -1184,6 +1187,7 @@ function moveTask(taskId, sourceColId, targetColId, targetIndex) {
 // Redibuja el tablero conservando el scroll de cada columna (por ejemplo, al soltar una tarea
 // en una columna larga, la columna queda donde estaba en vez de volver al principio)
 function renderBoard() {
+  applyCanvasColor();
   const projectId = activeProjectId;
   const scrolls = new Map();
   kanbanBoard.querySelectorAll('.kanban-column').forEach(col => {
@@ -1424,13 +1428,18 @@ function createCardElement(task) {
           ${priorityLabels[task.priority || 'medium']}
         </span>
       </div>
-      <button class="card-menu-btn" title="Editar tarea" onclick="openTaskModal('${task.id}', null, event)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="1"></circle>
-          <circle cx="19" cy="12" r="1"></circle>
-          <circle cx="5" cy="12" r="1"></circle>
-        </svg>
-      </button>
+      <div class="card-top-right">
+        <button type="button" class="card-copy-btn" title="Copiar la tarea (título, descripción y subtareas)" aria-label="Copiar la tarea">
+          ${COPY_ICON}
+        </button>
+        <button class="card-menu-btn" title="Editar tarea" onclick="openTaskModal('${task.id}', null, event)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="1"></circle>
+            <circle cx="19" cy="12" r="1"></circle>
+            <circle cx="5" cy="12" r="1"></circle>
+          </svg>
+        </button>
+      </div>
     </div>
 
     <h4 class="card-title">${escapeHtml(task.title)}</h4>
@@ -1449,7 +1458,10 @@ function createCardElement(task) {
             </svg>
             Subtareas
           </span>
-          <span>${completedSubtasks}/${totalSubtasks} (${subtaskPercent}%)</span>
+          <span class="subtasks-info-right">
+            ${completedSubtasks}/${totalSubtasks} (${subtaskPercent}%)
+            <button type="button" class="card-subtasks-copy" title="Copiar todas las subtareas (numeradas)" aria-label="Copiar todas las subtareas">${COPY_ICON}</button>
+          </span>
         </div>
         <div class="subtasks-progress-track">
           <div class="subtasks-progress-fill" style="width: ${subtaskPercent}%"></div>
@@ -1458,9 +1470,7 @@ function createCardElement(task) {
           ${task.subtasks.slice(0, CARD_SUBTASKS_SHOWN).map(s => `
             <li class="card-subtask ${s.completed ? 'is-done' : ''}" data-subtask-id="${escapeHtml(s.id)}" title="${s.completed ? 'Marcar pendiente' : 'Marcar hecha'}">
               <span class="card-subtask-box">${s.completed ? '☑' : '☐'}</span><span class="card-subtask-text">${linkify(s.text, task.linkNames)}</span>
-              <button type="button" class="card-subtask-copy" title="Copiar texto" aria-label="Copiar texto">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              </button>
+              <button type="button" class="card-subtask-copy" title="Copiar texto" aria-label="Copiar texto">${COPY_ICON}</button>
             </li>`).join('')}
           ${totalSubtasks > CARD_SUBTASKS_SHOWN ? `<li class="card-subtask-more">+${totalSubtasks - CARD_SUBTASKS_SHOWN} más</li>` : ''}
         </ul>
@@ -1491,13 +1501,24 @@ function createCardElement(task) {
       if (!st) return;
       if (e.target.closest('a')) return;
       if (e.target.closest('.card-subtask-copy')) {
-        copyTextToClipboard(st.text).then(ok => showToast(ok ? 'Texto copiado' : 'No se pudo copiar', ok ? 'success' : 'error'));
+        copyWithToast(st.text, 'Texto copiado');
         return;
       }
       st.completed = !st.completed;
       persist();
       renderBoard();
     });
+  });
+
+  // Copiar la tarea completa o todas sus subtareas, sin abrirla
+  card.querySelector('.card-copy-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    copyWithToast(taskAsText(task), 'Tarea copiada');
+  });
+  const copyAllSubs = card.querySelector('.card-subtasks-copy');
+  if (copyAllSubs) copyAllSubs.addEventListener('click', (e) => {
+    e.stopPropagation();
+    copyWithToast(subtasksAsText(task.subtasks), 'Subtareas copiadas');
   });
 
   // Los links de la descripción abren su página sin abrir la tarea
@@ -2316,8 +2337,8 @@ window.openProjectModal = function(projectId = null) {
     projectIdInput.value = '';
     projectNameInput.value = '';
     projectColorInput.value = PALETTE_COLORS[projects.length % PALETTE_COLORS.length];
-    projectTemplateGroup.style.display = '';
-    projectTemplateSelect.value = 'basic';
+    // Los proyectos nuevos empiezan con el lienzo vacío (sin tableros ni columnas)
+    projectTemplateGroup.style.display = 'none';
     deleteProjectBtn.style.display = 'none';
   }
 
@@ -2352,13 +2373,13 @@ projectForm.addEventListener('submit', (e) => {
     renderProjectSwitcher();
     renderBoard();
   } else {
-    const template = PROJECT_TEMPLATES[projectTemplateSelect.value] || [];
     const newProject = {
       id: generateId('proj'),
       name: name,
       color: color,
-      columns: deepClone(template),
+      columns: [],
       tasks: [],
+      boards: [],
       createdAt: Date.now()
     };
     projects.push(newProject);
@@ -2792,6 +2813,14 @@ function transferBgImageToTask(imageId, taskId) {
   showToast(`Imagen movida a la tarea "${task.title.substring(0, 28)}"`, 'success');
 }
 
+document.getElementById('copyAllSubtasksBtn').addEventListener('click', () => {
+  if (!currentModalSubtasks.length) {
+    showToast('Esta tarea no tiene subtareas', 'info');
+    return;
+  }
+  copyWithToast(subtasksAsText(currentModalSubtasks), 'Subtareas copiadas');
+});
+
 // Texto que muestra cada link de la tarea ({ dirección: texto })
 let currentModalLinkNames = {};
 document.getElementById('taskLinksBtn').addEventListener('click', () => {
@@ -3014,6 +3043,8 @@ function setTool(tool) {
   viewportArea.classList.toggle('tool-arrow', tool === 'arrow');
   // La flecha usa el mismo color y grosor que el lápiz
   penOptions.hidden = tool !== 'pen' && tool !== 'arrow';
+  eraserOptions.hidden = tool !== 'eraser';
+  if (tool !== 'eraser') eraserCursor.hidden = true;
 
   if (isDrawingTool() && selection.size) setSelection([]);
 }
@@ -3116,9 +3147,56 @@ let activeStrokeEl = null;
 let drawPointerId = null;
 let erasedInGesture = [];
 
+// ----- Tamaño del borrador (diámetro en pantalla) y círculo que lo muestra al moverlo -----
+const ERASER_SIZES = [12, 24, 48, 96];
+const ERASER_PREFS_KEY = 'zenban_eraser_prefs_v1';
+let eraserPrefs = loadData(ERASER_PREFS_KEY, { size: 24 });
+const eraserOptions = document.getElementById('eraserOptions');
+const eraserSizesEl = document.getElementById('eraserSizes');
+const eraserCursor = document.createElement('div');
+eraserCursor.className = 'eraser-cursor';
+eraserCursor.hidden = true;
+viewportArea.appendChild(eraserCursor);
+
+function renderEraserOptions() {
+  eraserSizesEl.innerHTML = '';
+  ERASER_SIZES.forEach(size => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `pen-size eraser-size ${eraserPrefs.size === size ? 'active' : ''}`;
+    btn.title = `Borrador de ${size} px`;
+    const dot = Math.round(4 + (ERASER_SIZES.indexOf(size) / (ERASER_SIZES.length - 1)) * 16);
+    btn.innerHTML = `<span style="width:${dot}px;height:${dot}px"></span>`;
+    btn.addEventListener('click', () => {
+      eraserPrefs.size = size;
+      saveData(ERASER_PREFS_KEY, eraserPrefs);
+      renderEraserOptions();
+    });
+    eraserSizesEl.appendChild(btn);
+  });
+  document.getElementById('eraserSizeLabel').textContent = `Tamaño ${eraserPrefs.size} px`;
+  eraserCursor.style.width = eraserCursor.style.height = `${eraserPrefs.size}px`;
+}
+
+function moveEraserCursor(clientX, clientY) {
+  const rect = viewportArea.getBoundingClientRect();
+  eraserCursor.style.transform = `translate(${clientX - rect.left - eraserPrefs.size / 2}px, ${clientY - rect.top - eraserPrefs.size / 2}px)`;
+  eraserCursor.hidden = false;
+}
+
+viewportArea.addEventListener('pointermove', (e) => {
+  if (currentTool !== 'eraser') return;
+  if (e.target.closest('.toolbox, .zoom-hud, .mobile-fab, .context-bar')) { eraserCursor.hidden = true; return; }
+  moveEraserCursor(e.clientX, e.clientY);
+});
+viewportArea.addEventListener('pointerleave', () => { eraserCursor.hidden = true; });
+// En pantallas táctiles el círculo se ve solo mientras se borra
+viewportArea.addEventListener('pointerup', (e) => { if (e.pointerType === 'touch') eraserCursor.hidden = true; });
+
 function eraseAt(clientX, clientY) {
+  moveEraserCursor(clientX, clientY);
   const p = screenToCanvas(clientX, clientY);
-  const radius = 10 / zoom;
+  const radius = eraserPrefs.size / 2 / zoom;
   const drawings = getDrawings();
   for (let i = drawings.length - 1; i >= 0; i--) {
     const stroke = drawings[i];
@@ -3301,6 +3379,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 renderPenOptions();
+renderEraserOptions();
 
 // =============================================================================
 // 7e. Lienzo libre tipo Miro: tableros (marcos con columnas hijas),
@@ -4445,6 +4524,39 @@ function cutSelection() {
   showToast('Cortado. Usa Pegar (Ctrl+V) para colocarlo', 'info');
 }
 
+// ----- Color de fondo del lienzo (de cada proyecto) -----
+const ctxCanvasColor = document.getElementById('ctxCanvasColor');
+const ctxCanvasColorReset = document.getElementById('ctxCanvasColorReset');
+
+function applyCanvasColor() {
+  const project = getActiveProject();
+  const color = project && project.canvasColor;
+  viewportArea.style.backgroundColor = color || '';
+  viewportArea.classList.toggle('has-canvas-color', !!color);
+  if (color) {
+    // Puntos de la cuadrícula claros u oscuros según el fondo
+    const n = parseInt(color.slice(1), 16);
+    const light = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 150;
+    viewportArea.style.setProperty('--canvas-dot', light ? 'rgba(0, 0, 0, 0.18)' : 'rgba(255, 255, 255, 0.14)');
+  }
+  // (se buscan aquí porque renderBoard puede llamarse antes de que se definan las constantes de abajo)
+  const input = document.getElementById('ctxCanvasColor');
+  const reset = document.getElementById('ctxCanvasColorReset');
+  if (input) input.value = color || rgbToHex(getComputedStyle(viewportArea).backgroundColor);
+  if (reset) reset.hidden = !color;
+}
+
+ctxCanvasColor.addEventListener('input', () => {
+  getActiveProject().canvasColor = ctxCanvasColor.value;
+  applyCanvasColor();
+});
+ctxCanvasColor.addEventListener('change', () => persist());
+ctxCanvasColorReset.addEventListener('click', () => {
+  delete getActiveProject().canvasColor;
+  applyCanvasColor();
+  persist();
+});
+
 // ----- Botones de la barra contextual -----
 document.getElementById('ctxNewBoard').addEventListener('click', () => openBoardModal());
 document.getElementById('ctxAddImage').addEventListener('click', () => bgImageInput.click());
@@ -5396,7 +5508,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '60';
+const APP_VERSION = '61';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -5871,6 +5983,20 @@ function youtubePreviews(str, max = 3) {
     `<a class="yt-preview" href="https://www.youtube.com/watch?v=${id}" target="_blank" rel="noopener noreferrer" title="Ver en YouTube">` +
     `<img src="https://i.ytimg.com/vi/${id}/hqdefault.jpg" alt="Video de YouTube" loading="lazy" decoding="async" draggable="false">` +
     `<span class="yt-play" aria-hidden="true"></span></a>`).join('')}</div>`;
+}
+
+// Subtareas numeradas: "1. texto", una por línea
+function subtasksAsText(subtasks) {
+  return (subtasks || []).map((s, i) => `${i + 1}. ${s.text}`).join('\n');
+}
+
+// Tarea completa como texto: título, descripción y subtareas numeradas
+function taskAsText(task) {
+  return [task.title, task.description, subtasksAsText(task.subtasks)].filter(x => x && x.trim()).join('\n\n');
+}
+
+function copyWithToast(text, okMessage) {
+  return copyTextToClipboard(text).then(ok => showToast(ok ? okMessage : 'No se pudo copiar', ok ? 'success' : 'error'));
 }
 
 // Copia un texto al portapapeles; si el navegador no lo permite, usa la copia clásica

@@ -488,6 +488,11 @@ body.theme-light .moon-icon { display: none; }
   cursor: default;
 }
 
+/* Fondo elegido para el lienzo del proyecto */
+.viewport-area.has-canvas-color {
+  background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1px);
+}
+
 .viewport-area.pan-mode {
   cursor: grab !important;
 }
@@ -918,6 +923,66 @@ body.theme-light .moon-icon { display: none; }
 .card-menu-btn svg {
   width: 16px;
   height: 16px;
+}
+
+/* Copiar la tarea / todas sus subtareas: aparece al pasar el mouse (siempre en táctil) */
+.card-top-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.card-copy-btn,
+.card-subtasks-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0.2rem;
+  border-radius: var(--radius-xs);
+  line-height: 1;
+  opacity: 0;
+}
+
+.card-copy-btn svg { width: 14px; height: 14px; }
+.card-subtasks-copy svg { width: 12px; height: 12px; }
+
+.kanban-card:hover .card-copy-btn,
+.kanban-card:hover .card-subtasks-copy,
+.card-copy-btn:focus-visible,
+.card-subtasks-copy:focus-visible {
+  opacity: 1;
+}
+
+.card-copy-btn:hover,
+.card-subtasks-copy:hover {
+  color: var(--text-main);
+  background: var(--bg-surface-hover);
+}
+
+@media (pointer: coarse) {
+  .card-copy-btn, .card-subtasks-copy { opacity: 0.7; }
+}
+
+.subtasks-info-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.subtask-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.subtask-label-row .btn {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
 }
 
 /* Card Content */
@@ -2924,9 +2989,10 @@ select option:checked {
   touch-action: none;
 }
 
+/* El borrador se ve como un círculo de su tamaño (.eraser-cursor) */
 .viewport-area.tool-eraser,
 .viewport-area.tool-eraser * {
-  cursor: cell !important;
+  cursor: none !important;
 }
 
 .viewport-area.tool-pen,
@@ -3077,6 +3143,35 @@ select option:checked {
 .pen-size span {
   display: block;
   border-radius: 50%;
+}
+
+/* Borrador: tamaños y círculo que sigue al puntero */
+.eraser-size span {
+  border: 1.5px solid var(--text-muted);
+  background: transparent;
+}
+
+.eraser-size-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-align: center;
+}
+
+.eraser-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  z-index: 40;
+}
+
+.eraser-cursor[hidden] {
+  display: none;
 }
 
 @media (max-width: 768px) {
@@ -4024,4 +4119,9 @@ select option:checked {
   border-radius: var(--radius-sm);
   color: var(--text-main);
   user-select: text;
+}
+
+/* Botones de la barra ocultos con hidden */
+.ctx-btn[hidden] {
+  display: none !important;
 }
