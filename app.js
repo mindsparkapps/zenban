@@ -940,12 +940,12 @@ function showPeek(card) {
     <h4 class="card-peek-title">${escapeHtml(task.title)}</h4>
     <div class="card-peek-where">${escapeHtml([board && board.title, col && col.title].filter(Boolean).join(' › '))}</div>
     ${(task.tags || []).length ? `<div class="card-tags">${task.tags.map(t => tagPillHtml(t)).join('')}</div>` : ''}
-    ${task.description ? `<p class="card-peek-desc">${linkify(task.description)}</p>` : ''}
+    ${task.description ? `<p class="card-peek-desc">${linkify(task.description, task.linkNames)}</p>` : ''}
     ${youtubePreviews([task.description, ...subs.map(s => s.text)].join('\n'), 3)}
     ${subs.length ? `
       <div class="card-peek-subs">
         <div class="card-peek-label">Subtareas ${done}/${subs.length}</div>
-        <ul>${subs.map(s => `<li class="${s.completed ? 'is-done' : ''}">${s.completed ? '☑' : '☐'} ${linkify(s.text)}</li>`).join('')}</ul>
+        <ul>${subs.map(s => `<li class="${s.completed ? 'is-done' : ''}">${s.completed ? '☑' : '☐'} ${linkify(s.text, task.linkNames)}</li>`).join('')}</ul>
       </div>` : ''}
     ${imgs.length ? `<div class="card-peek-imgs">${imgs.slice(0, 6).map(i => `<img alt="" data-img-id="${escapeHtml(i.id)}">`).join('')}${imgs.length > 6 ? `<span>+${imgs.length - 6}</span>` : ''}</div>` : ''}
     ${!task.description && !subs.length && !imgs.length ? '<p class="card-peek-empty">Sin descripción ni subtareas.</p>' : ''}`;
@@ -1452,7 +1452,7 @@ function createCardElement(task) {
 
     <h4 class="card-title">${escapeHtml(task.title)}</h4>
 
-    ${task.description ? `<p class="card-desc">${linkify(task.description)}</p>` : ''}
+    ${task.description ? `<p class="card-desc">${linkify(task.description, task.linkNames)}</p>` : ''}
 
     ${youtubePreviews([task.description, ...(task.subtasks || []).map(s => s.text)].join('\n'), 2)}
 
@@ -1474,7 +1474,7 @@ function createCardElement(task) {
         <ul class="card-subtask-list">
           ${task.subtasks.slice(0, CARD_SUBTASKS_SHOWN).map(s => `
             <li class="card-subtask ${s.completed ? 'is-done' : ''}" data-subtask-id="${escapeHtml(s.id)}" title="${s.completed ? 'Marcar pendiente' : 'Marcar hecha'}">
-              <span class="card-subtask-box">${s.completed ? '☑' : '☐'}</span><span class="card-subtask-text">${linkify(s.text)}</span>
+              <span class="card-subtask-box">${s.completed ? '☑' : '☐'}</span><span class="card-subtask-text">${linkify(s.text, task.linkNames)}</span>
               <button type="button" class="card-subtask-copy" title="Copiar texto" aria-label="Copiar texto">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
               </button>
@@ -1772,6 +1772,7 @@ window.openTaskModal = function(taskId = null, defaultColId = null, event = null
     currentModalTags = [...(task.tags || [])];
     currentModalSubtasks = JSON.parse(JSON.stringify(task.subtasks || []));
     currentModalImages = JSON.parse(JSON.stringify(task.images || []));
+    currentModalLinkNames = { ...(task.linkNames || {}) };
     deleteTaskBtn.style.display = 'block';
     document.getElementById('sendTaskBtn').style.display = 'block';
   } else {
@@ -1786,6 +1787,7 @@ window.openTaskModal = function(taskId = null, defaultColId = null, event = null
     currentModalTags = [];
     currentModalSubtasks = [];
     currentModalImages = [];
+    currentModalLinkNames = {};
     deleteTaskBtn.style.display = 'none';
     document.getElementById('sendTaskBtn').style.display = 'none';
   }
@@ -1976,6 +1978,7 @@ taskForm.addEventListener('submit', (e) => {
         .filter(img => !currentModalImages.some(c => c.id === img.id))
         .forEach(img => ImageStore.del(img.id));
       task.images = currentModalImages;
+      task.linkNames = currentModalLinkNames;
       if (isDoneColumn(colId)) task.completed = true;
       showToast('Tarea actualizada', 'info');
     }
@@ -1992,6 +1995,7 @@ taskForm.addEventListener('submit', (e) => {
       completed: isDoneColumn(colId),
       subtasks: currentModalSubtasks,
       images: currentModalImages,
+      linkNames: currentModalLinkNames,
       createdAt: Date.now()
     };
     tasks.unshift(newTask);
@@ -2775,6 +2779,13 @@ function transferBgImageToTask(imageId, taskId) {
   renderBoard();
   showToast(`Imagen movida a la tarea "${task.title.substring(0, 28)}"`, 'success');
 }
+
+// Texto que muestra cada link de la tarea ({ dirección: texto })
+let currentModalLinkNames = {};
+document.getElementById('taskLinksBtn').addEventListener('click', () => {
+  const urls = extractUrls(taskDescInput.value, ...currentModalSubtasks.map(s => s.text));
+  openLinkNamesDialog(urls, currentModalLinkNames, (names) => { currentModalLinkNames = names; });
+});
 
 // Imágenes dentro de la ventana de tarea
 let currentModalImages = [];
@@ -3831,7 +3842,7 @@ function renderTexts() {
     el.className = 'canvas-text';
     el.dataset.textId = t.id;
     applyTextStyle(el, t);
-    el.innerHTML = linkify(t.text) + youtubePreviews(t.text);
+    el.innerHTML = linkify(t.text, t.linkNames) + youtubePreviews(t.text);
     const handle = document.createElement('div');
     handle.className = 'canvas-text-handle';
     handle.title = 'Arrastra para cambiar el ancho de la caja';
@@ -3958,6 +3969,15 @@ document.getElementById('ctxAddText').addEventListener('click', () => addText(''
 document.getElementById('ctxTextEdit').addEventListener('click', () => {
   const first = selectedTexts()[0];
   if (first) editText(first.id);
+});
+document.getElementById('ctxTextLinks').addEventListener('click', () => {
+  const t = selectedTexts()[0];
+  if (!t) return;
+  openLinkNamesDialog(extractUrls(t.text), t.linkNames, (names) => {
+    t.linkNames = names;
+    persist();
+    renderTexts();
+  });
 });
 document.getElementById('ctxTextBigger').addEventListener('click', () => scaleSelectedTexts(1.2));
 document.getElementById('ctxTextSmaller').addEventListener('click', () => scaleSelectedTexts(1 / 1.2));
@@ -5295,7 +5315,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '58';
+const APP_VERSION = '59';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -5662,21 +5682,95 @@ function escapeHtml(str) {
 }
 
 // Escapa el texto y convierte las direcciones web (https://… o www.…) en links que abren en otra pestaña.
-// Con [texto](dirección) el link muestra ese texto en vez de la dirección.
+// names: { dirección: texto a mostrar } (se configura en "Links" de cada texto o tarea).
 const LINK_RE = /\[([^\]\n]+)\]\(((?:https?:\/\/|www\.)[^\s)<]+)\)|\b((?:https?:\/\/|www\.)[^\s<]+)/gi;
+const LINK_TRAIL_RE = /(?:[.,;:!?)\]]|&#39;|&quot;)+$/;
 function linkHref(url) {
   return /^www\./i.test(url) ? `https://${url}` : url;
 }
-function linkify(str) {
+function linkify(str, names = null) {
   return escapeHtml(str).replace(LINK_RE, (match, label, labelUrl, url) => {
     if (label) {
       return `<a class="auto-link" href="${linkHref(labelUrl)}" target="_blank" rel="noopener noreferrer" title="${labelUrl}">${label}</a>`;
     }
     // La puntuación al final ("…/docs." o "(…/docs)") no es parte del link
-    const trail = (url.match(/(?:[.,;:!?)\]]|&#39;|&quot;)+$/) || [''])[0];
+    const trail = (url.match(LINK_TRAIL_RE) || [''])[0];
     if (trail) url = url.slice(0, -trail.length);
-    return `<a class="auto-link" href="${linkHref(url)}" target="_blank" rel="noopener noreferrer">${url}</a>${trail}`;
+    const raw = unescapeHtml(url);
+    const name = names && typeof names[raw] === 'string' && names[raw].trim();
+    return `<a class="auto-link" href="${linkHref(url)}" target="_blank" rel="noopener noreferrer"${name ? ` title="${url}"` : ''}>${name ? escapeHtml(name) : url}</a>${trail}`;
   });
+}
+
+function unescapeHtml(str) {
+  return String(str).replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
+
+// Direcciones web de unos textos (sin repetir), tal como las muestra linkify
+function extractUrls(...texts) {
+  const urls = [];
+  texts.forEach(str => {
+    for (const m of escapeHtml(str || '').matchAll(LINK_RE)) {
+      if (!m[3]) continue;
+      const trail = (m[3].match(LINK_TRAIL_RE) || [''])[0];
+      const url = unescapeHtml(trail ? m[3].slice(0, -trail.length) : m[3]);
+      if (!urls.includes(url)) urls.push(url);
+    }
+  });
+  return urls;
+}
+
+// Ventana para ponerle a cada link el texto que muestra en vez de su dirección
+function openLinkNamesDialog(urls, names, onSave) {
+  if (!urls.length) {
+    showToast('No hay links. Pega una dirección web (https://…) en el texto y vuelve a intentarlo.', 'info');
+    return;
+  }
+  let m = document.getElementById('linkNamesModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.className = 'modal-backdrop';
+    m.id = 'linkNamesModal';
+    m.innerHTML = `
+      <div class="modal-card modal-sm">
+        <div class="modal-header">
+          <h2>🔗 Links</h2>
+          <button class="modal-close-btn" type="button" data-close aria-label="Cerrar">&times;</button>
+        </div>
+        <form class="link-names-form">
+          <p class="link-names-help">Escribe el texto que se mostrará en cada link. Déjalo vacío para mostrar la dirección.</p>
+          <div class="link-names-list"></div>
+          <div class="modal-actions">
+            <div class="spacer"></div>
+            <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+            <button type="submit" class="btn btn-primary">Guardar</button>
+          </div>
+        </form>
+      </div>`;
+    m.addEventListener('click', (e) => {
+      if (e.target === m || e.target.closest('[data-close]')) m.style.display = 'none';
+    });
+    document.body.appendChild(m);
+  }
+  const list = m.querySelector('.link-names-list');
+  list.innerHTML = urls.map((url, i) => `
+    <div class="form-group link-name-row">
+      <label for="linkName${i}" class="link-name-url" title="${escapeHtml(url)}">${escapeHtml(url)}</label>
+      <input type="text" id="linkName${i}" data-url-index="${i}" placeholder="Texto a mostrar" value="${escapeHtml((names && names[url]) || '')}">
+    </div>`).join('');
+  const form = m.querySelector('form');
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const result = {};
+    list.querySelectorAll('input[data-url-index]').forEach(inp => {
+      const v = inp.value.trim();
+      if (v) result[urls[Number(inp.dataset.urlIndex)]] = v;
+    });
+    m.style.display = 'none';
+    onSave(result);
+  };
+  m.style.display = 'flex';
+  if (!window.matchMedia('(pointer: coarse)').matches) list.querySelector('input').focus();
 }
 
 // Id de los videos de YouTube mencionados en un texto (youtube.com/watch?v=, youtu.be/, /shorts/, /embed/, /live/)

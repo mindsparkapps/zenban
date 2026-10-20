@@ -1043,6 +1043,33 @@ body.theme-light .moon-icon { display: none; }
   color: #93c5fd;
 }
 
+/* Nombres de los links (ventana "Links") */
+.link-names-btn {
+  margin-top: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.link-names-help {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.link-names-list {
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.link-name-url {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 /* Vista previa de videos de YouTube: tocarla abre el video */
 .yt-previews {
   display: flex;
@@ -1423,7 +1450,7 @@ body.theme-light .moon-icon { display: none; }
 }
 
 /* Modal Form Controls */
-#taskForm, #columnForm, #projectForm {
+#taskForm, #columnForm, #projectForm, .link-names-form {
   padding: 1.5rem;
   overflow-y: auto;
   display: flex;
