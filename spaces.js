@@ -87,7 +87,7 @@ function saveOtherSpacesCache(entries) {
       entries: entries.filter(e => !e.error).map(e => ({
         space: e.space,
         hasFile: e.hasFile,
-        projects: e.projects.map(p => ({ id: p.id, name: p.name, color: p.color, meta: projectMeta(p) }))
+        projects: e.projects.map(p => ({ id: p.id, name: p.name, color: p.color, meta: projectMeta(p), folder: p.folder, starred: p.starred, order: p.order }))
       }))
     }));
   } catch (e) {}
@@ -213,7 +213,23 @@ renderProjectSwitcher = function () {
       projectList.appendChild(li);
       return;
     }
-    entry.projects.forEach(p => projectList.appendChild(otherProjectItem(entry.space, p)));
+    // Con sus carpetas y su orden (estrellas, orden manual), igual que en su propio espacio
+    const collapsed = collapsedFolders();
+    const sKey = spaceKey(toStoredSpace(entry.space));
+    projectGroups(entry.projects).forEach(group => {
+      if (group.folder) {
+        const key = folderKey(sKey, group.folder);
+        const open = !collapsed.has(key);
+        projectList.appendChild(folderHeaderEl(group.folder, group.items.length, open, collapsed, key, 'is-other-space'));
+        if (!open) return;
+      }
+      group.items.forEach(p => {
+        const li = otherProjectItem(entry.space, p);
+        if (group.folder) li.classList.add('in-folder');
+        if (p.starred) li.querySelector('.project-item-name').insertAdjacentHTML('beforeend', ' <span class="project-star-mark">★</span>');
+        projectList.appendChild(li);
+      });
+    });
   });
 };
 
@@ -434,6 +450,8 @@ document.getElementById('projectForm').addEventListener('submit', () => {
     .skeleton-text .skeleton-line { display: block; height: 10px; border-radius: 5px; width: 70%; }
     .skeleton-text .skeleton-line.is-short { width: 40%; height: 8px; }
     .project-shared-mark { margin-right: 4px; }
+    .project-star-mark { color: #f59e0b; }
+    .project-folder.is-other-space .project-folder-btn { font-weight: 500; opacity: 0.9; }
     .project-item.is-other-space .project-item-name { opacity: 0.92; }
     .project-space-icon { margin-right: 2px; }
     .project-space-icon[hidden] { display: none; }

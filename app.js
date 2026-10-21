@@ -2287,23 +2287,33 @@ function renderProjectSwitcher() {
   projectGroups(projects).forEach(group => {
     if (group.folder) {
       // Carpeta: se pliega o despliega tocándola; si tiene el proyecto abierto, se muestra abierta
-      const open = !collapsed.has(group.folder) || group.items.some(p => p.id === active.id);
-      const head = document.createElement('li');
-      head.className = `project-folder ${open ? 'is-open' : ''}`;
-      head.dataset.folder = group.folder;
-      head.innerHTML = `<button type="button" class="project-folder-btn" title="${open ? 'Plegar' : 'Desplegar'} la carpeta">
-        <span class="project-folder-chevron">▸</span><span>📁 ${escapeHtml(group.folder)}</span><small>${group.items.length}</small></button>`;
-      head.querySelector('button').addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (open) collapsed.add(group.folder); else collapsed.delete(group.folder);
-        saveCollapsedFolders(collapsed);
-        renderProjectSwitcher();
-      });
-      projectList.appendChild(head);
+      const key = folderKey(tabSpaceKey, group.folder);
+      const open = !collapsed.has(key) || group.items.some(p => p.id === active.id);
+      projectList.appendChild(folderHeaderEl(group.folder, group.items.length, open, collapsed, key));
       if (!open) return;
     }
     group.items.forEach(project => projectList.appendChild(projectItemEl(project, active, group.folder)));
   });
+}
+
+// Las carpetas son de cada espacio: plegar "Ideas" en el personal no pliega la "Ideas" del compartido
+function folderKey(space, folder) {
+  return `${space}|${folder}`;
+}
+
+function folderHeaderEl(folder, count, open, collapsed, key, extraClass = '') {
+  const head = document.createElement('li');
+  head.className = `project-folder ${open ? 'is-open' : ''} ${extraClass}`;
+  head.dataset.folder = folder;
+  head.innerHTML = `<button type="button" class="project-folder-btn" title="${open ? 'Plegar' : 'Desplegar'} la carpeta">
+    <span class="project-folder-chevron">▸</span><span>📁 ${escapeHtml(folder)}</span><small>${count}</small></button>`;
+  head.querySelector('button').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (open) collapsed.add(key); else collapsed.delete(key);
+    saveCollapsedFolders(collapsed);
+    renderProjectSwitcher();
+  });
+  return head;
 }
 
 // ----- Orden de la lista de proyectos: estrellas, carpetas y orden manual (arrastrando) -----
@@ -3941,8 +3951,56 @@ function applySelectionVisuals() {
 }
 
 function setSelection(keys) {
-  selection = new Set(keys);
+  selection = new Set(expandGroups(keys));
   applySelectionVisuals();
+}
+
+// ----- Grupos: objetos del lienzo (tableros, textos, imágenes, trazos) que se seleccionan y mueven juntos -----
+function canvasObjectsByKey() {
+  const map = new Map();
+  boards.forEach(o => map.set(`board:${o.id}`, o));
+  getTexts().forEach(o => map.set(`text:${o.id}`, o));
+  getBgImages().forEach(o => map.set(`img:${o.id}`, o));
+  getDrawings().forEach(o => map.set(`stroke:${o.id}`, o));
+  return map;
+}
+
+// Al tomar un objeto de un grupo se toma el grupo completo
+function expandGroups(keys) {
+  const list = [...keys];
+  const objs = canvasObjectsByKey();
+  const groups = new Set(list.map(k => objs.get(k)).filter(o => o && o.group).map(o => o.group));
+  if (!groups.size) return list;
+  objs.forEach((o, k) => { if (o.group && groups.has(o.group) && !list.includes(k)) list.push(k); });
+  return list;
+}
+
+function groupKeysFor(key) {
+  return expandGroups([key]);
+}
+
+function selectionGroups() {
+  const objs = canvasObjectsByKey();
+  return new Set([...selection].map(k => objs.get(k)).filter(o => o && o.group).map(o => o.group));
+}
+
+function groupSelection() {
+  if (selection.size < 2) { showToast('Selecciona dos o más objetos para agruparlos', 'info'); return; }
+  const id = generateId('grp');
+  const objs = canvasObjectsByKey();
+  [...selection].forEach(k => { const o = objs.get(k); if (o) o.group = id; });
+  persist();
+  applySelectionVisuals();
+  showToast(`${selection.size} objetos agrupados: se mueven juntos`, 'success');
+}
+
+function ungroupSelection() {
+  const groups = selectionGroups();
+  if (!groups.size) { showToast('Lo seleccionado no está agrupado', 'info'); return; }
+  canvasObjectsByKey().forEach(o => { if (o.group && groups.has(o.group)) delete o.group; });
+  persist();
+  applySelectionVisuals();
+  showToast('Grupo deshecho', 'success');
 }
 
 function distToSegment(px, py, ax, ay, bx, by) {
@@ -4202,7 +4260,7 @@ function startMarquee(e, additive) {
     box.style.height = `${y2 - y1}px`;
     const a = screenToCanvas(x1, y1);
     const b = screenToCanvas(x2, y2);
-    selection = new Set([...base, ...itemsInRect(a.x, a.y, b.x, b.y)]);
+    selection = new Set(expandGroups([...base, ...itemsInRect(a.x, a.y, b.x, b.y)]));
     applySelectionVisuals();
   };
   const onUp = (ev) => {
@@ -4260,10 +4318,31 @@ function applyTextStyle(el, t) {
   el.style.maxWidth = `${t.w}px`;
   el.style.fontSize = `${t.size}px`;
   el.style.color = t.color || '';
+  // Nota adhesiva: un texto con fondo de color (el selector de color de la barra cambia su fondo)
+  el.classList.toggle('is-sticky', !!t.sticky);
+  el.style.background = t.sticky || '';
+}
+
+const STICKY_DEFAULT = '#fde68a';
+
+// Nota adhesiva nueva (cuadrada, amarilla) en un punto o al centro de la vista; se abre para escribir
+function addStickyNote(at = null) {
+  if (!at) {
+    const rect = viewportArea.getBoundingClientRect();
+    at = screenToCanvas(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  }
+  const w = Math.round(220 / zoom);
+  return addText('', { x: at.x - w / 2, y: at.y - w / 2 }, {
+    sticky: STICKY_DEFAULT,
+    fixedWidth: true,
+    w,
+    size: Math.max(4, Math.round(18 / zoom))
+  });
 }
 
 // Crea un texto en un punto del lienzo (o al centro de la vista). Sin contenido, se abre para escribir.
-function addText(content = '', at = null) {
+// extra: propiedades adicionales (por ejemplo, las de una nota adhesiva)
+function addText(content = '', at = null, extra = null) {
   if (!at) {
     if (lastViewportPointer) {
       at = screenToCanvas(lastViewportPointer.x, lastViewportPointer.y);
@@ -4279,7 +4358,8 @@ function addText(content = '', at = null) {
     w: Math.round(480 / zoom),
     size: Math.max(4, Math.round(22 / zoom)),
     color: null,
-    text: content.replace(/\r\n/g, '\n').replace(/\s+$/, '')
+    text: content.replace(/\r\n/g, '\n').replace(/\s+$/, ''),
+    ...(extra || {})
   };
   getTexts().push(t);
   if (currentTool === 'text') setTool('select');
@@ -4431,6 +4511,7 @@ viewportArea.addEventListener('pointerdown', (e) => {
 viewportArea.addEventListener('dblclick', (e) => {
   if (currentTool !== 'select' || isPanModeActive) return;
   if (lastPointerType === 'touch') return; // con el dedo, el doble toque lo maneja el gesto táctil
+  if (linkAtEvent(e)) return; // doble clic sobre un link: lo abre (no edita el texto)
   const under = document.elementsFromPoint(e.clientX, e.clientY);
   const textEl = under.find(n => n.classList && n.classList.contains('canvas-text'));
   if (textEl) {
@@ -4487,6 +4568,24 @@ document.getElementById('ctxTextEdit').addEventListener('click', () => {
   const first = selectedTexts()[0];
   if (first) editText(first.id);
 });
+document.getElementById('toolSticky').addEventListener('click', () => addStickyNote());
+// Atajo S: nota adhesiva donde está el puntero
+window.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 's' || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) || editingTextId) return;
+  if (Array.from(document.querySelectorAll('.modal-backdrop')).some(m => m.style.display === 'flex')) return;
+  addStickyNote(lastViewportPointer ? screenToCanvas(lastViewportPointer.x, lastViewportPointer.y) : null);
+});
+
+document.getElementById('ctxGroup').addEventListener('click', groupSelection);
+document.getElementById('ctxUngroup').addEventListener('click', ungroupSelection);
+window.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'g') return;
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+  e.preventDefault();
+  if (e.shiftKey) ungroupSelection(); else groupSelection();
+});
+
 document.getElementById('ctxTextInternal').addEventListener('click', () => {
   const t = selectedTexts()[0];
   if (!t) return;
@@ -4509,9 +4608,11 @@ document.getElementById('ctxTextBigger').addEventListener('click', () => scaleSe
 document.getElementById('ctxTextSmaller').addEventListener('click', () => scaleSelectedTexts(1 / 1.2));
 ctxTextColor.addEventListener('input', () => {
   selectedTexts().forEach(t => {
-    t.color = ctxTextColor.value;
+    // En una nota adhesiva el color es el del papel; en un texto, el de la letra
+    if (t.sticky) t.sticky = ctxTextColor.value;
+    else t.color = ctxTextColor.value;
     const el = getTextEl(t.id);
-    if (el) el.style.color = t.color;
+    if (el) applyTextStyle(el, t);
   });
   ctxDot.style.background = ctxTextColor.value;
 });
@@ -4559,12 +4660,14 @@ viewportArea.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.shiftKey) {
+      // Con Shift se suma o se quita el objeto (o su grupo completo)
+      const members = groupKeysFor(key);
       if (selection.has(key)) {
-        selection.delete(key);
+        members.forEach(k => selection.delete(k));
         applySelectionVisuals();
         return;
       }
-      selection.add(key);
+      members.forEach(k => selection.add(k));
       applySelectionVisuals();
     } else if (!selection.has(key)) {
       setSelection([key]);
@@ -4655,6 +4758,11 @@ function updateContextBar() {
   show('text', ctx.type === 'text');
   show('common', ['image', 'stroke', 'text', 'multi'].includes(ctx.type));
   contextBar.dataset.ctx = ctx.type;
+  // Agrupar si hay varios objetos que no forman ya un único grupo; desagrupar si hay alguno agrupado
+  const groupsInSel = selectionGroups();
+  const allOneGroup = groupsInSel.size === 1 && [...selection].every(k => (canvasObjectsByKey().get(k) || {}).group);
+  document.getElementById('ctxGroup').hidden = !(selection.size >= 2 && !allOneGroup);
+  document.getElementById('ctxUngroup').hidden = groupsInSel.size === 0;
 
   const pasteEnabled = !!canvasClipboard;
   ['ctxPaste', 'ctxPasteCanvas'].forEach(id => {
@@ -4691,10 +4799,11 @@ function updateContextBar() {
       ctxStrokeSize.value = String([2, 4, 8, 14].reduce((best, v) => Math.abs(v - screenSize) < Math.abs(best - screenSize) ? v : best, 4));
     }
   } else if (ctx.type === 'text') {
-    ctxTitle.textContent = ctx.count === 1 ? 'Texto' : `${ctx.count} textos`;
     const first = selectedTexts()[0];
+    const sticky = first && first.sticky;
+    ctxTitle.textContent = ctx.count === 1 ? (sticky ? 'Nota adhesiva' : 'Texto') : `${ctx.count} textos`;
     const el = first && getTextEl(first.id);
-    const color = first && first.color ? first.color : (el ? rgbToHex(getComputedStyle(el).color) : '#f8fafc');
+    const color = sticky ? first.sticky : first && first.color ? first.color : (el ? rgbToHex(getComputedStyle(el).color) : '#f8fafc');
     ctxTextColor.value = color;
     ctxDot.style.background = color;
   } else {
@@ -4739,8 +4848,11 @@ async function copyImageBlob(oldId) {
 // Inserta una copia del contenido desplazada y la deja seleccionada
 async function pasteData(data, offset, offsetY = offset) {
   const newKeys = [];
+  // Las copias forman su propio grupo (no se unen al grupo del original)
+  const groupMap = {};
+  const regroup = (o) => { if (o.group) o.group = groupMap[o.group] || (groupMap[o.group] = generateId('grp')); return o; };
   for (const b of data.boards) {
-    const nb = deepClone(b);
+    const nb = regroup(deepClone(b));
     nb.id = generateId('board');
     nb.x += offset;
     nb.y += offsetY;
@@ -4768,7 +4880,7 @@ async function pasteData(data, offset, offsetY = offset) {
     }
   }
   data.strokes.forEach(st => {
-    const ns = deepClone(st);
+    const ns = regroup(deepClone(st));
     ns.id = generateId('stroke');
     ns.points = ns.points.map(([x, y]) => [+(x + offset).toFixed(1), +(y + offsetY).toFixed(1)]);
     getDrawings().push(ns);
@@ -4778,12 +4890,12 @@ async function pasteData(data, offset, offsetY = offset) {
   for (const img of data.images) {
     const newId = await copyImageBlob(img.id);
     if (!newId) continue;
-    const ni = { ...deepClone(img), id: newId, x: img.x + offset, y: img.y + offsetY };
+    const ni = regroup({ ...deepClone(img), id: newId, x: img.x + offset, y: img.y + offsetY });
     getBgImages().push(ni);
     newKeys.push(`img:${newId}`);
   }
   (data.texts || []).forEach(t => {
-    const nt = { ...deepClone(t), id: generateId('text'), x: t.x + offset, y: t.y + offsetY };
+    const nt = regroup({ ...deepClone(t), id: generateId('text'), x: t.x + offset, y: t.y + offsetY });
     getTexts().push(nt);
     newKeys.push(`text:${nt.id}`);
   });
@@ -5104,6 +5216,8 @@ function openCanvasMenu(clientX, clientY, target) {
   // Pegar lee también el portapapeles del sistema (texto o imagen copiados en otra app)
   canvasMenu.querySelector('[data-cmd="paste"]').disabled = !canvasClipboard && !(navigator.clipboard && navigator.clipboard.readText);
   canvasMenu.querySelector('[data-cmd="undo"]').disabled = historyStack.length === 0;
+  canvasMenu.querySelector('[data-cmd="group"]').hidden = selection.size < 2;
+  canvasMenu.querySelector('[data-cmd="ungroup"]').hidden = selectionGroups().size === 0;
 
   canvasMenu.hidden = false;
   const w = canvasMenu.offsetWidth;
@@ -5157,6 +5271,10 @@ canvasMenu.addEventListener('click', async (e) => {
   if (cmd === 'addText') addText('', menuCanvasPoint);
   if (cmd === 'photo') takePhoto(menuCanvasPoint);
   if (cmd === 'canvasColor') openCanvasColorPicker();
+  if (cmd === 'group') groupSelection();
+  if (cmd === 'ungroup') ungroupSelection();
+  if (cmd === 'sticky') addStickyNote(menuCanvasPoint);
+  if (cmd === 'findImage') openImageFinder();
   if (cmd === 'internalLink') {
     const point = menuCanvasPoint;
     openInternalLinkPicker(url => addText(url, point));
@@ -5906,7 +6024,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '67';
+const APP_VERSION = '68';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -6387,6 +6505,75 @@ function focusInternalTarget(ref) {
   fitBoardToScreen();
 }
 
+// ----- Buscar imagen: todas las imágenes de los proyectos de este espacio; tocar una lleva a donde está -----
+function allImagesInSpace() {
+  const out = [];
+  projects.forEach(p => {
+    (p.bgImages || []).forEach(i => out.push({ ref: i.id, project: p, where: 'Lienzo', go: { kind: 'i', id: i.id } }));
+    (p.tasks || []).forEach(t => (t.images || []).forEach(i => out.push({ ref: i.id, project: p, where: `Tarea: ${t.title}`, go: { kind: 'k', id: t.id, open: true } })));
+    (p.boards || []).forEach(b => { if (b.image) out.push({ ref: b.image, project: p, where: `Tablero: ${b.title}`, go: { kind: 'b', id: b.id } }); });
+    (p.texts || []).forEach(t => Object.values(t.linkNames || {}).forEach(v => {
+      if (v && typeof v === 'object' && v.image) out.push({ ref: v.image, project: p, where: 'Link en un texto', go: { kind: 't', id: t.id } });
+    }));
+    (p.tasks || []).forEach(t => Object.values(t.linkNames || {}).forEach(v => {
+      if (v && typeof v === 'object' && v.image) out.push({ ref: v.image, project: p, where: `Link en: ${t.title}`, go: { kind: 'k', id: t.id, open: true } });
+    }));
+  });
+  return out;
+}
+
+function openImageFinder() {
+  let m = document.getElementById('imageFinderModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.className = 'modal-backdrop';
+    m.id = 'imageFinderModal';
+    m.innerHTML = `
+      <div class="modal-card image-finder-card">
+        <div class="modal-header">
+          <h2>🖼 Buscar imagen</h2>
+          <button class="modal-close-btn" type="button" data-close aria-label="Cerrar">&times;</button>
+        </div>
+        <div class="image-finder-body">
+          <input type="search" class="image-finder-search" placeholder="Filtrar por proyecto, tablero o tarea…" autocomplete="off">
+          <div class="image-finder-grid"></div>
+        </div>
+      </div>`;
+    m.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) m.style.display = 'none'; });
+    document.body.appendChild(m);
+  }
+  const items = allImagesInSpace();
+  const grid = m.querySelector('.image-finder-grid');
+  const search = m.querySelector('.image-finder-search');
+  const paint = () => {
+    const q = search.value.trim().toLowerCase();
+    const list = items.filter(it => !q || `${it.project.name} ${it.where}`.toLowerCase().includes(q));
+    grid.innerHTML = list.length ? list.map((it, i) => `
+      <button type="button" class="image-finder-item" data-i="${items.indexOf(it)}" title="${escapeHtml(it.project.name)} · ${escapeHtml(it.where)}">
+        <img data-link-img="${escapeHtml(it.ref)}" alt="" loading="lazy">
+        <span><b>${escapeHtml(it.project.name)}</b><small>${escapeHtml(it.where)}</small></span>
+      </button>`).join('')
+      : `<p class="image-finder-empty">${items.length ? 'Ninguna imagen coincide.' : 'Todavía no hay imágenes en este espacio.'}</p>`;
+    hydrateLinkImages(grid);
+  };
+  search.value = '';
+  search.oninput = paint;
+  grid.onclick = (e) => {
+    const b = e.target.closest('[data-i]');
+    if (!b) return;
+    const it = items[Number(b.dataset.i)];
+    m.style.display = 'none';
+    if (it.project.id !== activeProjectId) switchProject(it.project.id);
+    setTimeout(() => {
+      focusInternalTarget(it.go);
+      if (it.go.open) openTaskModal(it.go.id);
+    }, 60);
+  };
+  paint();
+  m.style.display = 'flex';
+  if (!window.matchMedia('(pointer: coarse)').matches) setTimeout(() => search.focus(), 50);
+}
+
 // Ventana para elegir a qué proyecto (o tablero) apunta un link interno nuevo
 function openInternalLinkPicker(onPick) {
   let m = document.getElementById('internalLinkModal');
@@ -6710,15 +6897,30 @@ const LINK_SCOPE = '.canvas-text a, .kanban-card a, .card-peek a';
 const LINK_DOUBLE_MS = 450;
 let linkPress = null;
 let lastLinkClick = null;
+
+// El link bajo el puntero. Al tomar un texto del lienzo, el lienzo "captura" el puntero y el clic
+// le llega a él (no al link), así que también se busca por la posición.
+function linkAtEvent(e) {
+  const direct = e.target instanceof Element ? e.target.closest(LINK_SCOPE) : null;
+  if (direct) return direct;
+  if (typeof e.clientX !== 'number') return null;
+  for (const n of document.elementsFromPoint(e.clientX, e.clientY)) {
+    const a = n.closest && n.closest(LINK_SCOPE);
+    if (a) return a;
+    if (n.closest && n.closest('.modal-backdrop .modal-card, .canvas-menu')) return null;
+  }
+  return null;
+}
+
 document.addEventListener('pointerdown', (e) => {
-  const a = e.target.closest(LINK_SCOPE);
+  const a = linkAtEvent(e);
   linkPress = a ? { x: e.clientX, y: e.clientY, moved: false } : null;
 }, true);
 document.addEventListener('pointermove', (e) => {
   if (linkPress && !linkPress.moved && Math.hypot(e.clientX - linkPress.x, e.clientY - linkPress.y) > 6) linkPress.moved = true;
 }, true);
 document.addEventListener('click', (e) => {
-  const a = e.target.closest(LINK_SCOPE);
+  const a = linkAtEvent(e);
   if (!a) return;
   e.preventDefault();
   e.stopPropagation();
@@ -6738,13 +6940,13 @@ document.addEventListener('click', (e) => {
 }, true);
 // El doble clic sobre un link no edita el texto ni acerca la vista: solo abre el link
 document.addEventListener('dblclick', (e) => {
-  if (!e.target.closest(LINK_SCOPE)) return;
+  if (!linkAtEvent(e)) return;
   e.preventDefault();
   e.stopPropagation();
 }, true);
 // En el celular, mantener apretado un link no abre el menú del navegador (vista previa del link)
 document.addEventListener('contextmenu', (e) => {
-  if (e.target.closest(LINK_SCOPE)) e.preventDefault();
+  if (linkAtEvent(e)) e.preventDefault();
 }, true);
 
 function openLink(a) {

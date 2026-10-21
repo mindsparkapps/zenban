@@ -3319,6 +3319,96 @@ select option:checked {
   color: inherit;
 }
 
+/* Buscar imagen */
+.image-finder-card {
+  max-width: 720px;
+}
+
+.image-finder-body {
+  padding: 1rem 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+.image-finder-search {
+  width: 100%;
+}
+
+.image-finder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  overflow-y: auto;
+  max-height: 62vh;
+}
+
+.image-finder-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-hover);
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.image-finder-item:hover {
+  border-color: var(--accent-primary);
+}
+
+.image-finder-item img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #000;
+}
+
+.image-finder-item span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+
+.image-finder-item b,
+.image-finder-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-finder-item small {
+  color: var(--text-dim);
+}
+
+.image-finder-empty {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 2rem 0;
+}
+
+/* Nota adhesiva: papel de color con sombra, letra oscura (el fondo lo pone applyTextStyle) */
+.canvas-text.is-sticky {
+  min-height: 5.5em;
+  padding: 0.8em 0.9em;
+  border-radius: 3px 3px 14px 3px;
+  color: #1f2937;
+  font-weight: 600;
+  box-shadow: 0 0.25em 0.9em rgba(0, 0, 0, 0.35), inset 0 -0.35em 0.6em rgba(0, 0, 0, 0.06);
+}
+
+.canvas-text.is-sticky .auto-link {
+  color: #1d4ed8;
+}
+
 .canvas-text-handle {
   display: none;
   position: absolute;
@@ -4750,7 +4840,8 @@ select option:checked {
   user-select: text;
 }
 
-/* Botones de la barra ocultos con hidden */
-.ctx-btn[hidden] {
+/* Botones de la barra y opciones del menú contextual ocultos con hidden */
+.ctx-btn[hidden],
+.canvas-menu button[hidden] {
   display: none !important;
 }
