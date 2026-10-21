@@ -128,6 +128,7 @@ function xferSummary(p) {
   if (p.images.length) parts.push(`${p.images.length} imagen(es)`);
   if ((p.texts || []).length) parts.push(`${p.texts.length} texto(s)`);
   if (p.strokes.length) parts.push(`${p.strokes.length} trazo(s)`);
+  if ((p.frames || []).length) parts.push(`${p.frames.length} frame(s)`);
   return parts.join(', ');
 }
 
@@ -152,6 +153,7 @@ function xferSourceBounds(p) {
   p.images.forEach(i => ext(i.x || 0, i.y || 0));
   (p.texts || []).forEach(t => ext(t.x || 0, t.y || 0));
   p.strokes.forEach(s => (s.points || []).forEach(([x, y]) => ext(x, y)));
+  (p.frames || []).forEach(fr => ext(fr.x || 0, fr.y || 0));
   return minX === Infinity ? { minX: 0, minY: 0 } : { minX, minY };
 }
 
@@ -206,6 +208,21 @@ function xferBuild(p) {
   });
   (p.texts || []).forEach(t => out.texts.push({ ...deepClone(t), id: generateId('text') }));
   p.strokes.forEach(s => out.strokes.push({ ...deepClone(s), id: generateId('stroke') }));
+  // Frames (con ids nuevos) y las flechas entre ellos
+  const frameMap = {};
+  out.frames = (p.frames || []).map(f => {
+    const nf = { ...deepClone(f), id: generateId('frame') };
+    frameMap[f.id] = nf.id;
+    // Su imagen de pestaña también viaja (con id nuevo)
+    if (f.image && !isRemoteImage(f.image)) {
+      const newId = generateId('img');
+      uploads.push({ oldId: f.image, newId });
+      nf.image = newId;
+    }
+    return nf;
+  });
+  out.connectors = (p.connectors || []).filter(c => frameMap[c.from] && frameMap[c.to])
+    .map(c => ({ ...deepClone(c), id: generateId('conn'), from: frameMap[c.from], to: frameMap[c.to] }));
   return out;
 }
 
@@ -239,7 +256,7 @@ async function xferSendLocal({ payload, projectChoice, columnChoice, move }) {
     project = xferNewProject(`${current.name} (copia)`, current.color, !!payload.task);
     projects.push(project);
   }
-  ['columns', 'tasks', 'boards', 'bgImages', 'texts', 'drawings'].forEach(k => { if (!Array.isArray(project[k])) project[k] = []; });
+  ['columns', 'tasks', 'boards', 'bgImages', 'texts', 'drawings', 'frames', 'connectors'].forEach(k => { if (!Array.isArray(project[k])) project[k] = []; });
   let where = `"${project.name}"`;
   if (payload.task) {
     const col = project.columns.find(c => c.id === columnChoice) || project.columns[0];
@@ -257,6 +274,8 @@ async function xferSendLocal({ payload, projectChoice, columnChoice, move }) {
     built.images.forEach(i => project.bgImages.push({ ...i, x: Math.round(i.x + dx), y: Math.round(i.y + dy) }));
     built.texts.forEach(t => project.texts.push({ ...t, x: Math.round(t.x + dx), y: Math.round(t.y + dy) }));
     built.strokes.forEach(s => project.drawings.push({ ...s, points: s.points.map(([x, y]) => [+(x + dx).toFixed(1), +(y + dy).toFixed(1)]) }));
+      (built.frames || []).forEach(f => project.frames.push({ ...f, x: Math.round(f.x + dx), y: Math.round(f.y + dy) }));
+      project.connectors.push(...(built.connectors || []));
   }
   project.updatedAt = Date.now();
   if (move) {
@@ -300,7 +319,7 @@ async function xferSend({ payload, dest, projectChoice, columnChoice, move }) {
       project = xferNewProject(current.name, current.color, !!payload.task);
       data.projects.push(project);
     }
-    ['columns', 'tasks', 'boards', 'bgImages', 'texts', 'drawings'].forEach(k => { if (!Array.isArray(project[k])) project[k] = []; });
+    ['columns', 'tasks', 'boards', 'bgImages', 'texts', 'drawings', 'frames', 'connectors'].forEach(k => { if (!Array.isArray(project[k])) project[k] = []; });
     let where = `"${project.name}"`;
     if (payload.task) {
       const col = project.columns.find(c => c.id === columnChoice) || project.columns[0];
@@ -321,6 +340,8 @@ async function xferSend({ payload, dest, projectChoice, columnChoice, move }) {
       built.images.forEach(i => project.bgImages.push({ ...i, x: Math.round(i.x + dx), y: Math.round(i.y + dy) }));
       built.texts.forEach(t => project.texts.push({ ...t, x: Math.round(t.x + dx), y: Math.round(t.y + dy) }));
       built.strokes.forEach(s => project.drawings.push({ ...s, points: s.points.map(([x, y]) => [+(x + dx).toFixed(1), +(y + dy).toFixed(1)]) }));
+      (built.frames || []).forEach(f => project.frames.push({ ...f, x: Math.round(f.x + dx), y: Math.round(f.y + dy) }));
+      project.connectors.push(...(built.connectors || []));
       xferEnsureTags(data, built.tasks);
     }
     project.updatedAt = Date.now();

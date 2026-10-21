@@ -3291,6 +3291,125 @@ select option:checked {
   z-index: 0;
 }
 
+/* ----- Frames (marcos para diagramas) y conectores ----- */
+.frame-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 0;
+}
+
+.canvas-frame {
+  position: absolute;
+  box-sizing: border-box;
+  border: calc(2px * var(--inv-zoom, 1)) solid var(--frame-color, #6366f1);
+  cursor: grab;
+  touch-action: none;
+}
+
+.canvas-frame.is-selected {
+  outline: calc(2px * var(--inv-zoom, 1)) solid var(--accent-primary);
+  outline-offset: calc(3px * var(--inv-zoom, 1));
+}
+
+.canvas-frame.is-connect-target {
+  outline: calc(3px * var(--inv-zoom, 1)) dashed #22c55e;
+  outline-offset: calc(3px * var(--inv-zoom, 1));
+}
+
+/* Título del frame: arriba a la izquierda, con su color */
+.frame-title {
+  position: absolute;
+  left: calc(10px * var(--inv-zoom, 1));
+  top: calc(8px * var(--inv-zoom, 1));
+  max-width: calc(100% - 20px * var(--inv-zoom, 1));
+  padding: calc(3px * var(--inv-zoom, 1)) calc(9px * var(--inv-zoom, 1));
+  border-radius: calc(8px * var(--inv-zoom, 1));
+  background: var(--frame-color, #6366f1);
+  color: #fff;
+  font-weight: 700;
+  font-size: calc(13px * var(--inv-zoom, 1));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+}
+
+/* La pestaña con imagen usa el estilo de la de los tableros (--board-color) */
+.canvas-frame .frame-image-tab {
+  --board-color: var(--frame-color, #6366f1);
+  left: calc(12px * var(--inv-zoom, 1));
+}
+
+/* Manija para agrandar (solo con el frame seleccionado) */
+.frame-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  transform: translate(50%, 50%) scale(var(--inv-zoom, 1));
+  border-radius: 50%;
+  background: var(--accent-primary);
+  border: 2px solid #fff;
+  cursor: nwse-resize;
+  display: none;
+  touch-action: none;
+}
+
+.canvas-frame.is-solo .frame-handle {
+  display: block;
+}
+
+.connector-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.connector path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.connector-hit {
+  stroke: transparent;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.connector.is-selected .connector-line {
+  filter: drop-shadow(0 0 calc(3px * var(--inv-zoom, 1)) var(--accent-primary));
+  stroke: var(--accent-primary);
+}
+
+.connector-draft {
+  fill: none;
+  stroke: #22c55e;
+  stroke-dasharray: 8 6;
+  stroke-linecap: round;
+}
+
+.viewport-area.tool-connector,
+.viewport-area.tool-connector * {
+  cursor: crosshair !important;
+}
+
+.ctx-frame-title {
+  width: 150px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.82rem;
+  border-radius: var(--radius-sm);
+}
+
 .bg-image {
   position: absolute;
   cursor: grab;

@@ -502,6 +502,11 @@ function objectRectAt(target) {
     const b = boards.find(x => x.id === frame.dataset.boardId);
     if (b) return { x: b.x, y: b.y, w: frame.offsetWidth, h: frame.offsetHeight };
   }
+  const frameEl = target.closest('.canvas-frame');
+  if (frameEl && typeof getFrames === 'function') {
+    const f = getFrames().find(x => x.id === frameEl.dataset.frameId);
+    if (f) return { x: f.x, y: f.y, w: f.w, h: f.h };
+  }
   return null;
 }
 
@@ -3295,6 +3300,13 @@ function imageDropTargetAt(clientX, clientY) {
       const board = frame && boards.find(b => b.id === frame.dataset.boardId);
       if (board) return { type: 'board', board, el: boardPart };
     }
+    // Pestaña o título de un frame: la imagen pasa a ser la de su pestaña
+    const framePart = n.closest('.frame-image-tab, .frame-title');
+    if (framePart && typeof getFrames === 'function') {
+      const fel = framePart.closest('.canvas-frame');
+      const frame = fel && getFrames().find(f => f.id === fel.dataset.frameId);
+      if (frame) return { type: 'frame', frame, el: framePart };
+    }
   }
   return null;
 }
@@ -3313,6 +3325,9 @@ function applyImageToTarget(target, ref) {
     const names = target.owner.linkNames || (target.owner.linkNames = {});
     names[target.url] = { text: linkOption(names, target.url).text || '', hide: false, image: ref };
     showToast('Imagen puesta en el link', 'success');
+  } else if (target.type === 'frame') {
+    target.frame.image = ref;
+    showToast('Imagen puesta en la pestaña del frame', 'success');
   } else {
     target.board.image = ref;
     showToast(`Imagen puesta en el tablero "${target.board.title}"`, 'success');
@@ -3641,6 +3656,7 @@ function setTool(tool) {
   viewportArea.classList.toggle('tool-eraser', tool === 'eraser');
   viewportArea.classList.toggle('tool-text', tool === 'text');
   viewportArea.classList.toggle('tool-arrow', tool === 'arrow');
+  viewportArea.classList.toggle('tool-connector', tool === 'connector');
   // La flecha usa el mismo color y grosor que el lápiz
   penOptions.hidden = tool !== 'pen' && tool !== 'arrow';
   eraserOptions.hidden = tool !== 'eraser';
@@ -4213,6 +4229,7 @@ function getContentBounds() {
     const el = getTextEl(t.id);
     extend(t.x, t.y, el ? el.offsetWidth : t.w, el ? el.offsetHeight : t.size * 1.3);
   });
+  if (typeof getFrames === 'function') getFrames().forEach(f => extend(f.x, f.y, f.w, f.h));
   getDrawings().forEach(s => s.points.forEach(([x, y]) => extend(x, y, 0, 0)));
   if (minX === Infinity) return { minX: 0, minY: 0, maxX: 500, maxY: 300 };
   return { minX, minY, maxX, maxY };
@@ -4223,6 +4240,7 @@ let selection = new Set();
 let selectGestureActive = false;
 
 function applySelectionVisuals() {
+  if (typeof applyFrameSelection === 'function') applyFrameSelection();
   kanbanBoard.querySelectorAll('.board-frame').forEach(el => {
     el.classList.toggle('is-selected', selection.has(`board:${el.dataset.boardId}`));
   });
@@ -4259,6 +4277,10 @@ function canvasObjectsByKey() {
   getTexts().forEach(o => map.set(`text:${o.id}`, o));
   getBgImages().forEach(o => map.set(`img:${o.id}`, o));
   getDrawings().forEach(o => map.set(`stroke:${o.id}`, o));
+  if (typeof getFrames === 'function') {
+    getFrames().forEach(o => map.set(`frame:${o.id}`, o));
+    getConnectors().forEach(o => map.set(`conn:${o.id}`, o));
+  }
   return map;
 }
 
@@ -4328,10 +4350,16 @@ function hitStroke(clientX, clientY) {
 function startGroupDrag(e) {
   const startX = e.clientX;
   const startY = e.clientY;
-  const brds = boards.filter(b => selection.has(`board:${b.id}`)).map(b => ({ b, el: getBoardEl(b.id), x: b.x, y: b.y }));
-  const strokes = getDrawings().filter(s => selection.has(`stroke:${s.id}`)).map(s => ({ s, el: drawLayer.querySelector(`[data-stroke-id="${s.id}"]`) }));
-  const imgs = getBgImages().filter(i => selection.has(`img:${i.id}`)).map(i => ({ i, el: bgImageLayer.querySelector(`.bg-image[data-image-id="${i.id}"]`), x: i.x, y: i.y }));
-  const txts = getTexts().filter(t => selection.has(`text:${t.id}`)).map(t => ({ t, el: getTextEl(t.id), x: t.x, y: t.y }));
+  // Un frame se lleva lo que tiene dentro (textos, notas, imágenes, dibujos y otros frames)
+  const moveKeys = new Set(selection);
+  if (typeof objectsInsideFrame === 'function') {
+    getFrames().filter(f => selection.has(`frame:${f.id}`)).forEach(f => objectsInsideFrame(f).forEach(k => moveKeys.add(k)));
+  }
+  const brds = boards.filter(b => moveKeys.has(`board:${b.id}`)).map(b => ({ b, el: getBoardEl(b.id), x: b.x, y: b.y }));
+  const strokes = getDrawings().filter(s => moveKeys.has(`stroke:${s.id}`)).map(s => ({ s, el: drawLayer.querySelector(`[data-stroke-id="${s.id}"]`) }));
+  const imgs = getBgImages().filter(i => moveKeys.has(`img:${i.id}`)).map(i => ({ i, el: bgImageLayer.querySelector(`.bg-image[data-image-id="${i.id}"]`), x: i.x, y: i.y }));
+  const txts = getTexts().filter(t => moveKeys.has(`text:${t.id}`)).map(t => ({ t, el: getTextEl(t.id), x: t.x, y: t.y }));
+  const frms = typeof getFrames === 'function' ? getFrames().filter(f => moveKeys.has(`frame:${f.id}`)).map(f => ({ f, el: getFrameEl(f.id), x: f.x, y: f.y })) : [];
   const singleImg = selection.size === 1 && imgs.length === 1 ? imgs[0] : null;
   let moved = false, dx = 0, dy = 0, targetCard = null, imageTarget = null;
 
@@ -4361,6 +4389,13 @@ function startGroupDrag(e) {
       o.t.y = Math.round(o.y + dy);
       if (o.el) { o.el.style.left = `${o.t.x}px`; o.el.style.top = `${o.t.y}px`; }
     });
+    frms.forEach(o => {
+      o.f.x = Math.round(o.x + dx);
+      o.f.y = Math.round(o.y + dy);
+      if (o.el) { o.el.style.left = `${o.f.x}px`; o.el.style.top = `${o.f.y}px`; }
+    });
+    // Las flechas entre frames los siguen
+    if (frms.length && typeof renderConnectors === 'function') renderConnectors();
     if (singleImg) {
       // Sobre un link o un tablero gana ese destino; si no, una tarea
       imageTarget = imageDropTargetAt(ev.clientX, ev.clientY);
@@ -4425,6 +4460,8 @@ function startGroupDrag(e) {
     strokes.forEach(o => o.el && o.el.removeAttribute('transform'));
     imgs.forEach(o => { o.i.x = o.x; o.i.y = o.y; if (o.el) { o.el.style.left = `${o.x}px`; o.el.style.top = `${o.y}px`; } });
     txts.forEach(o => { o.t.x = o.x; o.t.y = o.y; if (o.el) { o.el.style.left = `${o.x}px`; o.el.style.top = `${o.y}px`; } });
+    frms.forEach(o => { o.f.x = o.x; o.f.y = o.y; if (o.el) { o.el.style.left = `${o.x}px`; o.el.style.top = `${o.y}px`; } });
+    if (frms.length && typeof renderConnectors === 'function') renderConnectors();
     highlightDropCard(null);
   };
 }
@@ -4531,6 +4568,11 @@ function itemsInRect(x1, y1, x2, y2) {
   getDrawings().forEach(s => {
     if (s.points.some(([x, y]) => x >= x1 && x <= x2 && y >= y1 && y <= y2)) keys.push(`stroke:${s.id}`);
   });
+  // Frames: solo si quedan completos dentro del recuadro (así se puede seleccionar lo de adentro sin tomar el frame)
+  if (typeof getFrames === 'function') {
+    getFrames().forEach(f => { if (f.x >= x1 && f.y >= y1 && f.x + f.w <= x2 && f.y + f.h <= y2) keys.push(`frame:${f.id}`); });
+    getConnectors().forEach(c => { if (keys.includes(`frame:${c.from}`) && keys.includes(`frame:${c.to}`)) keys.push(`conn:${c.id}`); });
+  }
   return keys;
 }
 
@@ -4920,7 +4962,7 @@ viewportArea.addEventListener('pointerdown', (e) => {
   if (currentTool !== 'select' || isSpacePressed || isPanModeActive || e.button !== 0) return;
   if (e.pointerType === 'touch' && !e.isPrimary) return; // segundo dedo: es para mover el lienzo
   const t = e.target;
-  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle')) return;
+  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle, .frame-handle')) return;
   // Un link dentro de un texto del lienzo también sirve para tomar y mover ese texto (un clic corto lo abre)
   if (t.closest('button, input, select, textarea, a, label') && !t.closest('.canvas-text a')) return;
 
@@ -4928,6 +4970,8 @@ viewportArea.addEventListener('pointerdown', (e) => {
   const strokeId = hitStroke(e.clientX, e.clientY);
   if (strokeId) {
     key = `stroke:${strokeId}`;
+  } else if (t.closest('[data-conn-id]')) {
+    key = `conn:${t.closest('[data-conn-id]').dataset.connId}`;
   } else if (t.closest('.canvas-text')) {
     key = `text:${t.closest('.canvas-text').dataset.textId}`;
   } else if (t.closest('.kanban-card')) {
@@ -4951,6 +4995,8 @@ viewportArea.addEventListener('pointerdown', (e) => {
     key = `board:${t.closest('.board-frame').dataset.boardId}`;
   } else if (t.closest('.bg-image')) {
     key = `img:${t.closest('.bg-image').dataset.imageId}`;
+  } else if (t.closest('.canvas-frame')) {
+    key = `frame:${t.closest('.canvas-frame').dataset.frameId}`;
   }
 
   if (key) {
@@ -5019,6 +5065,8 @@ function getContext() {
   if (types.size === 1 && types.has('img')) return { type: 'image', count: keys.length };
   if (types.size === 1 && types.has('stroke')) return { type: 'stroke', count: keys.length };
   if (types.size === 1 && types.has('text')) return { type: 'text', count: keys.length };
+  if (types.size === 1 && types.has('frame')) return { type: 'frame', count: keys.length };
+  if (types.size === 1 && types.has('conn')) return { type: 'conn', count: keys.length };
   return { type: 'multi', count: keys.length };
 }
 
@@ -5053,7 +5101,9 @@ function updateContextBar() {
   show('image', ctx.type === 'image');
   show('stroke', ctx.type === 'stroke');
   show('text', ctx.type === 'text');
-  show('common', ['image', 'stroke', 'text', 'multi'].includes(ctx.type));
+  show('frame', ctx.type === 'frame');
+  show('conn', ctx.type === 'conn');
+  show('common', ['image', 'stroke', 'text', 'multi', 'frame', 'conn'].includes(ctx.type));
   contextBar.dataset.ctx = ctx.type;
   // Agrupar si hay varios objetos que no forman ya un único grupo; desagrupar si hay alguno agrupado
   const groupsInSel = selectionGroups();
@@ -5103,6 +5153,8 @@ function updateContextBar() {
     const color = sticky ? first.sticky : first && first.color ? first.color : (el ? rgbToHex(getComputedStyle(el).color) : '#f8fafc');
     ctxTextColor.value = color;
     ctxDot.style.background = color;
+  } else if ((ctx.type === 'frame' || ctx.type === 'conn') && typeof syncFrameControls === 'function') {
+    syncFrameControls(ctx);
   } else {
     ctxTitle.textContent = `${ctx.count} elementos`;
     ctxDot.style.background = '#a855f7';
@@ -5123,11 +5175,17 @@ function collectSelection() {
   data.strokes = deepClone(selectedStrokes());
   data.images = deepClone(selectedImages());
   data.texts = deepClone(selectedTexts());
+  // Frames y las flechas entre ellos (solo las que unen dos frames copiados)
+  if (typeof getFrames === 'function') {
+    data.frames = deepClone(selectedFrames());
+    const ids = new Set(data.frames.map(f => f.id));
+    data.connectors = deepClone(getConnectors().filter(c => ids.has(c.from) && ids.has(c.to)));
+  }
   return data;
 }
 
 function hasSelectionContent(data) {
-  return data.boards.length + data.strokes.length + data.images.length + (data.texts || []).length > 0;
+  return data.boards.length + data.strokes.length + data.images.length + (data.texts || []).length + (data.frames || []).length > 0;
 }
 
 async function copyImageBlob(oldId) {
@@ -5196,6 +5254,22 @@ async function pasteData(data, offset, offsetY = offset) {
     getTexts().push(nt);
     newKeys.push(`text:${nt.id}`);
   });
+  // Frames con ids nuevos y sus flechas apuntando a las copias
+  if (typeof getFrames === 'function' && (data.frames || []).length) {
+    const frameMap = {};
+    data.frames.forEach(f => {
+      const nf = regroup({ ...deepClone(f), id: generateId('frame'), x: f.x + offset, y: f.y + offsetY });
+      frameMap[f.id] = nf.id;
+      getFrames().push(nf);
+      newKeys.push(`frame:${nf.id}`);
+    });
+    (data.connectors || []).forEach(c => {
+      if (!frameMap[c.from] || !frameMap[c.to]) return;
+      const nc = regroup({ ...deepClone(c), id: generateId('conn'), from: frameMap[c.from], to: frameMap[c.to] });
+      getConnectors().push(nc);
+      newKeys.push(`conn:${nc.id}`);
+    });
+  }
   selection = new Set(newKeys);
   persist();
   renderBoard();
@@ -5222,6 +5296,7 @@ function clipboardOrigin(data) {
   data.boards.forEach(b => { minX = Math.min(minX, b.x); minY = Math.min(minY, b.y); });
   data.images.forEach(i => { minX = Math.min(minX, i.x); minY = Math.min(minY, i.y); });
   (data.texts || []).forEach(t => { minX = Math.min(minX, t.x); minY = Math.min(minY, t.y); });
+  (data.frames || []).forEach(f => { minX = Math.min(minX, f.x); minY = Math.min(minY, f.y); });
   data.strokes.forEach(s => s.points.forEach(([x, y]) => { minX = Math.min(minX, x); minY = Math.min(minY, y); }));
   return minX === Infinity ? { x: 0, y: 0 } : { x: minX, y: minY };
 }
@@ -5285,6 +5360,15 @@ function deleteSelection({ skipConfirm = false, confirmed = false } = {}) {
     if (!skipConfirm) ImageStore.del(id); // al cortar, la imagen sigue disponible para pegar
   });
   if (textIds.length) getActiveProject().texts = getTexts().filter(t => !textIds.includes(t.id));
+  // Frames (con las flechas que los unen) y conectores sueltos
+  if (typeof getFrames === 'function') {
+    const frameIds = selectedFrames().map(f => f.id);
+    const connIds = selectedConnectors().map(c => c.id);
+    if (frameIds.length) getActiveProject().frames = getFrames().filter(f => !frameIds.includes(f.id));
+    if (frameIds.length || connIds.length) {
+      getActiveProject().connectors = getConnectors().filter(c => !connIds.includes(c.id) && !frameIds.includes(c.from) && !frameIds.includes(c.to));
+    }
+  }
   if (boardIds.length) {
     const colIds = columns.filter(c => boardIds.includes(c.boardId)).map(c => c.id);
     if (!skipConfirm) tasks.filter(t => colIds.includes(t.columnId)).forEach(deleteTaskImages);
@@ -5591,6 +5675,7 @@ canvasMenu.addEventListener('click', async (e) => {
   if (cmd === 'archiveDone' && menuColumnId) archiveColumnTasks(menuColumnId, true);
   if (cmd === 'archiveAll' && menuColumnId) archiveColumnTasks(menuColumnId, false);
   if (cmd === 'duplicate') duplicateSelection();
+  if (cmd === 'frame' && typeof addFrame === 'function') addFrame(menuCanvasPoint);
   if (cmd === 'addPdf') pickPdf(menuCanvasPoint);
   if (cmd === 'translate' && typeof openTranslator === 'function') {
     const t = selectedTexts()[0];
@@ -6351,6 +6436,7 @@ function referencedImageIds() {
     (p.tasks || []).forEach(t => (t.images || []).forEach(i => ids.add(i.id)));
     // Imágenes de las pestañas de los tableros y de los links que se muestran como imagen
     (p.boards || []).forEach(b => { if (b.image && !isRemoteImage(b.image)) ids.add(b.image); });
+    (p.frames || []).forEach(f => { if (f.image && !isRemoteImage(f.image)) ids.add(f.image); });
     [...(p.tasks || []), ...(p.texts || [])].forEach(o => Object.values(o.linkNames || {}).forEach(v => {
       if (v && typeof v === 'object' && v.image && !isRemoteImage(v.image)) ids.add(v.image);
     }));
@@ -6449,7 +6535,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '80';
+const APP_VERSION = '81';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -7172,6 +7258,7 @@ function imagesOfProjects(list, spaceLabel, space) {
     (p.bgImages || []).forEach(i => add(i.id, p, 'Lienzo'));
     (p.tasks || []).forEach(t => (t.images || []).forEach(i => add(i.id, p, `Tarea: ${t.title}`)));
     (p.boards || []).forEach(b => { if (b.image) add(b.image, p, `Tablero: ${b.title}`); });
+    (p.frames || []).forEach(f => { if (f.image) add(f.image, p, `Frame${f.title ? `: ${f.title}` : ''}`); });
     [...(p.texts || []), ...(p.tasks || [])].forEach(o => Object.values(o.linkNames || {}).forEach(v => {
       if (v && typeof v === 'object' && v.image) add(v.image, p, o.title ? `Link en: ${o.title}` : 'Link en un texto');
     }));

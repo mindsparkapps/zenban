@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=61">
+  <link rel="stylesheet" href="styles.css?v=62">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -177,6 +177,39 @@
           <button type="button" class="ctx-btn " id="ctxImgView" title="Ver en grande"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg><span>Ver</span></button>
         </div>
 
+        <!-- Frame(s) -->
+        <div class="ctx-panel" data-ctx="frame" hidden>
+          <input type="text" class="ctx-frame-title" id="ctxFrameTitle" placeholder="Título del frame" maxlength="80" aria-label="Título del frame">
+          <label class="ctx-color" title="Color del borde">
+            <span>Color</span>
+            <input type="color" id="ctxFrameColor" value="#6366f1">
+          </label>
+          <label class="ctx-range" title="Relleno (transparencia del fondo)">
+            <span>Relleno</span>
+            <input type="range" id="ctxFrameFill" min="0" max="60" step="5" value="10">
+          </label>
+          <label class="ctx-range" title="Redondeo de las esquinas">
+            <span>Esquinas</span>
+            <input type="range" id="ctxFrameRadius" min="0" max="80" step="2" value="16">
+          </label>
+          <button type="button" class="ctx-btn" id="ctxFrameImage" title="Imagen de la pestaña para reconocerlo y moverlo"><span>🖼</span><span>Imagen</span></button>
+          <button type="button" class="ctx-btn" id="ctxFrameImageRemove" title="Quitar la imagen de la pestaña" hidden><span>✕</span><span>Quitar imagen</span></button>
+        </div>
+
+        <!-- Conector(es) entre frames -->
+        <div class="ctx-panel" data-ctx="conn" hidden>
+          <label class="ctx-color" title="Color de la flecha">
+            <span>Color</span>
+            <input type="color" id="ctxConnColor" value="#94a3b8">
+          </label>
+          <label class="ctx-range" title="Grosor de la flecha">
+            <span>Grosor</span>
+            <input type="range" id="ctxConnSize" min="1" max="12" step="1" value="3">
+          </label>
+          <button type="button" class="ctx-btn" id="ctxConnFlip" title="Cambiar el sentido de la flecha"><span>⇄</span><span>Invertir</span></button>
+          <button type="button" class="ctx-btn" id="ctxConnBoth" title="Flecha en los dos extremos"><span>↔</span><span>Doble</span></button>
+        </div>
+
         <!-- Trazo(s) -->
         <div class="ctx-panel" data-ctx="stroke" hidden>
           <label class="ctx-color" title="Color del trazo">
@@ -269,6 +302,9 @@
       
       <!-- Interactive Zoom Canvas Container -->
       <div class="zoom-canvas" id="zoomCanvas">
+        <!-- Capa de frames (marcos para diagramas) y sus conectores -->
+        <div class="frame-layer" id="frameLayer"></div>
+        <svg class="connector-layer" id="connectorLayer" xmlns="http://www.w3.org/2000/svg"></svg>
         <!-- Capa de imágenes de fondo (se mueven y escalan con el lienzo) -->
         <div class="bg-image-layer" id="bgImageLayer"></div>
         <div class="kanban-board" id="kanbanBoard">
@@ -300,6 +336,12 @@
           </button>
           <button type="button" class="tool-btn" id="toolSticky" title="Nota adhesiva (S)" aria-label="Nota adhesiva">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v10l-6 6H4z"></path><path d="M14 20v-6h6"></path></svg>
+          </button>
+          <button type="button" class="tool-btn" id="toolFrame" title="Frame (F): un marco para diagramas" aria-label="Frame">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"></rect><line x1="3" y1="9" x2="21" y2="9"></line></svg>
+          </button>
+          <button type="button" class="tool-btn" data-tool="connector" title="Conector: arrastra de un frame a otro para unirlos con una flecha" aria-label="Conector">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="7" height="6" rx="1.5"></rect><rect x="15" y="15" width="7" height="6" rx="1.5"></rect><path d="M9 6h4a3 3 0 0 1 3 3v6"></path><polyline points="13 12 16 15 19 12"></polyline></svg>
           </button>
           <button type="button" class="tool-btn" data-tool="hand" title="Mover lienzo (H)" aria-label="Mover lienzo">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"></path><path d="M14 10V4a2 2 0 0 0-4 0v7"></path><path d="M10 10.5V6a2 2 0 0 0-4 0v8"></path><path d="M18 11a2 2 0 0 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.4L2.4 16.6a2 2 0 0 1 2.8-2.8L7 15.5"></path></svg>
@@ -803,6 +845,7 @@
       <button type="button" data-cmd="archiveTask" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><line x1="10" y1="12" x2="14" y2="12"></line></svg><span>Archivar esta tarea</span></button>
       <button type="button" data-cmd="archiveDone" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><polyline points="9 14 11 16 15 12"></polyline></svg><span>Archivar completadas de la columna</span></button>
       <button type="button" data-cmd="archiveAll" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path></svg><span>Archivar todas las tareas de la columna</span></button>
+      <button type="button" data-cmd="frame" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"></rect><line x1="3" y1="9" x2="21" y2="9"></line></svg><span>Frame aquí</span><kbd>F</kbd></button>
       <button type="button" data-cmd="sticky" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v10l-6 6H4z"></path><path d="M14 20v-6h6"></path></svg><span>Nota adhesiva aquí</span><kbd>S</kbd></button>
       <button type="button" data-cmd="findImage" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>Biblioteca de imágenes…</span></button>
       <div class="canvas-menu-sep"></div>
@@ -912,12 +955,13 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=80"></script>
+  <script src="app.js?v=81"></script>
   <script src="share.js?v=7"></script>
-  <script src="transfer.js?v=5"></script>
+  <script src="transfer.js?v=6"></script>
   <script src="spaces.js?v=8"></script>
   <script src="capture.js?v=1"></script>
   <script src="archive.js?v=3"></script>
   <script src="translator.js?v=3"></script>
+  <script src="frames.js?v=1"></script>
 </body>
 </html>
