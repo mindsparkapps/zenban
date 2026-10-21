@@ -88,24 +88,42 @@ async function findSharedSpaces() {
   return j.files || [];
 }
 
+// Cambia de espacio con el aviso "Abriendo…": primero sube lo pendiente del espacio actual
+// (para no perderlo) y después trae los datos del nuevo
+async function changeSpaceWithBusy(space, label, message, type) {
+  closeShareModal();
+  showBusy(label);
+  try {
+    if (isDirty() && SYNC.token) {
+      await syncNow();
+      if (typeof waitSyncIdle === 'function') await waitSyncIdle();
+    }
+    setSpace(space);
+    // Primera sincronización con ese espacio: se usan sus datos tal cual (no se mezclan)
+    markSpaceSwitch();
+    renderShareState();
+    await syncNow();
+    if (typeof waitSyncIdle === 'function') await waitSyncIdle();
+    showToast(message, type);
+  } finally {
+    hideBusy();
+    if (typeof renderSpaceIndicator === 'function') renderSpaceIndicator();
+  }
+}
+
 function joinSharedSpace(folder) {
   const owner = (folder.owners && folder.owners[0]) || {};
-  setSpace({ mode: 'shared', folderId: folder.id, folderName: folder.name, ownerEmail: owner.emailAddress, ownerName: owner.displayName });
-  // Primera sincronización con esa carpeta: se pregunta si usar sus datos o combinarlos con los de aquí
-  markSpaceSwitch();
-  renderShareState();
-  closeShareModal();
-  showToast(`Usando los datos compartidos "${folder.name}"`, 'success');
-  syncNow();
+  return changeSpaceWithBusy(
+    { mode: 'shared', folderId: folder.id, folderName: folder.name, ownerEmail: owner.emailAddress, ownerName: owner.displayName },
+    `Abriendo los datos compartidos «${folder.name}»…`,
+    `Usando los datos compartidos "${folder.name}"`, 'success');
 }
 
 function leaveSharedSpace() {
-  setSpace({ mode: 'personal' });
-  markSpaceSwitch();
-  renderShareState();
-  closeShareModal();
-  showToast('Volviste a tus datos personales. Los datos compartidos siguen en la carpeta.', 'info');
-  syncNow();
+  return changeSpaceWithBusy(
+    { mode: 'personal' },
+    'Abriendo tus datos personales…',
+    'Volviste a tus datos personales. Los datos compartidos siguen en la carpeta.', 'info');
 }
 
 // Al iniciar sesión: si hay datos compartidos (de otra persona, o tuyos creados desde otro dispositivo), se te ofrecen

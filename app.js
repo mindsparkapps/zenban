@@ -5827,6 +5827,12 @@ function setSpace(space) {
   SYNC.fileId = null;
   SYNC.remoteVersion = null;
   SYNC.imageFiles = null;
+  // Los "otros espacios" leídos antes ya no sirven (incluían este y les faltaba el anterior):
+  // la lista de proyectos los vuelve a leer y mientras tanto usa la copia guardada
+  if (typeof OtherSpaces !== 'undefined') {
+    OtherSpaces.entries = [];
+    OtherSpaces.loadedAt = 0;
+  }
 }
 
 function spaceQuery(cond) {
@@ -6239,7 +6245,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '71';
+const APP_VERSION = '72';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

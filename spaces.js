@@ -82,9 +82,12 @@ const OTHER_SPACES_CACHE_KEY = 'zenban_other_spaces_v1';
 
 function saveOtherSpacesCache(entries) {
   try {
+    // También el espacio actual (con los proyectos de aquí): así, al cambiar de espacio,
+    // el anterior aparece al instante en la lista mientras se actualiza
+    const here = { space: xferHere(), hasFile: true, projects };
     localStorage.setItem(OTHER_SPACES_CACHE_KEY, JSON.stringify({
       email: myEmail(),
-      entries: entries.filter(e => !e.error).map(e => ({
+      entries: [here, ...entries].filter(e => !e.error).map(e => ({
         space: e.space,
         hasFile: e.hasFile,
         projects: e.projects.map(p => ({ id: p.id, name: p.name, color: p.color, meta: projectMeta(p), folder: p.folder, starred: p.starred, order: p.order }))
@@ -178,7 +181,7 @@ renderProjectSwitcher = function () {
     projectList.appendChild(li);
   }
   const syncing = signedIn() && SYNC.busy;
-  const loading = connecting || syncing || !!OtherSpaces.loading;
+  const loading = connecting || syncing || !!OtherSpaces.loading || !!OtherSpaces.preparing;
   const entries = failed ? [] : knownOtherSpaces();
   const loadingLabel = connecting ? 'Conectando…' : syncing ? 'Sincronizando…' : 'Cargando…';
   if (!entries.length && loading) {
@@ -248,11 +251,19 @@ openProjectMenu = function () {
   OtherSpaces.connectFailed = false;
   const rerender = () => { if (!projectMenu.hidden) renderProjectSwitcher(); };
   const refresh = async () => {
+    // Mientras se sincroniza y se leen los otros espacios, la lista muestra que están cargando
+    OtherSpaces.preparing = true;
     renderProjectSwitcher();
-    // Primero se sube lo pendiente de este espacio, así la lista y el cambio de espacio parten al día
-    if (isDirty() || !SYNC.remoteVersion) await syncNow().catch(() => {});
-    loadOtherSpaces().then(rerender).catch(rerender);
-    if (OtherSpaces.loading) rerender();
+    try {
+      // Primero se sube lo pendiente de este espacio, así la lista y el cambio de espacio parten al día
+      if (isDirty() || !SYNC.remoteVersion) await syncNow().catch(() => {});
+      const load = loadOtherSpaces();
+      rerender();
+      await load.catch(() => {});
+    } finally {
+      OtherSpaces.preparing = false;
+      rerender();
+    }
   };
   if (signedIn()) { refresh(); return; }
   if (!syncEnabled()) return;
