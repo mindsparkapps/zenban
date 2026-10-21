@@ -274,6 +274,8 @@ async function openShareModal(invites = null) {
     <div class="share-actions"><button class="btn btn-ghost" id="shareLeaveBtn">Volver a mis datos personales</button></div>`;
 
   const renderMembers = async () => {
+    // Con permissions.js: lista con fotos, número de personas y permisos
+    if (typeof enhanceMembersList === 'function') return enhanceMembersList();
     const box = el('shareMembers');
     try {
       const members = await listMembers();

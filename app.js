@@ -4901,8 +4901,11 @@ function renderTexts() {
     applyTextStyle(el, t);
     // Widget "Progreso de listas" (t.ytLists) o texto normal
     const isWidget = Array.isArray(t.ytLists);
+    // Ventana web o plugin (webwin.js)
+    const isWeb = !!t.web && typeof webWindowHtml === 'function';
     el.classList.toggle('is-ytprogress', isWidget);
-    el.innerHTML = isWidget ? ytProgressWidgetHtml(t) : linkify(t.text, t.linkNames) + youtubePreviews(t.text);
+    el.classList.toggle('is-webwin', isWeb);
+    el.innerHTML = isWeb ? webWindowHtml(t) : isWidget ? ytProgressWidgetHtml(t) : linkify(t.text, t.linkNames) + youtubePreviews(t.text);
     const handle = document.createElement('div');
     handle.className = 'canvas-text-handle';
     handle.title = 'Arrastra para cambiar el ancho de la caja';
@@ -6845,7 +6848,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '86';
+const APP_VERSION = '87';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -6958,8 +6961,8 @@ function openSettings() {
   document.getElementById('settingStarredPosition').value = starredPosition();
   if (typeof renderArchiveSetting === 'function') renderArchiveSetting();
   document.getElementById('settingImageSources').value = appSettings.imageSources ?? DEFAULT_IMAGE_SOURCES;
-  document.getElementById('settingYtCheckSize').value = String(appSettings.ytCheckSize ?? YT_CHECK_DEFAULT.size);
-  document.getElementById('settingYtCheckSizeValue').textContent = `${Math.round((appSettings.ytCheckSize ?? YT_CHECK_DEFAULT.size) * 100)}%`;
+  document.getElementById('settingYtCheckSize').value = String(ytCheckScale());
+  document.getElementById('settingYtCheckSizeValue').textContent = `${Math.round(ytCheckScale() * 100)}% de la miniatura`;
   document.getElementById('settingYtCheckColor').value = appSettings.ytCheckColor || YT_CHECK_DEFAULT.color;
   const backdropInput = document.getElementById('settingModalBackdrop');
   backdropInput.value = String(appSettings.modalBackdrop ?? 15);
@@ -7109,9 +7112,9 @@ refreshAutoHide();
 document.getElementById('openSettingsBtn').addEventListener('click', openSettings);
 // Vista previa de las casillas mientras se ajustan (Cancelar las devuelve como estaban)
 ['settingYtCheckSize', 'settingYtCheckColor'].forEach(id => document.getElementById(id).addEventListener('input', () => {
-  const size = Number(document.getElementById('settingYtCheckSize').value);
-  document.getElementById('settingYtCheckSizeValue').textContent = `${Math.round(size * 100)}%`;
-  applyYtCheckStyle(size, document.getElementById('settingYtCheckColor').value);
+  const scale = Number(document.getElementById('settingYtCheckSize').value);
+  document.getElementById('settingYtCheckSizeValue').textContent = `${Math.round(scale * 100)}% de la miniatura`;
+  applyYtCheckStyle(scale, document.getElementById('settingYtCheckColor').value);
 }));
 ['closeSettingsBtn', 'cancelSettingsBtn'].forEach(id => document.getElementById(id).addEventListener('click', () => applyYtCheckStyle()));
 document.getElementById('resetImageSourcesBtn').addEventListener('click', () => {
@@ -7135,7 +7138,7 @@ document.getElementById('settingsForm').addEventListener('submit', (e) => {
   localStorage.setItem(STARRED_POSITION_KEY, document.getElementById('settingStarredPosition').value);
   appSettings.modalBackdrop = Number(document.getElementById('settingModalBackdrop').value);
   appSettings.imageSources = document.getElementById('settingImageSources').value.trim();
-  appSettings.ytCheckSize = Number(document.getElementById('settingYtCheckSize').value);
+  appSettings.ytCheckScale = Number(document.getElementById('settingYtCheckSize').value);
   appSettings.ytCheckColor = document.getElementById('settingYtCheckColor').value;
   applyYtCheckStyle();
   saveData(SETTINGS_KEY, appSettings);
@@ -8147,10 +8150,14 @@ function refreshYtProgress() {
   if (typeof refreshYtProgressWidgets === 'function') refreshYtProgressWidgets();
 }
 
-// Tamaño y color de las casillas (⚙️ Configuración). Por defecto grandes y con la marca verde.
-const YT_CHECK_DEFAULT = { size: 1.7, color: '#22c55e' };
-function applyYtCheckStyle(size = appSettings.ytCheckSize ?? YT_CHECK_DEFAULT.size, color = appSettings.ytCheckColor || YT_CHECK_DEFAULT.color) {
-  document.documentElement.style.setProperty('--yt-check-size', `${size}em`);
+// Tamaño y color de las casillas (⚙️ Configuración). El tamaño es una parte del ancho de la miniatura
+// del video (al menos 1/4); por defecto 30 % y con la marca verde.
+const YT_CHECK_DEFAULT = { scale: 0.3, color: '#22c55e' };
+function ytCheckScale() {
+  return Math.max(0.25, Math.min(0.6, Number(appSettings.ytCheckScale) || YT_CHECK_DEFAULT.scale));
+}
+function applyYtCheckStyle(scale = ytCheckScale(), color = appSettings.ytCheckColor || YT_CHECK_DEFAULT.color) {
+  document.documentElement.style.setProperty('--yt-check-scale', String(scale));
   document.documentElement.style.setProperty('--yt-check-color', color);
 }
 applyYtCheckStyle();

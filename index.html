@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=69">
+  <link rel="stylesheet" href="styles.css?v=70">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -993,11 +993,23 @@
             <label>Copias de seguridad</label>
             <p class="setup-text">Si algo desaparece al sincronizar, aquí lo recuperas.</p>
             <button type="button" class="btn btn-ghost btn-sm" id="openBackupsBtn">🛟 Ver copias de seguridad</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="saveBackupDiskBtn">💾 Guardar respaldo en el disco</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="restoreBackupDiskBtn">📂 Recuperar desde el disco</button>
+            <p class="setup-text">El respaldo en el disco incluye tus datos de este espacio y sus imágenes y PDFs.</p>
           </div>
           <div class="form-group">
-            <label for="settingYtCheckSize" class="settings-range-label">Casillas de las listas de YouTube: <strong id="settingYtCheckSizeValue">170%</strong></label>
-            <input type="range" id="settingYtCheckSize" min="1" max="3" step="0.1" value="1.7">
+            <label for="settingYtCheckSize" class="settings-range-label">Casillas de las listas de YouTube: <strong id="settingYtCheckSizeValue">30% de la miniatura</strong></label>
+            <input type="range" id="settingYtCheckSize" min="0.25" max="0.6" step="0.05" value="0.3">
             <label class="settings-inline-color">Color de la marca <input type="color" id="settingYtCheckColor" value="#22c55e"></label>
+          </div>
+          <div class="form-group">
+            <label for="pluginUrlInput">Plugins</label>
+            <p class="setup-text">Apps web que se agregan al lienzo como objetos (botón derecho › Agregar aquí). Pega la dirección donde está publicado el plugin (la carpeta que tiene <code>zenban-plugin.json</code>).</p>
+            <div id="pluginsList"></div>
+            <div class="plugin-add">
+              <input type="text" id="pluginUrlInput" placeholder="https://usuario.github.io/mi-plugin/" autocomplete="off" spellcheck="false">
+              <button type="button" class="btn btn-ghost btn-sm" id="pluginAddBtn">Agregar</button>
+            </div>
           </div>
           <div class="form-group">
             <label for="settingImageSources">Fuentes de imágenes en la biblioteca</label>
@@ -1043,8 +1055,8 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=86"></script>
-  <script src="share.js?v=7"></script>
+  <script src="app.js?v=87"></script>
+  <script src="share.js?v=8"></script>
   <script src="transfer.js?v=7"></script>
   <script src="spaces.js?v=8"></script>
   <script src="capture.js?v=1"></script>
@@ -1052,6 +1064,8 @@
   <script src="translator.js?v=3"></script>
   <script src="frames.js?v=5"></script>
   <script src="objstyle.js?v=2"></script>
-  <script src="backups.js?v=1"></script>
+  <script src="backups.js?v=2"></script>
+  <script src="permissions.js?v=1"></script>
+  <script src="webwin.js?v=1"></script>
 </body>
 </html>

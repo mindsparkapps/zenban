@@ -1625,7 +1625,9 @@ body.theme-light .moon-icon { display: none; }
   display: flex;
   align-items: center;
   justify-content: center;
-  width: calc(var(--yt-check-size, 1.7em) + 1em);
+  /* Tamaño: una fracción del ancho de la miniatura (8em), mínimo 1/4 */
+  --yt-check-box: calc(8em * var(--yt-check-scale, 0.3));
+  width: calc(var(--yt-check-box) + 0.9em);
   align-self: stretch;
   cursor: pointer;
 }
@@ -1634,8 +1636,9 @@ body.theme-light .moon-icon { display: none; }
   appearance: none;
   -webkit-appearance: none;
   position: relative;
-  width: var(--yt-check-size, 1.7em);
-  height: var(--yt-check-size, 1.7em);
+  flex-shrink: 0;
+  width: var(--yt-check-box);
+  height: var(--yt-check-box);
   margin: 0;
   border: 0.14em solid rgba(255, 255, 255, 0.55);
   border-radius: 0.3em;

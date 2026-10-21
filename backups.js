@@ -153,3 +153,146 @@ function restoreBackup(b) {
 }
 
 document.getElementById('openBackupsBtn').addEventListener('click', openBackups);
+
+// ----- Respaldo en el disco: datos + imágenes y PDFs -----
+// En el PC (Chrome/Edge) se elige una carpeta y se crea dentro "ZenBan respaldo <fecha>" con
+// zenban-datos.json y la carpeta archivos/. Donde no se puede elegir carpeta (celular, Firefox) se
+// descarga un solo archivo .json con todo adentro. "Restaurar desde el disco" acepta cualquiera de los dos.
+const MIME_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/svg+xml': 'svg', 'application/pdf': 'pdf' };
+
+function backupStamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+async function collectBackupFiles() {
+  const files = [];
+  for (const id of referencedImageIds()) {
+    const blob = await ImageStore.get(id).catch(() => null);
+    if (blob) files.push({ id, blob });
+  }
+  return files;
+}
+
+async function saveBackupToDisk() {
+  const data = { app: 'ZenBan', version: 1, savedAt: Date.now(), space: currentSpace(), ...dataPart(localPayload()) };
+  showBusy('Preparando el respaldo…');
+  let files;
+  try { files = await collectBackupFiles(); } finally { hideBusy(); }
+  const name = `ZenBan respaldo ${backupStamp()}`;
+  if (window.showDirectoryPicker) {
+    let root;
+    try { root = await window.showDirectoryPicker({ id: 'zenban-respaldos', mode: 'readwrite' }); } catch (e) { return; } // canceló
+    showBusy('Guardando el respaldo en el disco…');
+    try {
+      const dir = await root.getDirectoryHandle(name, { create: true });
+      const write = async (folder, fileName, content) => {
+        const h = await folder.getFileHandle(fileName, { create: true });
+        const w = await h.createWritable();
+        await w.write(content);
+        await w.close();
+      };
+      const index = {};
+      const filesDir = await dir.getDirectoryHandle('archivos', { create: true });
+      for (const f of files) {
+        const fileName = `${f.id}.${MIME_EXT[f.blob.type] || 'bin'}`;
+        index[f.id] = fileName;
+        await write(filesDir, fileName, f.blob);
+      }
+      await write(dir, 'zenban-datos.json', JSON.stringify({ ...data, files: index }, null, 1));
+      showToast(`Respaldo guardado en la carpeta «${name}» (${files.length} archivo(s))`, 'success');
+    } catch (e) {
+      console.warn('Respaldo', e);
+      showToast('No se pudo guardar el respaldo en esa carpeta', 'warning');
+    } finally {
+      hideBusy();
+    }
+    return;
+  }
+  // Sin elegir carpeta: un solo archivo con todo
+  showBusy('Preparando el archivo…');
+  try {
+    const embedded = {};
+    for (const f of files) embedded[f.id] = await blobToDataUrl(f.blob);
+    const blob = new Blob([JSON.stringify({ ...data, embeddedFiles: embedded })], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${name.replace(/\s+/g, '-')}.zenban.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    showToast('Respaldo descargado', 'success');
+  } finally {
+    hideBusy();
+  }
+}
+
+// Recupera desde un respaldo del disco: se agregan los elementos que faltan y los archivos que no estén aquí
+async function restoreFromDisk() {
+  let data = null;
+  const files = new Map(); // id -> Blob
+  try {
+    if (window.showDirectoryPicker) {
+      const dir = await window.showDirectoryPicker({ id: 'zenban-respaldos' });
+      const jsonHandle = await dir.getFileHandle('zenban-datos.json').catch(() => null);
+      if (!jsonHandle) { showToast('Elige la carpeta «ZenBan respaldo …» (la que tiene zenban-datos.json)', 'warning'); return; }
+      data = JSON.parse(await (await jsonHandle.getFile()).text());
+      const filesDir = await dir.getDirectoryHandle('archivos').catch(() => null);
+      if (filesDir) {
+        for (const [id, fileName] of Object.entries(data.files || {})) {
+          const h = await filesDir.getFileHandle(fileName).catch(() => null);
+          if (h) files.set(id, await h.getFile());
+        }
+      }
+    } else {
+      const file = await new Promise((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json,application/json';
+        input.onchange = () => resolve(input.files && input.files[0]);
+        input.click();
+      });
+      if (!file) return;
+      data = JSON.parse(await file.text());
+      for (const [id, url] of Object.entries(data.embeddedFiles || {})) files.set(id, await (await fetch(url)).blob());
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    showToast('No se pudo leer ese respaldo', 'warning');
+    return;
+  }
+  if (!data || data.app !== 'ZenBan' || !Array.isArray(data.projects)) { showToast('Ese archivo no es un respaldo de ZenBan', 'warning'); return; }
+  const ok = await askConfirm({
+    title: '¿Recuperar desde este respaldo?',
+    message: `Respaldo del ${new Date(data.savedAt).toLocaleString()} (${backupSummary(data)}).\nSe agregan los elementos que hoy no están y los archivos que falten. No se borra ni se cambia nada de lo actual.`,
+    confirmText: 'Recuperar', icon: '💾'
+  });
+  if (!ok) return;
+  showBusy('Recuperando…');
+  try {
+    let added = 0;
+    for (const [id, blob] of files) {
+      if (await ImageStore.get(id).catch(() => null)) continue;
+      await ImageStore.put(id, blob);
+      added++;
+    }
+    restoreBackup({ json: JSON.stringify(dataPart(data)) });
+    if (added) { renderBgImages(); renderBoard(); }
+  } finally {
+    hideBusy();
+  }
+}
+
+document.getElementById('saveBackupDiskBtn').addEventListener('click', saveBackupToDisk);
+document.getElementById('restoreBackupDiskBtn').addEventListener('click', restoreFromDisk);
