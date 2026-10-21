@@ -2453,7 +2453,8 @@ function folderHeaderEl(folder, count, open, collapsed, key, extraClass = '') {
   const head = document.createElement('li');
   head.className = `project-folder ${open ? 'is-open' : ''} ${extraClass}`;
   head.dataset.folder = folder;
-  head.innerHTML = `<button type="button" class="project-folder-btn" title="${open ? 'Plegar' : 'Desplegar'} la carpeta">
+  const movable = !extraClass.includes('is-other-space');
+  head.innerHTML = `${movable ? '<span class="project-drag folder-drag" title="Arrastra para ordenar la carpeta" aria-hidden="true">⠿</span>' : ''}<button type="button" class="project-folder-btn" title="${open ? 'Plegar' : 'Desplegar'} la carpeta">
     <span class="project-folder-chevron">▸</span><span>📁 ${escapeHtml(folder)}</span><small>${count}</small></button>`;
   head.querySelector('button').addEventListener('click', (e) => {
     e.stopPropagation();
@@ -2461,7 +2462,56 @@ function folderHeaderEl(folder, count, open, collapsed, key, extraClass = '') {
     saveCollapsedFolders(collapsed);
     renderProjectSwitcher();
   });
+  if (movable) head.querySelector('.folder-drag').addEventListener('pointerdown', (e) => startFolderDrag(e, head, folder));
   return head;
+}
+
+// Arrastrar una carpeta por su manija: se mueve con sus proyectos y queda en ese orden
+function startFolderDrag(e, head, folder) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  // La carpeta y sus proyectos visibles se mueven como un bloque
+  const block = () => {
+    const els = [head];
+    let n = head.nextElementSibling;
+    while (n && n.classList.contains('in-folder') && n.dataset.folder === folder) { els.push(n); n = n.nextElementSibling; }
+    return els;
+  };
+  block().forEach(x => x.classList.add('is-dragging'));
+  projectList.classList.add('is-sorting');
+  const onMove = (ev) => {
+    const under = document.elementFromPoint(ev.clientX, ev.clientY);
+    const other = under && under.closest('.project-folder:not(.is-other-space)');
+    if (!other || other === head || !projectList.contains(other)) return;
+    const r = other.getBoundingClientRect();
+    const current = block();
+    if (ev.clientY < r.top + r.height / 2) {
+      current.forEach(x => other.before(x));
+    } else {
+      // Después de la otra carpeta y sus proyectos
+      let last = other;
+      while (last.nextElementSibling && last.nextElementSibling.classList.contains('in-folder') && last.nextElementSibling.dataset.folder === other.dataset.folder) last = last.nextElementSibling;
+      current.slice().reverse().forEach(x => last.after(x));
+    }
+  };
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    projectList.classList.remove('is-sorting');
+    // Nuevo orden de las carpetas: el que quedó en la lista
+    const order = [...projectList.querySelectorAll('.project-folder:not(.is-other-space)')].map(x => x.dataset.folder);
+    projects.forEach(p => {
+      const i = order.indexOf(projectFolder(p));
+      if (i >= 0 && p.folderPos !== i) { p.folderPos = i; p.updatedAt = Date.now(); }
+    });
+    saveData(STORAGE_KEYS.PROJECTS, projects);
+    renderProjectSwitcher();
+  };
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
 }
 
 // ----- Ventana de confirmación con el estilo de ZenBan (en vez de la del navegador) -----
@@ -2558,7 +2608,13 @@ function projectGroups(list) {
     const rest = items.filter(p => !p.starred).sort(byOrder);
     return starredFirst ? [...starred, ...rest] : [...rest, ...starred];
   };
-  const folders = [...new Set(list.map(projectFolder).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  // Carpetas en el orden elegido arrastrándolas (folderPos de sus proyectos); las nuevas, al final por nombre
+  const folderPos = (f) => {
+    const pos = list.filter(p => projectFolder(p) === f && typeof p.folderPos === 'number').map(p => p.folderPos);
+    return pos.length ? Math.min(...pos) : Infinity;
+  };
+  const folders = [...new Set(list.map(projectFolder).filter(Boolean))]
+    .sort((a, b) => (folderPos(a) - folderPos(b)) || a.localeCompare(b, 'es'));
   return [
     { folder: '', items: sortGroup(list.filter(p => !projectFolder(p))) },
     ...folders.map(folder => ({ folder, items: sortGroup(list.filter(p => projectFolder(p) === folder)) }))
@@ -3476,7 +3532,15 @@ viewportArea.addEventListener('dragleave', (e) => {
 viewportArea.addEventListener('drop', async (e) => {
   viewportArea.classList.remove('is-drop-target');
   highlightDropCard(null);
-  const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter(f => f.type.startsWith('image/'));
+  const all = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+  // PDFs soltados en el lienzo: quedan como un archivo (link con ícono) donde se soltaron
+  const pdfs = all.filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+  if (pdfs.length) {
+    e.preventDefault();
+    let point = screenToCanvas(e.clientX, e.clientY);
+    for (const f of pdfs) { await addPdfFile(f, point); point = { x: point.x + 30, y: point.y + 60 }; }
+  }
+  const files = all.filter(f => f.type.startsWith('image/'));
   if (files.length === 0) return;
   e.preventDefault();
 
@@ -5520,6 +5584,10 @@ canvasMenu.addEventListener('click', async (e) => {
   if (cmd === 'archiveDone' && menuColumnId) archiveColumnTasks(menuColumnId, true);
   if (cmd === 'archiveAll' && menuColumnId) archiveColumnTasks(menuColumnId, false);
   if (cmd === 'duplicate') duplicateSelection();
+  if (cmd === 'addPdf') pickPdf(menuCanvasPoint);
+  if (cmd === 'newGoogleDoc') createGoogleDoc('doc', menuCanvasPoint);
+  if (cmd === 'newGoogleSheet') createGoogleDoc('sheet', menuCanvasPoint);
+  if (cmd === 'newGoogleSlides') createGoogleDoc('slides', menuCanvasPoint);
   if (cmd === 'group') groupSelection();
   if (cmd === 'ungroup') ungroupSelection();
   if (cmd === 'sticky') addStickyNote(menuCanvasPoint);
@@ -6275,6 +6343,12 @@ function referencedImageIds() {
     [...(p.tasks || []), ...(p.texts || [])].forEach(o => Object.values(o.linkNames || {}).forEach(v => {
       if (v && typeof v === 'object' && v.image && !isRemoteImage(v.image)) ids.add(v.image);
     }));
+    // PDFs guardados en ZenBan (links zenfile:// en textos del lienzo, descripciones y subtareas)
+    (p.texts || []).forEach(t => fileIdsInText(t.text).forEach(id => ids.add(id)));
+    (p.tasks || []).forEach(t => {
+      fileIdsInText(t.description).forEach(id => ids.add(id));
+      (t.subtasks || []).forEach(s => fileIdsInText(s.text).forEach(id => ids.add(id)));
+    });
   });
   return ids;
 }
@@ -6364,7 +6438,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '78';
+const APP_VERSION = '79';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -6398,7 +6472,66 @@ const brandVersion = document.getElementById('brandVersion');
 document.querySelector('.brand').addEventListener('click', (e) => {
   if (e.target.closest('#brandVersion')) return;
   brandVersion.hidden = !brandVersion.hidden;
+  if (!brandVersion.hidden) renderDriveInfo();
 });
+
+// ----- Espacio de Google Drive (en el globo del logo, bajo "Recargar la app") -----
+const driveInfoCache = { at: 0, data: null };
+
+function formatBytes(n) {
+  if (!n && n !== 0) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1).replace('.', ',')} ${units[i]}`;
+}
+
+async function loadDriveInfo() {
+  const about = await (await driveFetch(`${DRIVE_API}/about?fields=storageQuota`)).json();
+  // Lo que ocupa ZenBan en este espacio (datos, imágenes y PDFs)
+  let zenbanBytes = 0;
+  let zenbanFiles = 0;
+  let pageToken = '';
+  do {
+    const r = await driveFetch(`${DRIVE_API}/files?${spaceQuery('trashed=false')}&pageSize=1000&fields=nextPageToken,files(size)${pageToken ? `&pageToken=${pageToken}` : ''}`);
+    const j = await r.json();
+    (j.files || []).forEach(f => { zenbanBytes += Number(f.size || 0); zenbanFiles++; });
+    pageToken = j.nextPageToken || '';
+  } while (pageToken);
+  return { quota: about.storageQuota || {}, zenbanBytes, zenbanFiles };
+}
+
+async function renderDriveInfo() {
+  const box = document.getElementById('driveInfo');
+  if (!box) return;
+  if (!syncEnabled()) { box.hidden = true; return; }
+  box.hidden = false;
+  if (sessionExpired()) {
+    box.innerHTML = '<span class="drive-info-title">☁️ Google Drive</span><small>Reconecta con Google para ver el espacio.</small>';
+    return;
+  }
+  if (!driveInfoCache.data || Date.now() - driveInfoCache.at > 2 * 60 * 1000) {
+    box.innerHTML = '<span class="drive-info-title">☁️ Google Drive</span><small>Calculando…</small>';
+    try {
+      driveInfoCache.data = await loadDriveInfo();
+      driveInfoCache.at = Date.now();
+    } catch (e) {
+      box.innerHTML = '<span class="drive-info-title">☁️ Google Drive</span><small>No se pudo leer el espacio.</small>';
+      return;
+    }
+  }
+  const { quota, zenbanBytes, zenbanFiles } = driveInfoCache.data;
+  const used = Number(quota.usage || 0);
+  const limit = Number(quota.limit || 0);
+  const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const where = inShared() ? 'datos compartidos' : 'datos personales';
+  box.innerHTML = `
+    <span class="drive-info-title">☁️ Google Drive</span>
+    ${limit ? `<span class="drive-info-bar"><span style="width:${pct}%" class="${pct >= 90 ? 'is-full' : pct >= 75 ? 'is-high' : ''}"></span></span>
+      <small>${formatBytes(used)} de ${formatBytes(limit)} usados (${pct} %) · quedan ${formatBytes(Math.max(0, limit - used))}</small>`
+      : `<small>${formatBytes(used)} usados (sin límite)</small>`}
+    <small>ZenBan (${where}): ${formatBytes(zenbanBytes)} en ${zenbanFiles} archivo(s)</small>`;
+}
 document.addEventListener('click', (e) => {
   if (!brandVersion.hidden && !e.target.closest('.brand')) brandVersion.hidden = true;
 });
@@ -6463,7 +6596,7 @@ async function projectDiagnostics() {
     `Tableros ${(p.boards || []).length} · columnas ${(p.columns || []).length} · tareas ${(p.tasks || []).length}`,
     `Imágenes: ${bg.length} en el lienzo, ${taskImgs.length} en tareas${missing ? ` (${missing} sin descargar)` : ''}`,
     `  guardadas ${mb(stored)} MB · descomprimidas ${mb(decoded)} MB${big.length ? ` · grandes: ${big.length}` : ''}`,
-    `Dibujos: ${strokes.length} trazos, ${points} puntos · textos ${(p.texts || []).length}`,
+    `Dibujos: ${strokes.length} trazos (${strokes.filter(s => s.arrow).length} flechas), ${points} puntos · textos ${(p.texts || []).length} (${(p.texts || []).filter(t => t.sticky).length} notas) · PDFs ${(p.texts || []).reduce((n, t) => n + fileIdsInText(t.text).length, 0)}`,
     `Datos del proyecto: ${kb(p)} KB (dibujos ${kb(strokes)} KB, tareas ${kb(p.tasks)} KB)`,
     `Todos los proyectos: ${kb(projects)} KB · elementos en pantalla: ${document.querySelectorAll('#zoomCanvas *').length}`
   ];
@@ -6751,11 +6884,136 @@ function escapeHtml(str) {
 
 // Escapa el texto y convierte las direcciones web (https://… o www.…) en links que abren en otra pestaña.
 // names: { dirección: texto a mostrar } (se configura en "Links" de cada texto o tarea).
-const LINK_RE = /\[([^\]\n]+)\]\(((?:https?:\/\/|www\.|zenban:\/\/)[^\s)<]+)\)|\b((?:https?:\/\/|www\.|zenban:\/\/)[^\s<]+)/gi;
+const LINK_RE = /\[([^\]\n]+)\]\(((?:https?:\/\/|www\.|zenban:\/\/|zenfile:\/\/)[^\s)<]+)\)|\b((?:https?:\/\/|www\.|zenban:\/\/|zenfile:\/\/)[^\s<]+)/gi;
 const LINK_TRAIL_RE = /(?:[.,;:!?)\]]|&#39;|&quot;)+$/;
 function linkHref(url) {
-  if (isInternalLink(url)) return '#';
+  if (isInternalLink(url) || isFileLink(url)) return '#';
   return /^www\./i.test(url) ? `https://${url}` : url;
+}
+
+// ----- Google Docs, Hojas de cálculo y Presentaciones -----
+// Se crean en tu Drive (en la carpeta compartida si estás en datos compartidos, para que los demás
+// también los abran) y quedan en el lienzo como un link con su ícono; doble clic los abre.
+const GOOGLE_DOC_KINDS = {
+  doc: { label: 'Google Doc', icon: '📝', mime: 'application/vnd.google-apps.document', path: 'document' },
+  sheet: { label: 'Hoja de cálculo', icon: '📊', mime: 'application/vnd.google-apps.spreadsheet', path: 'spreadsheets' },
+  slides: { label: 'Presentación', icon: '📽️', mime: 'application/vnd.google-apps.presentation', path: 'presentation' }
+};
+
+function googleDocKind(url) {
+  const m = String(url || '').match(/docs\.google\.com\/(document|spreadsheets|presentation)\/d\//i);
+  if (!m) return null;
+  return Object.keys(GOOGLE_DOC_KINDS).find(k => GOOGLE_DOC_KINDS[k].path === m[1].toLowerCase()) || null;
+}
+
+async function createGoogleDoc(kind, point = null) {
+  const k = GOOGLE_DOC_KINDS[kind];
+  if (!k) return;
+  if (!syncEnabled() || sessionExpired()) {
+    requestReconnect(`Para crear un ${k.label}, conecta tu cuenta de Google.`);
+    return;
+  }
+  const project = getActiveProject();
+  const name = `${k.label} · ${project.name}`;
+  showBusy(`Creando ${k.label}…`);
+  try {
+    const body = { name, mimeType: k.mime };
+    if (inShared()) body.parents = [currentSpace().folderId];
+    const r = await driveFetch(`${DRIVE_API}/files?fields=id,webViewLink&supportsAllDrives=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const f = await r.json();
+    const url = f.webViewLink || `https://docs.google.com/${k.path}/d/${f.id}/edit`;
+    addText(url, point);
+    showToast(`${k.label} creado: «${name}». Doble clic para abrirlo; cámbiale el ícono en Links.`, 'success');
+  } catch (e) {
+    if (e.message === 'auth') requestReconnect(`La sesión de Google venció. Reconecta para crear el ${k.label}.`);
+    else showToast(`No se pudo crear el ${k.label}. Revisa tu conexión e inténtalo de nuevo.`, 'warning');
+  } finally {
+    hideBusy();
+  }
+}
+
+// ----- Archivos (PDF) guardados en ZenBan: zenfile://<id>/<nombre> -----
+// Se guardan como las imágenes (en el dispositivo y en Drive) y se muestran como un link con su
+// ícono; su texto o imagen se cambia en "Links", igual que cualquier link. Doble clic lo abre.
+function isFileLink(url) {
+  return /^zenfile:\/\//i.test(String(url || ''));
+}
+
+function parseFileLink(url) {
+  const m = String(url).match(/^zenfile:\/\/([\w-]+)(?:\/(.*))?$/i);
+  if (!m) return null;
+  let name = 'archivo.pdf';
+  try { if (m[2]) name = decodeURIComponent(m[2]); } catch (e) {}
+  return { id: m[1], name };
+}
+
+function fileIdsInText(str) {
+  const ids = [];
+  for (const m of String(str || '').matchAll(/zenfile:\/\/([\w-]+)/gi)) ids.push(m[1]);
+  return ids;
+}
+
+async function addPdfFile(file, point = null) {
+  if (!file || !(file.type === 'application/pdf' || /\.pdf$/i.test(file.name))) {
+    showToast('Por ahora solo se pueden agregar archivos PDF', 'info');
+    return;
+  }
+  const id = generateId('img'); // mismo prefijo que las imágenes: así se sincroniza con Drive
+  await ImageStore.put(id, file);
+  const t = addText(`zenfile://${id}/${encodeURIComponent(file.name)}`, point);
+  showToast(`PDF «${file.name}» agregado. Doble clic para abrirlo; cambia su ícono en Links.`, 'success');
+  return t;
+}
+
+async function openFileLink(url) {
+  const ref = parseFileLink(url);
+  if (!ref) return;
+  let blob = await ImageStore.get(ref.id).catch(() => null);
+  if (!blob && SYNC.token) {
+    showToast('Descargando el archivo…', 'info');
+    try { SYNC.imageFiles = null; await syncImages(); } catch (e) {}
+    blob = await ImageStore.get(ref.id).catch(() => null);
+  }
+  if (!blob) {
+    showToast('Ese archivo todavía no está en este dispositivo. Reconecta con Google para descargarlo.', 'warning');
+    return;
+  }
+  const typed = blob.type ? blob : new Blob([blob], { type: 'application/pdf' });
+  const objectUrl = URL.createObjectURL(typed);
+  const win = window.open(objectUrl, '_blank', 'noopener');
+  if (!win) {
+    // Si el navegador no deja abrir otra pestaña, se descarga
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = ref.name;
+    a.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+}
+
+const pdfInput = document.createElement('input');
+pdfInput.type = 'file';
+pdfInput.accept = 'application/pdf,.pdf';
+pdfInput.multiple = true;
+pdfInput.hidden = true;
+document.body.appendChild(pdfInput);
+let pdfInputPoint = null;
+pdfInput.addEventListener('change', async () => {
+  let point = pdfInputPoint;
+  for (const f of Array.from(pdfInput.files || [])) {
+    await addPdfFile(f, point);
+    if (point) point = { x: point.x + 30, y: point.y + 60 };
+  }
+  pdfInput.value = '';
+});
+
+function pickPdf(point = null) {
+  pdfInputPoint = point;
+  pdfInput.click();
 }
 
 // ----- Links internos: saltan a otro proyecto (y a un tablero, texto, imagen o tarea de él) -----
@@ -7038,9 +7296,15 @@ function linkify(str, names = null) {
     // Oculto: no se muestra (útil si ya se ve la miniatura del video)
     if (opt.hide) return trail;
     const internal = isInternalLink(url);
-    // Un link interno sin nombre propio muestra el proyecto al que salta
+    const fileLink = isFileLink(url);
+    const gdoc = !internal && !fileLink && googleDocKind(unescapeHtml(url));
+    // Un link interno sin nombre propio muestra el proyecto al que salta; un PDF, su nombre;
+    // un documento de Google, su tipo
     if (internal && !opt.text && !opt.image) opt.text = internalLinkLabel(unescapeHtml(url));
-    const attrs = `class="auto-link${opt.image ? ' link-image' : ''}${internal ? ' internal-link' : ''}" href="${linkHref(url)}" data-url="${url}"${internal ? '' : ' target="_blank" rel="noopener noreferrer"'}`;
+    if (fileLink && !opt.text && !opt.image) opt.text = `📄 ${(parseFileLink(unescapeHtml(url)) || {}).name || 'PDF'}`;
+    if (gdoc && !opt.text && !opt.image) opt.text = `${GOOGLE_DOC_KINDS[gdoc].icon} ${GOOGLE_DOC_KINDS[gdoc].label}`;
+    const kindClass = internal ? ' internal-link' : fileLink ? ' file-link' : gdoc ? ` gdoc-link gdoc-${gdoc}` : '';
+    const attrs = `class="auto-link${opt.image ? ' link-image' : ''}${kindClass}" href="${linkHref(url)}" data-url="${url}"${internal || fileLink ? '' : ' target="_blank" rel="noopener noreferrer"'}`;
     if (opt.image) {
       // Con imagen y texto, el texto se ve encima de la imagen
       const caption = opt.text ? `<span class="link-image-caption">${escapeHtml(opt.text)}</span>` : '';
@@ -7360,6 +7624,7 @@ document.addEventListener('contextmenu', (e) => {
 function openLink(a) {
   const url = a.dataset.url ? unescapeHtml(a.dataset.url) : a.getAttribute('href');
   if (isInternalLink(url)) { openInternalLink(url); return; }
+  if (isFileLink(url)) { openFileLink(url); return; }
   window.open(a.href, '_blank', 'noopener');
 }
 

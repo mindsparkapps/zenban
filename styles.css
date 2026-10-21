@@ -1259,6 +1259,74 @@ body.theme-light .moon-icon { display: none; }
   overflow: hidden;
 }
 
+/* Espacio de Google Drive en el globo del logo */
+.drive-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--border-subtle);
+  min-width: 220px;
+}
+
+.drive-info[hidden] {
+  display: none;
+}
+
+.drive-info-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.drive-info small {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.drive-info-bar {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border-medium);
+  overflow: hidden;
+}
+
+.drive-info-bar span {
+  display: block;
+  height: 100%;
+  background: #10b981;
+}
+
+.drive-info-bar span.is-high { background: #f59e0b; }
+.drive-info-bar span.is-full { background: #ef4444; }
+
+/* PDF y documentos de Google: se ven como etiquetas con su color */
+.auto-link.file-link:not(.link-image),
+.auto-link.gdoc-link:not(.link-image) {
+  display: inline-block;
+  padding: 0.1em 0.55em;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  border: 1px solid;
+}
+
+.auto-link.file-link:not(.link-image) { background: rgba(239, 68, 68, 0.14); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5; }
+.auto-link.gdoc-doc:not(.link-image) { background: rgba(66, 133, 244, 0.16); border-color: rgba(66, 133, 244, 0.45); color: #93c5fd; }
+.auto-link.gdoc-sheet:not(.link-image) { background: rgba(15, 157, 88, 0.16); border-color: rgba(15, 157, 88, 0.45); color: #86efac; }
+.auto-link.gdoc-slides:not(.link-image) { background: rgba(244, 180, 0, 0.16); border-color: rgba(244, 180, 0, 0.45); color: #fcd34d; }
+
+.canvas-menu .menu-emoji {
+  width: 16px;
+  text-align: center;
+  font-size: 0.95rem;
+}
+
 /* Link interno (salta a otro proyecto): se ve como una etiqueta */
 .auto-link.internal-link:not(.link-image) {
   display: inline-block;
@@ -2666,6 +2734,18 @@ body.theme-light .moon-icon { display: none; }
 .project-folder {
   list-style: none;
   border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+}
+
+.project-folder .project-folder-btn {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-folder.is-dragging {
+  opacity: 0.6;
+  outline: 2px dashed var(--accent-primary);
 }
 
 .project-folder-btn {

@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=59">
+  <link rel="stylesheet" href="styles.css?v=60">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -46,6 +46,7 @@
             <span id="brandVersionText"></span>
             <button type="button" class="brand-settings-btn" id="openSettingsBtn">⚙️ Configuración</button>
             <button type="button" class="brand-settings-btn" id="reloadAppBtn">🔄 Recargar la app</button>
+            <div class="drive-info" id="driveInfo" hidden></div>
           </div>
         </div>
 
@@ -788,6 +789,10 @@
       <button type="button" data-cmd="paste" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1"></rect></svg><span>Pegar aquí</span><kbd>Ctrl+V</kbd></button>
       <button type="button" data-cmd="addText" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg><span>Agregar texto aquí</span><kbd>T</kbd></button>
       <button type="button" data-cmd="photo" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg><span>Sacar foto aquí</span><kbd>C</kbd></button>
+      <button type="button" data-cmd="addPdf" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg><span>Agregar PDF aquí…</span></button>
+      <button type="button" data-cmd="newGoogleDoc" role="menuitem"><span class="menu-emoji" aria-hidden="true">📝</span><span>Nuevo Google Doc aquí</span></button>
+      <button type="button" data-cmd="newGoogleSheet" role="menuitem"><span class="menu-emoji" aria-hidden="true">📊</span><span>Nueva Hoja de cálculo aquí</span></button>
+      <button type="button" data-cmd="newGoogleSlides" role="menuitem"><span class="menu-emoji" aria-hidden="true">📽️</span><span>Nueva Presentación aquí</span></button>
       <button type="button" data-cmd="internalLink" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 10 20 15 15 20"></polyline><path d="M4 4v7a4 4 0 0 0 4 4h12"></path></svg><span>Link a otro proyecto aquí</span></button>
       <button type="button" data-cmd="copyInternalLink" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg><span>Copiar link interno a esto</span></button>
       <button type="button" data-cmd="canvasColor" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="1.5"></circle><circle cx="17.5" cy="10.5" r="1.5"></circle><circle cx="8.5" cy="7.5" r="1.5"></circle><circle cx="6.5" cy="12.5" r="1.5"></circle><path d="M12 2a10 10 0 0 0 0 20c.9 0 1.6-.7 1.6-1.6 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6H16a6 6 0 0 0 6-6c0-4.9-4.5-8.6-10-8.6z"></path></svg><span>Color de fondo del lienzo…</span></button>
@@ -903,7 +908,7 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=78"></script>
+  <script src="app.js?v=79"></script>
   <script src="share.js?v=7"></script>
   <script src="transfer.js?v=5"></script>
   <script src="spaces.js?v=8"></script>
