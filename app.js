@@ -5649,6 +5649,21 @@ function onLocalDataChanged() {
   else setSyncStatus('pending');
 }
 
+// ¿El usuario está a mitad de un cambio que aún no se guarda? (un dedo o botón apretado sobre la app:
+// arrastrar, cambiar tamaño, dibujar; o escribiendo un texto del lienzo)
+const pointersDown = new Set();
+document.addEventListener('pointerdown', (e) => pointersDown.add(e.pointerId), true);
+['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, (e) => {
+  pointersDown.delete(e.pointerId);
+  // Al soltar, si había una sincronización esperando, se hace enseguida
+  if (!pointersDown.size && SYNC.again && SYNC.token && !SYNC.busy) scheduleSync(600);
+}, true));
+window.addEventListener('blur', () => pointersDown.clear());
+
+function userIsInteracting() {
+  return pointersDown.size > 0 || !!editingTextId || !!(typeof dragState !== 'undefined' && dragState.active);
+}
+
 function scheduleSync(delay = 2500) {
   clearTimeout(SYNC.timer);
   SYNC.timer = setTimeout(syncNow, delay);
@@ -6203,6 +6218,13 @@ async function syncNow() {
       SYNC.again = true;
       return;
     }
+    // Si se está arrastrando, cambiando de tamaño, escribiendo un texto o dibujando, ese cambio todavía
+    // no está guardado: aplicar ahora lo que llegó de Drive lo dejaría sobre una copia vieja y se perdería.
+    // Se espera a que termine (se reintenta en unos segundos).
+    if (!switching && !sameJson(dataPart(result), dataPart(local)) && userIsInteracting()) {
+      SYNC.again = true;
+      return;
+    }
 
     if (!sameJson(dataPart(result), dataPart(local))) applyPayload(result);
     else localStorage.setItem(SYNC_KEYS.DELETED, JSON.stringify(result.deletedProjects || []));
@@ -6342,7 +6364,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '75';
+const APP_VERSION = '76';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
