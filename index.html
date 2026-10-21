@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=53">
+  <link rel="stylesheet" href="styles.css?v=54">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -40,7 +40,7 @@
           </div>
           <div class="brand-title-wrap">
             <h1 class="brand-title">Zen<span>Ban</span></h1>
-            <span class="brand-tag">Todo Kanban Pro</span>
+            <span class="brand-tag" id="brandTag">Todo Kanban Pro</span>
           </div>
           <div class="brand-version" id="brandVersion" hidden>
             <span id="brandVersionText"></span>
@@ -213,6 +213,7 @@
           <button type="button" id="accountChip" class="account-chip" title="Cuenta y sincronización" hidden>
             <span class="account-avatar" id="accountAvatar"></span>
             <span class="sync-dot" id="syncDot"></span>
+            <span class="sync-age" id="syncAge"></span>
           </button>
           <div class="account-menu" id="accountMenu" hidden>
             <div class="account-menu-user">
@@ -514,7 +515,8 @@
 
           <div class="modal-actions">
             <button type="button" id="deleteTaskBtn" class="btn btn-danger" style="display:none;">Eliminar</button>
-            <button type="button" id="sendTaskBtn" class="btn btn-ghost" style="display:none;" title="Mover o copiar esta tarea a tus datos personales o compartidos">⇄ Enviar a…</button>
+            <button type="button" id="sendTaskBtn" class="btn btn-ghost" style="display:none;" title="Mover o copiar esta tarea a otro proyecto o espacio">⇄ Enviar a…</button>
+            <button type="button" id="archiveTaskBtn" class="btn btn-ghost" style="display:none;" title="Sacar la tarea del tablero (se recupera en Configuración)">📦 Archivar</button>
             <div class="spacer"></div>
             <button type="button" id="cancelTaskBtn" class="btn btn-ghost">Cancelar</button>
             <button type="submit" id="saveTaskBtn" class="btn btn-primary">Guardar Tarea</button>
@@ -548,6 +550,14 @@
               <!-- Colors injected by JS -->
             </div>
             <input type="hidden" id="columnColorInput" value="#6366f1">
+          </div>
+
+          <div class="form-group" id="columnArchiveGroup" style="display:none">
+            <label>Archivar tareas</label>
+            <div class="column-archive-buttons">
+              <button type="button" class="btn btn-ghost btn-sm" id="archiveColumnDoneBtn">📦 Las completadas</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="archiveColumnAllBtn">📦 Todas</button>
+            </div>
           </div>
 
           <div class="modal-actions">
@@ -765,8 +775,11 @@
       <button type="button" data-cmd="internalLink" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 10 20 15 15 20"></polyline><path d="M4 4v7a4 4 0 0 0 4 4h12"></path></svg><span>Link a otro proyecto aquí</span></button>
       <button type="button" data-cmd="copyInternalLink" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg><span>Copiar link interno a esto</span></button>
       <button type="button" data-cmd="canvasColor" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="1.5"></circle><circle cx="17.5" cy="10.5" r="1.5"></circle><circle cx="8.5" cy="7.5" r="1.5"></circle><circle cx="6.5" cy="12.5" r="1.5"></circle><path d="M12 2a10 10 0 0 0 0 20c.9 0 1.6-.7 1.6-1.6 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6H16a6 6 0 0 0 6-6c0-4.9-4.5-8.6-10-8.6z"></path></svg><span>Color de fondo del lienzo…</span></button>
+      <button type="button" data-cmd="archiveTask" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><line x1="10" y1="12" x2="14" y2="12"></line></svg><span>Archivar esta tarea</span></button>
+      <button type="button" data-cmd="archiveDone" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><polyline points="9 14 11 16 15 12"></polyline></svg><span>Archivar completadas de la columna</span></button>
+      <button type="button" data-cmd="archiveAll" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path></svg><span>Archivar todas las tareas de la columna</span></button>
       <button type="button" data-cmd="sticky" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v10l-6 6H4z"></path><path d="M14 20v-6h6"></path></svg><span>Nota adhesiva aquí</span><kbd>S</kbd></button>
-      <button type="button" data-cmd="findImage" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>Buscar imagen…</span></button>
+      <button type="button" data-cmd="findImage" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>Biblioteca de imágenes…</span></button>
       <button type="button" data-cmd="group" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg><span>Agrupar</span><kbd>Ctrl+G</kbd></button>
       <button type="button" data-cmd="ungroup" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5" stroke-dasharray="3 2"></rect><rect x="13" y="13" width="8" height="8" rx="1.5" stroke-dasharray="3 2"></rect></svg><span>Desagrupar</span><kbd>Ctrl+Shift+G</kbd></button>
       <div class="canvas-menu-sep"></div>
@@ -823,7 +836,20 @@
           <div class="form-group">
             <label for="settingModalBackdrop" class="settings-range-label">Fondo detrás de las ventanas (desenfoque): <strong id="settingModalBackdropValue">15%</strong></label>
             <input type="range" id="settingModalBackdrop" min="0" max="100" step="5" value="15">
-            <p class="setup-text">0% deja el lienzo nítido para leer o copiar textos mientras editas. Las ventanas se mueven arrastrando su título.</p>
+            <p class="setup-text">0% deja el lienzo nítido para leerlo mientras editas. Las ventanas se mueven arrastrando su título.</p>
+          </div>
+          <div class="form-group">
+            <label for="settingAutoArchive">Archivar solas las tareas completadas</label>
+            <select id="settingAutoArchive">
+              <option value="0">Nunca</option>
+              <option value="1">Después de 1 día</option>
+              <option value="3">Después de 3 días</option>
+              <option value="7">Después de 7 días</option>
+              <option value="14">Después de 14 días</option>
+              <option value="30">Después de 30 días</option>
+            </select>
+            <p class="setup-text">También puedes archivar con el botón derecho sobre una tarea o una columna, o en Editar columna.</p>
+            <button type="button" class="btn btn-ghost btn-sm" id="openArchiveBtn">📦 Ver tareas archivadas</button>
           </div>
           <div class="form-group">
             <label for="settingStarredPosition">Proyectos con estrella ★</label>
@@ -863,10 +889,11 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=68"></script>
+  <script src="app.js?v=69"></script>
   <script src="share.js?v=4"></script>
-  <script src="transfer.js?v=2"></script>
+  <script src="transfer.js?v=3"></script>
   <script src="spaces.js?v=5"></script>
   <script src="capture.js?v=1"></script>
+  <script src="archive.js?v=1"></script>
 </body>
 </html>

@@ -218,8 +218,69 @@ function xferEnsureTags(data, taskList) {
   }));
 }
 
+// ----- Envío a otro proyecto de este mismo espacio (sin pasar por Drive) -----
+function xferIsHere(space) {
+  return xferSpaceKey(space) === xferSpaceKey(xferHere());
+}
+
+async function xferSendLocal({ payload, projectChoice, columnChoice, move }) {
+  const built = payload.task ? null : xferBuild(payload);
+  const uploads = built ? built.uploads : [];
+  let taskCopy = null;
+  if (payload.task) taskCopy = xferCloneTask(payload.task, null, uploads);
+  // Las imágenes se copian con ids nuevos en este dispositivo (la sincronización las sube)
+  for (const u of uploads) {
+    const blob = await xferImageBlob(u.oldId);
+    if (blob) await ImageStore.put(u.newId, blob);
+  }
+  const current = getActiveProject();
+  let project = projects.find(p => p.id === projectChoice);
+  if (!project) {
+    project = xferNewProject(`${current.name} (copia)`, current.color, !!payload.task);
+    projects.push(project);
+  }
+  ['columns', 'tasks', 'boards', 'bgImages', 'texts', 'drawings'].forEach(k => { if (!Array.isArray(project[k])) project[k] = []; });
+  let where = `"${project.name}"`;
+  if (payload.task) {
+    const col = project.columns.find(c => c.id === columnChoice) || project.columns[0];
+    if (!col) throw new Error('sin columnas');
+    project.tasks.unshift({ ...taskCopy, columnId: col.id, completed: isDoneColumn(col.id) ? true : taskCopy.completed });
+    where += ` › "${col.title}"`;
+  } else {
+    const destB = xferBounds(project);
+    const srcB = xferSourceBounds(payload);
+    const dx = destB ? Math.round(destB.maxX + 80 - srcB.minX) : 0;
+    const dy = destB ? Math.round(destB.minY - srcB.minY) : 0;
+    built.boards.forEach(b => project.boards.push({ ...b, x: Math.round((b.x || 0) + dx), y: Math.round((b.y || 0) + dy) }));
+    project.columns.push(...built.columns);
+    project.tasks.push(...built.tasks);
+    built.images.forEach(i => project.bgImages.push({ ...i, x: Math.round(i.x + dx), y: Math.round(i.y + dy) }));
+    built.texts.forEach(t => project.texts.push({ ...t, x: Math.round(t.x + dx), y: Math.round(t.y + dy) }));
+    built.strokes.forEach(s => project.drawings.push({ ...s, points: s.points.map(([x, y]) => [+(x + dx).toFixed(1), +(y + dy).toFixed(1)]) }));
+  }
+  project.updatedAt = Date.now();
+  if (move) {
+    if (payload.task) {
+      tasks = tasks.filter(t => t.id !== payload.task.id);
+      getActiveProject().tasks = tasks;
+      closeTaskModal();
+    } else {
+      if (!selection.size && payload.boards.length === 1) selection = new Set([`board:${payload.boards[0].id}`]);
+      deleteSelection({ skipConfirm: true });
+    }
+  } else if (payload.task) {
+    closeTaskModal();
+  }
+  saveData(STORAGE_KEYS.PROJECTS, projects);
+  persist();
+  renderBoard();
+  renderProjectSwitcher();
+  return where;
+}
+
 // ----- Envío -----
 async function xferSend({ payload, dest, projectChoice, columnChoice, move }) {
+  if (xferIsHere(dest)) return xferSendLocal({ payload, projectChoice, columnChoice, move });
   const built = payload.task ? null : xferBuild(payload);
   const uploads = built ? built.uploads : [];
   let taskCopy = null;
@@ -294,7 +355,7 @@ function xferModal() {
     m.innerHTML = `
       <div class="modal-card modal-sm">
         <div class="modal-header">
-          <h2>⇄ Enviar a otro espacio</h2>
+          <h2>⇄ Enviar a otro proyecto</h2>
           <button class="modal-close-btn" type="button" data-close aria-label="Cerrar">&times;</button>
         </div>
         <div id="transferBody"></div>
@@ -321,34 +382,26 @@ async function openTransfer(payload) {
     showToast('Selecciona primero lo que quieres enviar', 'info');
     return;
   }
-  if (!syncEnabled() || !SYNC.token || Date.now() > SYNC.tokenExp) {
-    showToast('Inicia sesión con Google para enviar entre tus datos personales y compartidos', 'info');
-    signInWithGoogle();
-    return;
-  }
   const m = xferModal();
   const body = document.getElementById('transferBody');
   m.style.display = 'flex';
   body.innerHTML = '<p class="share-text">Buscando tus espacios…</p>';
 
-  let dests;
-  try {
-    dests = await xferDestinations();
-  } catch (e) {
-    body.innerHTML = '<p class="share-text">No se pudo leer tu Google Drive. Inténtalo de nuevo.</p>';
-    return;
-  }
-  if (!dests.length) {
-    body.innerHTML = '<p class="share-text">No tienes otro espacio. Crea datos compartidos desde tu foto → Compartir datos.</p>';
-    return;
-  }
-
+  // Siempre se puede enviar a otro proyecto de este espacio; los otros espacios necesitan la sesión de Google
   const here = xferHere();
+  let dests = [here];
+  if (syncEnabled() && SYNC.token && Date.now() < SYNC.tokenExp) {
+    try {
+      dests = [here, ...(await xferDestinations())];
+    } catch (e) {
+      showToast('No se pudieron leer tus otros espacios; puedes enviar dentro de este', 'warning');
+    }
+  }
   body.innerHTML = `
     <p class="share-text" style="margin:0">Enviar ${shareEsc(xferSummary(payload))} desde <strong>${shareEsc(xferSpaceLabel(here))}</strong>.</p>
     <div class="form-group">
       <label for="xferSpace">Espacio de destino</label>
-      <select id="xferSpace">${dests.map((d, i) => `<option value="${i}">${shareEsc(xferSpaceLabel(d))}</option>`).join('')}</select>
+      <select id="xferSpace">${dests.map((d, i) => `<option value="${i}">${shareEsc(xferSpaceLabel(d))}${i === 0 ? ' (este espacio)' : ''}</option>`).join('')}</select>
     </div>
     <div class="form-group">
       <label for="xferProject">Proyecto de destino</label>
@@ -359,7 +412,7 @@ async function openTransfer(payload) {
       <select id="xferColumn" disabled></select>
     </div>
     <div class="xfer-mode">
-      <label><input type="radio" name="xferMode" value="move" checked><span>Mover<small>Se quita de ${shareEsc(xferSpaceLabel(here).toLowerCase())}.</small></span></label>
+      <label><input type="radio" name="xferMode" value="move" checked><span>Mover<small>Se quita de este proyecto.</small></span></label>
       <label><input type="radio" name="xferMode" value="copy"><span>Copiar<small>Queda en ambos lados.</small></span></label>
     </div>
     <div class="xfer-actions">
@@ -394,8 +447,20 @@ async function openTransfer(payload) {
     colSel.disabled = true;
     go.disabled = true;
     projSel.innerHTML = '<option>Cargando…</option>';
+    const destSpace = dests[Number(spaceSel.value)];
+    if (xferIsHere(destSpace)) {
+      // Este espacio: los demás proyectos (no el abierto)
+      destData = { projects: projects.filter(p => p.id !== current.id) };
+      projSel.innerHTML = destData.projects.map(p => `<option value="${shareEsc(p.id)}">${shareEsc(p.name)}</option>`).join('') +
+        `<option value="new">Proyecto nuevo: ${shareEsc(current.name)} (copia)</option>`;
+      projSel.value = destData.projects[0] ? destData.projects[0].id : 'new';
+      projSel.disabled = false;
+      fillColumns();
+      go.disabled = false;
+      return;
+    }
     try {
-      destData = (await xferReadFile(dests[Number(spaceSel.value)])).data;
+      destData = (await xferReadFile(destSpace)).data;
     } catch (e) {
       projSel.innerHTML = '<option>No se pudo leer ese espacio</option>';
       return;
@@ -419,7 +484,7 @@ async function openTransfer(payload) {
     try {
       const where = await xferSend({ payload, dest, projectChoice: projSel.value, columnChoice: colSel.value, move });
       m.style.display = 'none';
-      showToast(`${move ? 'Movido' : 'Copiado'} a ${xferSpaceLabel(dest)} › ${where}`, 'success');
+      showToast(`${move ? 'Movido' : 'Copiado'} a ${xferIsHere(dest) ? '' : `${xferSpaceLabel(dest)} › `}${where}`, 'success');
     } catch (e) {
       console.warn('Enviar a otro espacio', e);
       go.disabled = false;

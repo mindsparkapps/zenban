@@ -267,6 +267,11 @@ function persist() {
   if (project) {
     project.columns = columns;
     project.tasks = tasks;
+    // Cuándo se completó cada tarea (para archivarlas solas después de unos días)
+    tasks.forEach(t => {
+      if (t.completed && !t.completedAt) t.completedAt = Date.now();
+      else if (!t.completed && t.completedAt) delete t.completedAt;
+    });
     // Guarda el estado anterior para poder deshacer (agrupa cambios muy seguidos, p. ej. al escribir)
     const snap = projectSnapshot(project);
     if (!restoringHistory && lastSnapshot !== null && snap !== lastSnapshot) {
@@ -1827,6 +1832,7 @@ window.openTaskModal = function(taskId = null, defaultColId = null, event = null
     currentModalLinkNames = { ...(task.linkNames || {}) };
     deleteTaskBtn.style.display = 'block';
     document.getElementById('sendTaskBtn').style.display = 'block';
+    document.getElementById('archiveTaskBtn').style.display = 'block';
   } else {
     modalTitle.textContent = 'Nueva Tarea';
     taskIdInput.value = '';
@@ -1842,6 +1848,7 @@ window.openTaskModal = function(taskId = null, defaultColId = null, event = null
     currentModalLinkNames = {};
     deleteTaskBtn.style.display = 'none';
     document.getElementById('sendTaskBtn').style.display = 'none';
+    document.getElementById('archiveTaskBtn').style.display = 'none';
   }
 
   renderModalSubtasks();
@@ -2170,12 +2177,14 @@ window.openColumnModal = function(colId = null, boardId = null) {
     columnTitleInput.value = col.title;
     columnColorInput.value = col.color || '#6366f1';
     deleteColumnBtn.style.display = 'block';
+    document.getElementById('columnArchiveGroup').style.display = '';
   } else {
     columnModalTitle.textContent = 'Nueva Columna';
     columnIdInput.value = '';
     columnTitleInput.value = '';
     columnColorInput.value = PALETTE_COLORS[columns.length % PALETTE_COLORS.length];
     deleteColumnBtn.style.display = 'none';
+    document.getElementById('columnArchiveGroup').style.display = 'none';
   }
 
   buildColorPalette(colorPickerPalette, columnColorInput);
@@ -5173,6 +5182,8 @@ window.addEventListener('keydown', (e) => {
 const canvasMenu = document.getElementById('canvasContextMenu');
 let rightDown = null; // { x, y, time, target }
 let menuCanvasPoint = null;
+let menuTaskId = null;   // tarea bajo el menú (para archivarla)
+let menuColumnId = null; // columna bajo el menú
 
 viewportArea.addEventListener('mousedown', (e) => {
   if (e.button === 2) rightDown = { x: e.clientX, y: e.clientY, time: Date.now(), target: e.target };
@@ -5216,6 +5227,14 @@ function openCanvasMenu(clientX, clientY, target) {
   // Pegar lee también el portapapeles del sistema (texto o imagen copiados en otra app)
   canvasMenu.querySelector('[data-cmd="paste"]').disabled = !canvasClipboard && !(navigator.clipboard && navigator.clipboard.readText);
   canvasMenu.querySelector('[data-cmd="undo"]').disabled = historyStack.length === 0;
+  // Sobre una tarea o una columna: opciones para archivar
+  const cardEl = target.closest && target.closest('.kanban-card');
+  const colEl = target.closest && target.closest('.kanban-column');
+  menuTaskId = cardEl ? cardEl.dataset.taskId : null;
+  menuColumnId = colEl ? colEl.dataset.columnId : null;
+  canvasMenu.querySelector('[data-cmd="archiveTask"]').hidden = !menuTaskId;
+  canvasMenu.querySelector('[data-cmd="archiveDone"]').hidden = !menuColumnId;
+  canvasMenu.querySelector('[data-cmd="archiveAll"]').hidden = !menuColumnId;
   canvasMenu.querySelector('[data-cmd="group"]').hidden = selection.size < 2;
   canvasMenu.querySelector('[data-cmd="ungroup"]').hidden = selectionGroups().size === 0;
 
@@ -5271,10 +5290,13 @@ canvasMenu.addEventListener('click', async (e) => {
   if (cmd === 'addText') addText('', menuCanvasPoint);
   if (cmd === 'photo') takePhoto(menuCanvasPoint);
   if (cmd === 'canvasColor') openCanvasColorPicker();
+  if (cmd === 'archiveTask' && menuTaskId) archiveTask(menuTaskId);
+  if (cmd === 'archiveDone' && menuColumnId) archiveColumnTasks(menuColumnId, true);
+  if (cmd === 'archiveAll' && menuColumnId) archiveColumnTasks(menuColumnId, false);
   if (cmd === 'group') groupSelection();
   if (cmd === 'ungroup') ungroupSelection();
   if (cmd === 'sticky') addStickyNote(menuCanvasPoint);
-  if (cmd === 'findImage') openImageFinder();
+  if (cmd === 'findImage') openImageLibrary(menuCanvasPoint);
   if (cmd === 'internalLink') {
     const point = menuCanvasPoint;
     openInternalLinkPicker(url => addText(url, point));
@@ -5434,7 +5456,41 @@ function setSyncStatus(status) {
   // Con qué datos se sincroniza: se muestra en grande y con color (spaces.js)
   if (typeof renderSpaceIndicator === 'function') renderSpaceIndicator();
   accountChip.title = SYNC_STATUS_TEXT[status] || 'Cuenta';
+  renderSyncAge();
 }
+
+// Cuánto hace de la última sincronización: bajo el nombre ZenBan (en vez de "Todo Kanban Pro")
+// y abreviado junto a la foto de la cuenta. Se actualiza cada 30 s.
+function syncAgeText(short = false) {
+  const last = lastSyncedAt();
+  if (!last) return '';
+  const min = Math.floor((Date.now() - last) / 60000);
+  if (min < 1) return short ? 'ahora' : 'recién';
+  if (min < 60) return short ? `${min} min` : `hace ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return short ? `${h} h` : `hace ${h} h`;
+  const d = Math.floor(h / 24);
+  return short ? `${d} d` : `hace ${d} día${d === 1 ? '' : 's'}`;
+}
+
+function renderSyncAge() {
+  const tag = document.getElementById('brandTag');
+  const age = document.getElementById('syncAge');
+  const on = syncEnabled() && savedUser();
+  if (age) age.textContent = on ? syncAgeText(true) : '';
+  if (!tag) return;
+  if (!on) { tag.textContent = 'Todo Kanban Pro'; tag.title = ''; return; }
+  const status = SYNC.status;
+  const text = status === 'syncing' ? 'Sincronizando…'
+    : status === 'offline' ? `Sin conexión · ${syncAgeText() || 'sin sincronizar'}`
+    : status === 'error' ? 'Error al sincronizar'
+    : status === 'expired' || status === 'pending' ? `Sesión vencida · ${syncAgeText() || 'sin sincronizar'}`
+    : lastSyncedAt() ? `Sincronizado ${syncAgeText()}` : 'Sin sincronizar';
+  tag.textContent = text;
+  tag.dataset.status = status || '';
+  tag.title = lastSyncedAt() ? `Última sincronización: ${new Date(lastSyncedAt()).toLocaleString()}` : '';
+}
+setInterval(renderSyncAge, 30000);
 
 function renderAccount() {
   const user = savedUser();
@@ -6024,7 +6080,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '68';
+const APP_VERSION = '69';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -6076,6 +6132,7 @@ function openSettings() {
   }
   settingZoomMin.value = value;
   document.getElementById('settingStarredPosition').value = starredPosition();
+  if (typeof renderArchiveSetting === 'function') renderArchiveSetting();
   const backdropInput = document.getElementById('settingModalBackdrop');
   backdropInput.value = String(appSettings.modalBackdrop ?? 15);
   document.getElementById('settingModalBackdropValue').textContent = `${backdropInput.value}%`;
@@ -6505,24 +6562,79 @@ function focusInternalTarget(ref) {
   fitBoardToScreen();
 }
 
-// ----- Buscar imagen: todas las imágenes de los proyectos de este espacio; tocar una lleva a donde está -----
-function allImagesInSpace() {
+// ----- Biblioteca de imágenes: todas las imágenes de tus espacios (personal y compartidos);
+//       elegir una inserta una copia donde se abrió el menú (o al centro de la vista) -----
+function imagesOfProjects(list, spaceLabel, space) {
   const out = [];
-  projects.forEach(p => {
-    (p.bgImages || []).forEach(i => out.push({ ref: i.id, project: p, where: 'Lienzo', go: { kind: 'i', id: i.id } }));
-    (p.tasks || []).forEach(t => (t.images || []).forEach(i => out.push({ ref: i.id, project: p, where: `Tarea: ${t.title}`, go: { kind: 'k', id: t.id, open: true } })));
-    (p.boards || []).forEach(b => { if (b.image) out.push({ ref: b.image, project: p, where: `Tablero: ${b.title}`, go: { kind: 'b', id: b.id } }); });
-    (p.texts || []).forEach(t => Object.values(t.linkNames || {}).forEach(v => {
-      if (v && typeof v === 'object' && v.image) out.push({ ref: v.image, project: p, where: 'Link en un texto', go: { kind: 't', id: t.id } });
-    }));
-    (p.tasks || []).forEach(t => Object.values(t.linkNames || {}).forEach(v => {
-      if (v && typeof v === 'object' && v.image) out.push({ ref: v.image, project: p, where: `Link en: ${t.title}`, go: { kind: 'k', id: t.id, open: true } });
+  const add = (ref, p, where) => out.push({ ref, project: p, where, spaceLabel, space });
+  list.forEach(p => {
+    (p.bgImages || []).forEach(i => add(i.id, p, 'Lienzo'));
+    (p.tasks || []).forEach(t => (t.images || []).forEach(i => add(i.id, p, `Tarea: ${t.title}`)));
+    (p.boards || []).forEach(b => { if (b.image) add(b.image, p, `Tablero: ${b.title}`); });
+    [...(p.texts || []), ...(p.tasks || [])].forEach(o => Object.values(o.linkNames || {}).forEach(v => {
+      if (v && typeof v === 'object' && v.image) add(v.image, p, o.title ? `Link en: ${o.title}` : 'Link en un texto');
     }));
   });
   return out;
 }
 
-function openImageFinder() {
+function libraryItems() {
+  const here = typeof xferHere === 'function' ? xferHere() : { mode: 'personal' };
+  const hereLabel = typeof spaceTitle === 'function' ? spaceTitle(here) : 'Este espacio';
+  let items = imagesOfProjects(projects, hereLabel, null);
+  // Otros espacios: solo si ya se leyeron de Drive (traen sus imágenes)
+  if (typeof OtherSpaces !== 'undefined') {
+    OtherSpaces.entries.forEach(e => {
+      if (!e.error) items = items.concat(imagesOfProjects(e.projects || [], spaceTitle(e.space), e.space));
+    });
+  }
+  // La misma imagen usada en varios lugares se muestra una vez
+  const seen = new Set();
+  return items.filter(it => (seen.has(it.ref) ? false : seen.add(it.ref)));
+}
+
+// Imagen guardada: de este dispositivo o, si no está, de la carpeta de Drive de su espacio
+async function libraryBlob(item) {
+  if (isRemoteImage(item.ref)) {
+    const r = await fetch(item.ref);
+    if (!r.ok) throw new Error('imagen');
+    return r.blob();
+  }
+  const local = await ImageStore.get(item.ref).catch(() => null);
+  if (local) return local;
+  if (!item.space) return xferImageBlob(item.ref);
+  const r = await driveFetch(`${DRIVE_API}/files?${xferQuery(item.space, `name='${item.ref}'`)}&fields=files(id)`);
+  const f = ((await r.json()).files || [])[0];
+  if (!f) return null;
+  const blob = await (await driveFetch(`${DRIVE_API}/files/${f.id}?alt=media&supportsAllDrives=true`)).blob();
+  ImageStore.put(item.ref, blob).catch(() => {}); // queda guardada para la próxima vez
+  return blob;
+}
+
+const libraryThumbUrls = new Map();
+async function libraryThumb(img, item) {
+  if (isRemoteImage(item.ref)) { img.src = item.ref; return; }
+  const cached = cachedImageVariant(item.ref, 240);
+  if (cached) { img.src = cached; return; }
+  const local = await ImageStore.get(item.ref).catch(() => null);
+  if (local) { const url = await getImageVariantUrl(item.ref, 240); if (url) img.src = url; return; }
+  if (libraryThumbUrls.has(item.ref)) { img.src = libraryThumbUrls.get(item.ref); return; }
+  try {
+    const blob = await libraryBlob(item);
+    if (!blob) { img.closest('.image-finder-item').classList.add('is-missing'); return; }
+    const url = URL.createObjectURL(blob);
+    libraryThumbUrls.set(item.ref, url);
+    img.src = url;
+  } catch (e) {
+    img.closest('.image-finder-item').classList.add('is-missing');
+  }
+}
+
+function openImageLibrary(point = null) {
+  if (!point) {
+    const rect = viewportArea.getBoundingClientRect();
+    point = screenToCanvas(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  }
   let m = document.getElementById('imageFinderModal');
   if (!m) {
     m = document.createElement('div');
@@ -6531,44 +6643,56 @@ function openImageFinder() {
     m.innerHTML = `
       <div class="modal-card image-finder-card">
         <div class="modal-header">
-          <h2>🖼 Buscar imagen</h2>
+          <h2>🖼 Biblioteca de imágenes</h2>
           <button class="modal-close-btn" type="button" data-close aria-label="Cerrar">&times;</button>
         </div>
         <div class="image-finder-body">
-          <input type="search" class="image-finder-search" placeholder="Filtrar por proyecto, tablero o tarea…" autocomplete="off">
+          <input type="search" class="image-finder-search" placeholder="Filtrar por espacio, proyecto, tablero o tarea…" autocomplete="off">
+          <p class="image-finder-note"></p>
           <div class="image-finder-grid"></div>
         </div>
       </div>`;
     m.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) m.style.display = 'none'; });
     document.body.appendChild(m);
   }
-  const items = allImagesInSpace();
   const grid = m.querySelector('.image-finder-grid');
   const search = m.querySelector('.image-finder-search');
+  const note = m.querySelector('.image-finder-note');
+  let items = libraryItems();
   const paint = () => {
     const q = search.value.trim().toLowerCase();
-    const list = items.filter(it => !q || `${it.project.name} ${it.where}`.toLowerCase().includes(q));
-    grid.innerHTML = list.length ? list.map((it, i) => `
-      <button type="button" class="image-finder-item" data-i="${items.indexOf(it)}" title="${escapeHtml(it.project.name)} · ${escapeHtml(it.where)}">
-        <img data-link-img="${escapeHtml(it.ref)}" alt="" loading="lazy">
-        <span><b>${escapeHtml(it.project.name)}</b><small>${escapeHtml(it.where)}</small></span>
+    const list = items.filter(it => !q || `${it.spaceLabel} ${it.project.name} ${it.where}`.toLowerCase().includes(q));
+    grid.innerHTML = list.length ? list.map(it => `
+      <button type="button" class="image-finder-item" data-i="${items.indexOf(it)}" title="Insertar · ${escapeHtml(it.spaceLabel)} › ${escapeHtml(it.project.name)} · ${escapeHtml(it.where)}">
+        <img alt="" loading="lazy">
+        <span><b>${escapeHtml(it.project.name)}</b><small>${escapeHtml(it.spaceLabel)} · ${escapeHtml(it.where)}</small></span>
       </button>`).join('')
-      : `<p class="image-finder-empty">${items.length ? 'Ninguna imagen coincide.' : 'Todavía no hay imágenes en este espacio.'}</p>`;
-    hydrateLinkImages(grid);
+      : `<p class="image-finder-empty">${items.length ? 'Ninguna imagen coincide.' : 'Todavía no hay imágenes.'}</p>`;
+    grid.querySelectorAll('[data-i]').forEach(b => libraryThumb(b.querySelector('img'), items[Number(b.dataset.i)]));
   };
   search.value = '';
   search.oninput = paint;
-  grid.onclick = (e) => {
+  grid.onclick = async (e) => {
     const b = e.target.closest('[data-i]');
-    if (!b) return;
+    if (!b || b.classList.contains('is-missing')) return;
     const it = items[Number(b.dataset.i)];
-    m.style.display = 'none';
-    if (it.project.id !== activeProjectId) switchProject(it.project.id);
-    setTimeout(() => {
-      focusInternalTarget(it.go);
-      if (it.go.open) openTaskModal(it.go.id);
-    }, 60);
+    b.classList.add('is-loading');
+    try {
+      const blob = await libraryBlob(it);
+      if (!blob) throw new Error('sin imagen');
+      m.style.display = 'none';
+      await addBgImageFromFile(new File([blob], 'imagen', { type: blob.type || 'image/png' }), null, null, { at: point, message: 'Imagen insertada desde la biblioteca' });
+    } catch (err) {
+      b.classList.remove('is-loading');
+      showToast('No se pudo traer esa imagen. Revisa tu conexión e inténtalo de nuevo.', 'warning');
+    }
   };
+  // Los otros espacios se leen de Drive (si hay sesión) y se suman al llegar
+  const signed = syncEnabled() && SYNC.token && Date.now() < SYNC.tokenExp;
+  note.textContent = signed ? 'Buscando también en tus otros espacios…' : 'Inicia sesión con Google para ver también las imágenes de tus otros espacios.';
+  if (signed && typeof loadOtherSpaces === 'function') {
+    loadOtherSpaces().then(() => { items = libraryItems(); note.textContent = ''; paint(); }).catch(() => { note.textContent = 'No se pudieron leer tus otros espacios.'; });
+  }
   paint();
   m.style.display = 'flex';
   if (!window.matchMedia('(pointer: coarse)').matches) setTimeout(() => search.focus(), 50);
