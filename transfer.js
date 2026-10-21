@@ -344,6 +344,18 @@ async function xferSend({ payload, dest, projectChoice, columnChoice, move }) {
   return placed;
 }
 
+// Opciones del selector "Proyecto de destino": los proyectos que ya existen y, aparte,
+// la opción de crear uno nuevo (para que no se confunda con un proyecto existente)
+function xferProjectOptions(list, newName) {
+  const existing = list.length
+    ? `<optgroup label="Proyectos que ya existen">${list.map(p => `<option value="${shareEsc(p.id)}">${shareEsc(p.name)}</option>`).join('')}</optgroup>`
+    : '';
+  const create = newName
+    ? `<optgroup label="O crear uno"><option value="new">➕ Crear proyecto nuevo «${shareEsc(newName)}»</option></optgroup>`
+    : '';
+  return existing + create;
+}
+
 // ----- Ventana -----
 function xferModal() {
   let m = document.getElementById('transferModal');
@@ -451,8 +463,7 @@ async function openTransfer(payload) {
     if (xferIsHere(destSpace)) {
       // Este espacio: los demás proyectos (no el abierto)
       destData = { projects: projects.filter(p => p.id !== current.id) };
-      projSel.innerHTML = destData.projects.map(p => `<option value="${shareEsc(p.id)}">${shareEsc(p.name)}</option>`).join('') +
-        `<option value="new">Proyecto nuevo: ${shareEsc(current.name)} (copia)</option>`;
+      projSel.innerHTML = xferProjectOptions(destData.projects, `${current.name} (copia)`);
       projSel.value = destData.projects[0] ? destData.projects[0].id : 'new';
       projSel.disabled = false;
       fillColumns();
@@ -466,8 +477,7 @@ async function openTransfer(payload) {
       return;
     }
     const same = destData.projects.find(p => String(p.name).toLowerCase() === String(current.name).toLowerCase());
-    projSel.innerHTML = destData.projects.map(p => `<option value="${shareEsc(p.id)}">${shareEsc(p.name)}</option>`).join('') +
-      (same ? '' : `<option value="new">Proyecto nuevo: ${shareEsc(current.name)}</option>`);
+    projSel.innerHTML = xferProjectOptions(destData.projects, same ? null : current.name);
     projSel.value = same ? same.id : (payload.task && destData.projects[0] ? destData.projects[0].id : 'new');
     projSel.disabled = false;
     fillColumns();
