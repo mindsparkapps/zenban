@@ -564,7 +564,9 @@ body.theme-light .moon-icon { display: none; }
   border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 120px);
+  /* Alto de la columna según la pantalla, pero nunca menos de 620 px: en una pantalla baja (celular en
+     horizontal) se verían una o dos tareas; como el lienzo tiene zoom, se aleja para verla entera */
+  max-height: max(calc(100vh - 120px), 620px);
   box-shadow: var(--shadow-md);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
@@ -2463,7 +2465,7 @@ body.theme-light .moon-icon { display: none; }
   .kanban-column {
     width: 290px;
     min-width: 290px;
-    max-height: calc(100vh - 140px);
+    max-height: max(calc(100vh - 140px), 620px);
   }
 
   .mobile-fab {
