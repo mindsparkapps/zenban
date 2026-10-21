@@ -1196,9 +1196,34 @@ body.theme-light .moon-icon { display: none; }
 
 /* Link mostrado como imagen */
 .auto-link.link-image {
+  position: relative;
   display: inline-block;
   text-decoration: none;
   vertical-align: middle;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Links del lienzo y las tarjetas: mantenerlos apretados mueve el objeto (sin menú del navegador) */
+.canvas-text a,
+.kanban-card a {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+}
+
+/* Texto sobre la imagen del link */
+.link-image-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1.2em 0.5em 0.35em;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.78));
+  color: #fff;
+  font-weight: 700;
+  line-height: 1.2;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  overflow-wrap: anywhere;
 }
 
 .auto-link.link-image img {
@@ -1709,18 +1734,50 @@ body.theme-light .moon-icon { display: none; }
 /* ==========================================================================
    Modals
    ========================================================================== */
+/* Fondo de las ventanas: su desenfoque y oscurecido se ajustan en Configuración (--modal-blur, --modal-dim).
+   Deja pasar los toques: con una ventana abierta se puede seguir usando el lienzo (copiar el texto de otra tarea, etc.) */
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, var(--modal-dim, 0.18));
+  backdrop-filter: blur(var(--modal-blur, 1.2px));
+  -webkit-backdrop-filter: blur(var(--modal-blur, 1.2px));
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   padding: 1rem;
   animation: fadeIn 0.2s ease-out;
+  pointer-events: none;
+}
+
+.modal-backdrop > * {
+  pointer-events: auto;
+}
+
+/* El título de la ventana sirve para moverla */
+.modal-backdrop .modal-header {
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.modal-backdrop .modal-header button {
+  cursor: pointer;
+}
+
+.modal-card.is-moving {
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+/* Aviso: ya hay una ventana igual abierta */
+.modal-card.attention {
+  animation: modalAttention 0.45s ease;
+}
+
+@keyframes modalAttention {
+  0%, 100% { outline: 0 solid transparent; }
+  30% { outline: 3px solid var(--accent-primary); }
 }
 
 .modal-card {

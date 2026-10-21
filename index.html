@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=50">
+  <link rel="stylesheet" href="styles.css?v=51">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -794,6 +794,9 @@
           <div class="form-group">
             <label for="settingZoomMin">Zoom mínimo</label>
             <select id="settingZoomMin">
+              <option value="0.01">1%</option>
+              <option value="0.02">2%</option>
+              <option value="0.05">5%</option>
               <option value="0.1">10%</option>
               <option value="0.2">20%</option>
               <option value="0.25">25%</option>
@@ -803,6 +806,11 @@
               <option value="1">100%</option>
             </select>
             <p class="setup-text">Hasta dónde puedes alejar el lienzo. Se guarda en este dispositivo.</p>
+          </div>
+          <div class="form-group">
+            <label for="settingModalBackdrop" class="settings-range-label">Fondo detrás de las ventanas (desenfoque): <strong id="settingModalBackdropValue">15%</strong></label>
+            <input type="range" id="settingModalBackdrop" min="0" max="100" step="5" value="15">
+            <p class="setup-text">0% deja el lienzo nítido para leer o copiar textos mientras editas. Las ventanas se mueven arrastrando su título.</p>
           </div>
           <div class="form-group">
             <label for="settingStarredPosition">Proyectos con estrella ★</label>
@@ -842,7 +850,7 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=65"></script>
+  <script src="app.js?v=66"></script>
   <script src="share.js?v=4"></script>
   <script src="transfer.js?v=2"></script>
   <script src="spaces.js?v=4"></script>

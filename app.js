@@ -361,7 +361,9 @@ function applyTransform(animate = false) {
   zoomCanvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
   markCanvasTransforming(animate ? 320 : 220);
   scheduleInvZoom();
-  const label = `${Math.round(zoom * 100)}%`;
+  // Bajo 10% se muestra con un decimal (el zoom mínimo puede llegar a 1%)
+  const pct = zoom * 100;
+  const label = `${pct < 10 ? pct.toFixed(1).replace(/\.0$/, '') : Math.round(pct)}%`;
   if (zoomPercentLabel.textContent !== label) zoomPercentLabel.textContent = label;
 }
 
@@ -1056,7 +1058,8 @@ kanbanBoard.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'touch') return;
 
   const card = e.target.closest('.kanban-card');
-  const isInteractive = e.target.closest('button, input, select, textarea, a, .card-subtask, .card-check-btn, .card-menu-btn');
+  // Los links de la descripción y las miniaturas también sirven para arrastrar la tarjeta (un clic corto los abre)
+  const isInteractive = e.target.closest('button, input, select, textarea, a, .card-subtask, .card-check-btn, .card-menu-btn') && !e.target.closest('.card-desc a, .yt-previews a');
 
   if (card && !isInteractive) {
     dragState.isPointerDown = true;
@@ -1091,7 +1094,8 @@ kanbanBoard.addEventListener('touchstart', (e) => {
   if (isPanModeActive || isDrawingTool() || e.touches.length > 1) return;
 
   const card = e.target.closest('.kanban-card');
-  const isInteractive = e.target.closest('button, input, select, textarea, a, .card-subtask, .card-check-btn, .card-menu-btn');
+  // Los links de la descripción y las miniaturas también sirven para arrastrar la tarjeta (un clic corto los abre)
+  const isInteractive = e.target.closest('button, input, select, textarea, a, .card-subtask, .card-check-btn, .card-menu-btn') && !e.target.closest('.card-desc a, .yt-previews a');
 
   if (card && !isInteractive) {
     const touch = e.touches[0];
@@ -1752,8 +1756,19 @@ const cancelTaskBtn = document.getElementById('cancelTaskBtn');
 const fabNewTask = document.getElementById('fabNewTask');
 const quickAddBtn = document.getElementById('quickAddBtn');
 
+// Con una ventana abierta se puede usar el lienzo; para no perder lo que se está escribiendo,
+// no se abre encima otra igual (otra tarea, otro tablero…) hasta cerrarla
+function modalAlreadyOpen(modal) {
+  if (!modal || modal.style.display !== 'flex') return false;
+  showToast('Guarda o cierra la ventana abierta antes de abrir otra', 'info');
+  const card = modal.querySelector('.modal-card');
+  if (card) { card.classList.remove('attention'); void card.offsetWidth; card.classList.add('attention'); }
+  return true;
+}
+
 window.openTaskModal = function(taskId = null, defaultColId = null, event = null) {
   if (event) event.stopPropagation();
+  if (modalAlreadyOpen(taskModal)) return;
 
   if (columns.length === 0) {
     showToast('Primero agrega una columna a este proyecto', 'info');
@@ -2108,6 +2123,7 @@ function buildColorPalette(container, hiddenInput) {
 }
 
 window.openColumnModal = function(colId = null, boardId = null) {
+  if (modalAlreadyOpen(document.getElementById('columnModal'))) return;
   ensureBoards();
   if (boards.length === 0) {
     showToast('Primero crea un tablero', 'info');
@@ -2455,6 +2471,7 @@ newProjectBtn.addEventListener('click', () => {
 });
 
 window.openProjectModal = function(projectId = null) {
+  if (modalAlreadyOpen(document.getElementById('projectModal'))) return;
   if (projectId) {
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
@@ -3727,6 +3744,7 @@ function hydrateBoardImages(root = document) {
 }
 
 window.openBoardModal = function(boardId = null) {
+  if (modalAlreadyOpen(document.getElementById('boardModal'))) return;
   ensureBoards();
   if (boardId) {
     const board = boards.find(b => b.id === boardId);
@@ -4458,7 +4476,8 @@ viewportArea.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'touch' && !e.isPrimary) return; // segundo dedo: es para mover el lienzo
   const t = e.target;
   if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle')) return;
-  if (t.closest('button, input, select, textarea, a, label')) return;
+  // Un link dentro de un texto del lienzo también sirve para tomar y mover ese texto (un clic corto lo abre)
+  if (t.closest('button, input, select, textarea, a, label') && !t.closest('.canvas-text a')) return;
 
   let key = null;
   const strokeId = hitStroke(e.clientX, e.clientY);
@@ -5829,7 +5848,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '65';
+const APP_VERSION = '66';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -5881,6 +5900,9 @@ function openSettings() {
   }
   settingZoomMin.value = value;
   document.getElementById('settingStarredPosition').value = starredPosition();
+  const backdropInput = document.getElementById('settingModalBackdrop');
+  backdropInput.value = String(appSettings.modalBackdrop ?? 15);
+  document.getElementById('settingModalBackdropValue').textContent = `${backdropInput.value}%`;
   settingToolsAutoHide.checked = !!appSettings.toolsAutoHide;
   settingToolsOpacity.value = String(appSettings.toolsHiddenOpacity);
   syncToolsOpacityField();
@@ -5890,6 +5912,7 @@ function openSettings() {
 function closeSettings() {
   settingsModal.style.display = 'none';
   applyToolsAutoHide(); // deshace la vista previa si se canceló
+  applyModalBackdrop();
 }
 
 // ----- Diagnóstico del proyecto (Configuración): qué tiene y cuánto pesa, para revisar el rendimiento -----
@@ -6011,6 +6034,14 @@ settingToolsOpacity.addEventListener('input', () => {
   autoHidePreview = { on: settingToolsAutoHide.checked, opacity: Number(settingToolsOpacity.value) };
   refreshAutoHide();
 });
+// El desenfoque se ve al mover el control (se guarda con Guardar; Cancelar lo devuelve)
+document.getElementById('settingModalBackdrop').addEventListener('input', (e) => {
+  document.getElementById('settingModalBackdropValue').textContent = `${e.target.value}%`;
+  const saved = appSettings.modalBackdrop;
+  appSettings.modalBackdrop = Number(e.target.value);
+  applyModalBackdrop();
+  appSettings.modalBackdrop = saved;
+});
 
 refreshAutoHide();
 
@@ -6031,6 +6062,9 @@ document.getElementById('settingsForm').addEventListener('submit', (e) => {
   appSettings.toolsHiddenOpacity = Number(settingToolsOpacity.value);
   saveData(SETTINGS_KEY, appSettings);
   localStorage.setItem(STARRED_POSITION_KEY, document.getElementById('settingStarredPosition').value);
+  appSettings.modalBackdrop = Number(document.getElementById('settingModalBackdrop').value);
+  saveData(SETTINGS_KEY, appSettings);
+  applyModalBackdrop();
   renderProjectSwitcher();
   ZOOM_CONFIG.MIN = appSettings.zoomMin;
   // Si ahora la vista está más alejada que el nuevo mínimo, se acerca hasta el mínimo
@@ -6218,7 +6252,9 @@ function linkify(str, names = null) {
     if (opt.hide) return trail;
     const attrs = `class="auto-link${opt.image ? ' link-image' : ''}" href="${linkHref(url)}" data-url="${url}" target="_blank" rel="noopener noreferrer"`;
     if (opt.image) {
-      return `<a ${attrs} title="${escapeHtml(opt.text || unescapeHtml(url))}"><img data-link-img="${escapeHtml(opt.image)}" alt="${escapeHtml(opt.text || 'Link')}" draggable="false"></a>${trail}`;
+      // Con imagen y texto, el texto se ve encima de la imagen
+      const caption = opt.text ? `<span class="link-image-caption">${escapeHtml(opt.text)}</span>` : '';
+      return `<a ${attrs} title="${escapeHtml(opt.text || unescapeHtml(url))}"><img data-link-img="${escapeHtml(opt.image)}" alt="${escapeHtml(opt.text || 'Link')}" draggable="false">${caption}</a>${trail}`;
     }
     return `<a ${attrs}${opt.text ? ` title="${url}"` : ''}>${opt.text ? escapeHtml(opt.text) : url}</a>${trail}`;
   });
@@ -6285,7 +6321,7 @@ function openLinkNamesDialog(urls, names, onSave) {
           <button class="modal-close-btn" type="button" data-close aria-label="Cerrar">&times;</button>
         </div>
         <form class="link-names-form">
-          <p class="link-names-help">Elige cómo se ve cada link: con un texto (vacío muestra la dirección), con una imagen, o sin mostrarse (por ejemplo, si ya se ve la miniatura del video).</p>
+          <p class="link-names-help">Elige cómo se ve cada link: con un texto (vacío muestra la dirección), con una imagen (si además escribes un texto, se ve encima de ella), o sin mostrarse (por ejemplo, si ya se ve la miniatura del video).</p>
           <div class="link-names-list"></div>
           <div class="modal-actions">
             <div class="spacer"></div>
@@ -6472,6 +6508,92 @@ function hydratePlaylists(root = document) {
     });
   });
 }
+
+// ----- Links en el lienzo y en tarjetas: un clic o toque corto abre el link; mantenerlo apretado o arrastrarlo
+//       mueve el texto o la tarjeta que lo contiene, sin abrirlo -----
+const LINK_LONG_PRESS_MS = 400;
+let linkPress = null;
+document.addEventListener('pointerdown', (e) => {
+  const a = e.target.closest('.canvas-text a, .kanban-card .card-desc a, .kanban-card .yt-previews a');
+  linkPress = a ? { a, time: Date.now(), x: e.clientX, y: e.clientY, moved: false } : null;
+}, true);
+document.addEventListener('pointermove', (e) => {
+  if (linkPress && !linkPress.moved && Math.hypot(e.clientX - linkPress.x, e.clientY - linkPress.y) > 6) linkPress.moved = true;
+}, true);
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a');
+  if (!a || !linkPress || linkPress.a !== a) return;
+  const long = linkPress.moved || Date.now() - linkPress.time > LINK_LONG_PRESS_MS;
+  linkPress = null;
+  if (long) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}, true);
+// En el celular, mantener apretado un link no abre el menú del navegador (vista previa del link)
+document.addEventListener('contextmenu', (e) => {
+  if (e.target.closest('.canvas-text a, .kanban-card a')) e.preventDefault();
+}, true);
+
+// ----- Ventanas: se mueven arrastrando su título, y el fondo se puede seguir usando -----
+// (por ejemplo, para copiar el texto de otra tarea mientras se edita una)
+document.addEventListener('pointerdown', (e) => {
+  const header = e.target.closest('.modal-backdrop .modal-header');
+  if (!header || e.button !== 0 || e.target.closest('button, input, select, textarea, a')) return;
+  const card = header.closest('.modal-card');
+  if (!card) return;
+  e.preventDefault();
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const baseX = Number(card.dataset.dx || 0);
+  const baseY = Number(card.dataset.dy || 0);
+  const rect = card.getBoundingClientRect();
+  card.classList.add('is-moving');
+  const onMove = (ev) => {
+    // Siempre queda al menos el título a la vista
+    let dx = baseX + ev.clientX - startX;
+    let dy = baseY + ev.clientY - startY;
+    const minDx = baseX - rect.left - rect.width + 80;
+    const maxDx = baseX + (window.innerWidth - rect.left) - 80;
+    const minDy = baseY - rect.top;
+    const maxDy = baseY + (window.innerHeight - rect.top) - 50;
+    dx = Math.min(Math.max(dx, minDx), maxDx);
+    dy = Math.min(Math.max(dy, minDy), maxDy);
+    card.dataset.dx = dx;
+    card.dataset.dy = dy;
+    card.style.translate = `${dx}px ${dy}px`;
+  };
+  const onUp = () => {
+    card.classList.remove('is-moving');
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+  };
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+});
+
+// Al cerrarse una ventana vuelve a su lugar para la próxima vez
+new MutationObserver((records) => {
+  records.forEach(r => {
+    const m = r.target;
+    if (!(m instanceof Element) || !m.classList.contains('modal-backdrop') || m.style.display !== 'none') return;
+    m.querySelectorAll('.modal-card[data-dx]').forEach(card => {
+      delete card.dataset.dx;
+      delete card.dataset.dy;
+      card.style.translate = '';
+    });
+  });
+}).observe(document.body, { attributes: true, attributeFilter: ['style'], subtree: true });
+
+// Desenfoque y oscurecido del fondo detrás de las ventanas (Configuración)
+function applyModalBackdrop() {
+  const level = Math.min(100, Math.max(0, Number(appSettings.modalBackdrop ?? 15)));
+  document.documentElement.style.setProperty('--modal-blur', `${(level / 100) * 8}px`);
+  document.documentElement.style.setProperty('--modal-dim', String(0.08 + (level / 100) * 0.62));
+}
+applyModalBackdrop();
 
 // Completa lo que se dibuja sin datos todavía (listas de YouTube, imágenes de links y de tableros).
 // Con un temporizador corto (no requestAnimationFrame, que no corre con la app en segundo plano).
