@@ -170,19 +170,16 @@ renderProjectSwitcher = function () {
   if (!signedIn() && !connecting && !failed) return;
   projectList.insertBefore(sectionHeader(here, 'Espacio actual'), projectList.firstChild);
   if (failed) {
-    const head = document.createElement('li');
-    head.className = 'project-section is-shared';
-    head.innerHTML = '<span>👥 Otros espacios</span><small>Sin conexión con Google</small>';
+    // Sesión vencida: aviso discreto con el botón para reconectar (Google se abre solo al tocarlo)
     const li = document.createElement('li');
-    li.className = 'project-section-note';
-    li.innerHTML = '<button type="button" class="btn btn-primary btn-sm project-connect-btn">Conectar con Google</button>';
-    li.querySelector('button').addEventListener('click', (e) => { e.stopPropagation(); openProjectMenu(); });
-    projectList.appendChild(head);
+    li.className = 'project-section-note project-reconnect';
+    li.innerHTML = '<span>Sesión de Google vencida: estos son los otros espacios de la última vez.</span><button type="button" class="btn btn-primary btn-sm project-connect-btn">🔄 Reconectar</button>';
+    li.querySelector('button').addEventListener('click', (e) => { e.stopPropagation(); reconnectFromProjectMenu(); });
     projectList.appendChild(li);
   }
   const syncing = signedIn() && SYNC.busy;
   const loading = connecting || syncing || !!OtherSpaces.loading || !!OtherSpaces.preparing;
-  const entries = failed ? [] : knownOtherSpaces();
+  const entries = knownOtherSpaces();
   const loadingLabel = connecting ? 'Conectando…' : syncing ? 'Sincronizando…' : 'Cargando…';
   if (!entries.length && loading) {
     // Todavía no se sabe qué hay: sección "cargando" con filas grises animadas
@@ -240,11 +237,32 @@ function loadingNote(label) {
   return `<small class="project-loading"><span class="project-spinner" aria-hidden="true"></span>${escapeHtml(label)}</small>`;
 }
 
-// Al abrir el menú: si la sesión de Google venció, se conecta (y sincroniza) primero;
-// después se buscan o refrescan los otros espacios. Si no se logra en 25 s, se ofrece reintentar.
+// Al abrir el menú se sincroniza y después se buscan o refrescan los otros espacios.
+// Si la sesión de Google venció, NO se abre la ventana de Google sola: se muestran los otros espacios
+// de la última vez y un botón "Reconectar con Google" (la ventana se abre solo al tocarlo).
 let waitSignInTimer = null;
 const REOPEN_PROJECTS_KEY = 'zenban_reopen_projects';
 const baseOpenProjectMenu = openProjectMenu;
+
+// Reconexión pedida por el usuario desde la lista: abre Google y, al volver, actualiza la lista
+function reconnectFromProjectMenu() {
+  if (isInstalledApp()) localStorage.setItem(REOPEN_PROJECTS_KEY, String(Date.now()));
+  OtherSpaces.connectFailed = false;
+  signInWithGoogle();
+  renderProjectSwitcher();
+  const end = Date.now() + 60000;
+  clearInterval(waitSignInTimer);
+  waitSignInTimer = setInterval(() => {
+    if (projectMenu.hidden) { clearInterval(waitSignInTimer); return; }
+    if (signedIn()) { clearInterval(waitSignInTimer); openProjectMenu(); return; }
+    if (Date.now() > end) {
+      clearInterval(waitSignInTimer);
+      OtherSpaces.connectFailed = true;
+      renderProjectSwitcher();
+    }
+  }, 400);
+}
+
 openProjectMenu = function () {
   baseOpenProjectMenu();
   clearInterval(waitSignInTimer);
@@ -267,21 +285,9 @@ openProjectMenu = function () {
   };
   if (signedIn()) { refresh(); return; }
   if (!syncEnabled()) return;
-  // Se inicia sesión ahora (el toque del usuario permite abrir la ventana de Google).
-  // En la app instalada del celular es por redirección: al volver se abre la lista sola.
-  if (isInstalledApp()) localStorage.setItem(REOPEN_PROJECTS_KEY, String(Date.now()));
-  signInWithGoogle();
+  // Sesión vencida: se muestra lo de la última vez con el botón Reconectar (sin abrir Google solo)
+  OtherSpaces.connectFailed = true;
   renderProjectSwitcher();
-  const end = Date.now() + 25000;
-  waitSignInTimer = setInterval(() => {
-    if (projectMenu.hidden) { clearInterval(waitSignInTimer); return; }
-    if (signedIn()) { clearInterval(waitSignInTimer); refresh(); return; }
-    if (Date.now() > end) {
-      clearInterval(waitSignInTimer);
-      OtherSpaces.connectFailed = true;
-      rerender();
-    }
-  }, 400);
 };
 
 // Volviendo del inicio de sesión por redirección: abre de nuevo la lista de proyectos
@@ -311,8 +317,7 @@ async function waitSyncIdle(ms = 20000) {
 // Sube lo pendiente del espacio actual, trae el otro de Drive y lo deja como datos locales
 async function switchToSpace(target, projectId = null) {
   if (!signedIn()) {
-    showToast('Inicia sesión con Google para abrir proyectos de otro espacio', 'info');
-    signInWithGoogle();
+    requestReconnect('Para abrir proyectos de otro espacio, reconecta con Google.');
     return false;
   }
   // Puede tardar unos segundos (sube lo pendiente y trae el otro espacio): aviso de carga sobre el lienzo
@@ -358,8 +363,8 @@ async function switchToSpace(target, projectId = null) {
     return true;
   } catch (e) {
     console.warn('Cambiar de espacio', e);
-    if (e.message === 'auth') signInWithGoogle();
-    showToast('No se pudo abrir ese espacio. Revisa tu conexión e inténtalo de nuevo.', 'warning');
+    if (e.message === 'auth') requestReconnect('La sesión de Google venció. Reconecta para abrir ese espacio.');
+    else showToast('No se pudo abrir ese espacio. Revisa tu conexión e inténtalo de nuevo.', 'warning');
     return false;
   } finally {
     hideBusy();
@@ -369,8 +374,7 @@ async function switchToSpace(target, projectId = null) {
 // ----- Mover un proyecto completo a otro espacio -----
 async function moveProjectToSpace(projectId, target) {
   if (!signedIn()) {
-    showToast('Inicia sesión con Google para mover proyectos entre espacios', 'info');
-    signInWithGoogle();
+    requestReconnect('Para mover proyectos entre espacios, reconecta con Google.');
     return;
   }
   if (projects.length <= 1) {

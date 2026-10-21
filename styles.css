@@ -4656,6 +4656,45 @@ select option:checked {
   background: var(--text-dim);
 }
 
+/* Sesión de Google vencida: aviso en el menú de la cuenta y botón Reconectar destacado */
+.reconnect-note {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.reconnect-note[hidden] {
+  display: none;
+}
+
+.account-menu-btn.is-reconnect {
+  background: var(--accent-primary);
+  color: #fff;
+  font-weight: 700;
+}
+
+.project-reconnect {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  margin: 4px 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  font-size: 0.78rem;
+}
+
+.project-reconnect .btn {
+  flex-shrink: 0;
+}
+
 /* Tiempo desde la última sincronización, a la izquierda de la foto */
 .sync-age {
   position: absolute;

@@ -499,7 +499,7 @@ async function openTransfer(payload) {
       console.warn('Enviar a otro espacio', e);
       go.disabled = false;
       go.textContent = 'Enviar';
-      if (e.message === 'auth') { showToast('La sesión de Google expiró. Vuelve a iniciar sesión e inténtalo de nuevo.', 'warning'); signInWithGoogle(); }
+      if (e.message === 'auth') { m.style.display = 'none'; requestReconnect('La sesión de Google venció. Reconecta e inténtalo de nuevo.'); }
       else if (e.message === 'conflicto') showToast('Ese espacio se estaba sincronizando. Inténtalo de nuevo en unos segundos.', 'warning');
       else showToast('No se pudo enviar. Revisa tu conexión e inténtalo de nuevo.', 'warning');
     }

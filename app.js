@@ -5666,8 +5666,8 @@ const SYNC_STATUS_TEXT = {
   off: 'Sin sincronizar',
   syncing: 'Sincronizando…',
   ok: 'Todo sincronizado con Drive',
-  pending: 'Hay cambios sin subir. Toca tu foto para reconectar.',
-  expired: 'La sesión de Google expiró. Toca tu foto para reconectar.',
+  pending: 'Hay cambios sin subir. Toca «Reconectar con Google».',
+  expired: 'La sesión de Google venció. Toca «Reconectar con Google».',
   offline: 'Sin conexión. Se sincronizará al volver.',
   error: 'No se pudo sincronizar. Se reintentará.'
 };
@@ -5684,6 +5684,7 @@ function setSyncStatus(status) {
   if (typeof renderSpaceIndicator === 'function') renderSpaceIndicator();
   accountChip.title = SYNC_STATUS_TEXT[status] || 'Cuenta';
   renderSyncAge();
+  if (typeof renderReconnectState === 'function' && document.getElementById('syncNowBtn')) renderReconnectState();
 }
 
 // Cuánto hace de la última sincronización: bajo el nombre ZenBan (en vez de "Todo Kanban Pro")
@@ -6280,13 +6281,34 @@ async function syncImages() {
 
 // ----- Eventos -----
 googleSignInBtn.addEventListener('click', signInWithGoogle);
+// La ventana de Google se abre solo cuando se toca "Reconectar con Google" (nunca sola):
+// al tocar la foto con la sesión vencida se abre el menú de la cuenta con ese botón destacado
+function sessionExpired() {
+  return !SYNC.token || Date.now() > SYNC.tokenExp;
+}
+
+function renderReconnectState() {
+  const expired = syncEnabled() && sessionExpired();
+  const btn = document.getElementById('syncNowBtn');
+  btn.textContent = expired ? '🔄 Reconectar con Google' : 'Sincronizar ahora';
+  btn.classList.toggle('is-reconnect', expired);
+  const note = document.getElementById('reconnectNote');
+  if (note) note.hidden = !expired;
+}
+
+// Para las acciones que necesitan Google (cambiar de espacio, enviar, compartir…): en vez de abrir la
+// ventana de Google por su cuenta, se avisa y se ofrece el botón Reconectar en el menú de la cuenta
+function requestReconnect(reason) {
+  renderReconnectState();
+  const note = document.getElementById('reconnectNote');
+  if (note && reason) note.textContent = reason;
+  accountMenu.hidden = false;
+  showToast(reason || 'La sesión de Google venció. Toca «Reconectar con Google» para seguir sincronizando.', 'info');
+}
+
 accountChip.addEventListener('click', (e) => {
   e.stopPropagation();
-  // Sin sesión activa: el clic reconecta directamente
-  if (!SYNC.token || Date.now() > SYNC.tokenExp) {
-    signInWithGoogle();
-    return;
-  }
+  renderReconnectState();
   accountMenu.hidden = !accountMenu.hidden;
 });
 document.addEventListener('click', (e) => {
@@ -6294,6 +6316,7 @@ document.addEventListener('click', (e) => {
 });
 document.getElementById('syncNowBtn').addEventListener('click', () => {
   accountMenu.hidden = true;
+  if (sessionExpired()) { signInWithGoogle(); return; }
   syncNow();
 });
 document.getElementById('signOutBtn').addEventListener('click', () => {
@@ -6317,7 +6340,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '73';
+const APP_VERSION = '74';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

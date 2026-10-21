@@ -184,7 +184,7 @@ function parseEmails(text) {
 }
 
 async function openShareModal(invites = null) {
-  if (!SYNC.token || Date.now() > SYNC.tokenExp) { signInWithGoogle(); return; }
+  if (!SYNC.token || Date.now() > SYNC.tokenExp) { requestReconnect('Para compartir datos, reconecta con Google desde tu foto.'); return; }
   const body = shareModalShell();
 
   // Alguien compartió datos contigo
