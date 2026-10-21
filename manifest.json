@@ -26,6 +26,26 @@
       ]
     }
   },
+  "widgets": [
+    {
+      "name": "ZenBan · Pendientes",
+      "short_name": "ZenBan",
+      "description": "Tus tareas pendientes más importantes (urgentes, vencidas y por vencer).",
+      "tag": "zenban-tasks",
+      "template": "zenban-tasks",
+      "ms_ac_template": "widgets/tasks-template.json",
+      "data": "widgets/tasks-data.json",
+      "type": "application/json",
+      "screenshots": [
+        { "src": "icons/icon-512.png", "sizes": "512x512", "label": "Widget de ZenBan con tus pendientes" }
+      ],
+      "icons": [
+        { "src": "icons/icon-192.png", "sizes": "192x192" }
+      ],
+      "auth": false,
+      "update": 900
+    }
+  ],
   "icons": [
     {
       "src": "icons/icon-192.png",

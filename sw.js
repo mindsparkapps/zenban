@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zenban-v79';
+const CACHE_NAME = 'zenban-v80';
 const STATIC_ASSETS = [
   './index.html',
   './styles.css',
@@ -54,6 +54,46 @@ async function receiveShare(request) {
     return Response.redirect(new URL('./index.html?share=error', self.registration.scope).href, 303);
   }
 }
+
+// ----- Widget del panel de Widgets de Windows 11 (Edge, app instalada) -----
+// La app guarda en la caché "zbwidget" el resumen de pendientes (no hay acceso a sus datos desde aquí);
+// el widget usa esa plantilla (Adaptive Card) con esos datos.
+const WIDGET_CACHE = 'zbwidget';
+const WIDGET_DATA_KEY = new URL('./widgets/live-data.json', self.registration.scope).href;
+
+async function widgetPayload(widget) {
+  const template = await (await fetch(widget.definition.msAcTemplate)).text();
+  const cached = await caches.open(WIDGET_CACHE).then(c => c.match(WIDGET_DATA_KEY)).catch(() => null);
+  const data = cached ? await cached.text() : await (await fetch(widget.definition.data)).text();
+  return { template, data };
+}
+
+async function updateWidget(widget) {
+  if (!self.widgets || !widget) return;
+  await self.widgets.updateByTag(widget.definition.tag, await widgetPayload(widget));
+}
+
+async function updateAllWidgets() {
+  if (!self.widgets) return;
+  const list = await self.widgets.matchAll({ installable: true }).catch(() => []);
+  for (const w of list) if (w.instances && w.instances.length) await updateWidget(w);
+}
+
+self.addEventListener('widgetinstall', (e) => e.waitUntil(updateWidget(e.widget)));
+self.addEventListener('widgetresume', (e) => e.waitUntil(updateWidget(e.widget)));
+self.addEventListener('widgetclick', (e) => {
+  if (e.action === 'open') {
+    e.waitUntil(self.clients.matchAll({ type: 'window' }).then(list => {
+      const open = list.find(c => c.url.startsWith(self.registration.scope));
+      return open ? open.focus() : self.clients.openWindow(new URL('./index.html', self.registration.scope).href);
+    }));
+  }
+});
+self.addEventListener('periodicsync', (e) => { if (e.tag === 'zenban-widget') e.waitUntil(updateAllWidgets()); });
+// La app avisa cuando cambian los pendientes
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'widget-refresh') e.waitUntil(updateAllWidgets());
+});
 
 // Network-First for HTML/Navigation, Cache-First for static assets
 self.addEventListener('fetch', (e) => {

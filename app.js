@@ -288,6 +288,8 @@ function persist() {
     project.updatedAt = Date.now();
   }
   saveData(STORAGE_KEYS.PROJECTS, projects);
+  // El widget de Windows muestra los pendientes al día (se agrupan los cambios seguidos)
+  try { scheduleWidgetUpdate(); } catch (e) {}
 }
 
 function undoLastChange() {
@@ -1234,6 +1236,8 @@ function renderBoardContent() {
     frame.style.left = `${board.x}px`;
     frame.style.top = `${board.y}px`;
     frame.style.setProperty('--board-color', board.color || '#6366f1');
+    // Ancho aproximado del tablero (limita el tamaño de su pestaña de imagen al alejar la vista)
+    frame.style.setProperty('--board-w', `${Math.max(360, boardCols.length * 354 + 48 + 260)}px`);
 
     const taskCount = tasks.filter(t => boardCols.some(c => c.id === t.columnId)).length;
     frame.innerHTML = `
@@ -1389,6 +1393,9 @@ function runRecurring() {
 }
 setTimeout(runRecurring, 1500);
 setInterval(runRecurring, 60 * 1000);
+// Widget de Windows: al abrir y cada 10 minutos (también recoge lo que llega de otros dispositivos)
+setTimeout(() => { try { scheduleWidgetUpdate(); } catch (e) {} }, 5000);
+setInterval(() => { try { scheduleWidgetUpdate(); } catch (e) {} }, 10 * 60 * 1000);
 // La prioridad Recordatorio cambia con la hora: se redibuja cada 10 minutos si hay alguna
 setInterval(() => { if (tasks.some(t => t.priority === 'reminder') && !document.querySelector('.modal-backdrop[style*="flex"]')) renderBoard(); }, 10 * 60 * 1000);
 
@@ -5585,6 +5592,10 @@ canvasMenu.addEventListener('click', async (e) => {
   if (cmd === 'archiveAll' && menuColumnId) archiveColumnTasks(menuColumnId, false);
   if (cmd === 'duplicate') duplicateSelection();
   if (cmd === 'addPdf') pickPdf(menuCanvasPoint);
+  if (cmd === 'translate' && typeof openTranslator === 'function') {
+    const t = selectedTexts()[0];
+    openTranslator(t ? t.text : '', menuCanvasPoint);
+  }
   if (cmd === 'newGoogleDoc') createGoogleDoc('doc', menuCanvasPoint);
   if (cmd === 'newGoogleSheet') createGoogleDoc('sheet', menuCanvasPoint);
   if (cmd === 'newGoogleSlides') createGoogleDoc('slides', menuCanvasPoint);
@@ -6438,7 +6449,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '79';
+const APP_VERSION = '80';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -6889,6 +6900,54 @@ const LINK_TRAIL_RE = /(?:[.,;:!?)\]]|&#39;|&quot;)+$/;
 function linkHref(url) {
   if (isInternalLink(url) || isFileLink(url)) return '#';
   return /^www\./i.test(url) ? `https://${url}` : url;
+}
+
+// ----- Widget de Windows 11: resumen de pendientes para el panel de Widgets -----
+// Se guarda en la caché "zbwidget" (la lee el service worker) y se le avisa que actualice el widget.
+const WIDGET_PRIORITY_ICON = { urgent: '🔴', high: '🟠', medium: '🟡', low: '🟢', reminder: '🔔', note: '📝' };
+let widgetTimer = null;
+
+function widgetSummary() {
+  const today = getRelativeDate(0);
+  const tomorrow = getRelativeDate(1);
+  const items = [];
+  projects.forEach(p => {
+    const list = p.id === activeProjectId ? tasks : (p.tasks || []);
+    list.filter(t => !t.completed).forEach(t => items.push({ t, p }));
+  });
+  const rank = (t) => (PRIORITY_RANK[effectivePriority(t)] ?? 2);
+  items.sort((a, b) => {
+    const ao = a.t.dueDate && a.t.dueDate < today ? 0 : 1;
+    const bo = b.t.dueDate && b.t.dueDate < today ? 0 : 1;
+    return ao - bo || rank(a.t) - rank(b.t) || String(a.t.dueDate || '9999').localeCompare(String(b.t.dueDate || '9999'));
+  });
+  const dueText = (d) => !d ? '' : d < today ? 'vencida' : d === today ? 'vence hoy' : d === tomorrow ? 'vence mañana' : `vence el ${d.split('-').reverse().join('-')}`;
+  const overdue = items.filter(x => x.t.dueDate && x.t.dueDate < today).length;
+  const dueToday = items.filter(x => x.t.dueDate === today).length;
+  return {
+    summary: `${items.length} pendiente(s)${overdue ? ` · ${overdue} vencida(s)` : ''}${dueToday ? ` · ${dueToday} para hoy` : ''}`,
+    tasks: items.slice(0, 6).map(({ t, p }) => ({
+      icon: WIDGET_PRIORITY_ICON[effectivePriority(t)] || '•',
+      title: t.title,
+      meta: [p.name, dueText(t.dueDate), t.repeat ? `🔁 ${REPEAT_LABELS[t.repeat]}` : ''].filter(Boolean).join(' · ')
+    })),
+    empty: 'Sin pendientes. ¡Todo listo! 🎉',
+    updatedAt: Date.now()
+  };
+}
+
+function scheduleWidgetUpdate() {
+  if (!('caches' in window) || !navigator.serviceWorker) return;
+  clearTimeout(widgetTimer);
+  widgetTimer = setTimeout(async () => {
+    try {
+      const cache = await caches.open('zbwidget');
+      const key = new URL('widgets/live-data.json', location.href.replace(/[^/]*$/, '')).href;
+      await cache.put(key, new Response(JSON.stringify(widgetSummary()), { headers: { 'Content-Type': 'application/json' } }));
+      const reg = await navigator.serviceWorker.ready;
+      if (reg.active) reg.active.postMessage({ type: 'widget-refresh' });
+    } catch (e) {}
+  }, 3000);
 }
 
 // ----- Google Docs, Hojas de cálculo y Presentaciones -----

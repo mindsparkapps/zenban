@@ -1,0 +1,51 @@
+{
+  "type": "AdaptiveCard",
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "version": "1.5",
+  "body": [
+    {
+      "type": "ColumnSet",
+      "columns": [
+        {
+          "type": "Column",
+          "width": "stretch",
+          "items": [
+            { "type": "TextBlock", "text": "ZenBan", "weight": "Bolder", "size": "Medium" },
+            { "type": "TextBlock", "text": "${summary}", "isSubtle": true, "spacing": "None", "size": "Small", "wrap": true }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Container",
+      "spacing": "Medium",
+      "$data": "${tasks}",
+      "items": [
+        {
+          "type": "ColumnSet",
+          "columns": [
+            { "type": "Column", "width": "auto", "items": [{ "type": "TextBlock", "text": "${icon}" }] },
+            {
+              "type": "Column",
+              "width": "stretch",
+              "items": [
+                { "type": "TextBlock", "text": "${title}", "wrap": true, "maxLines": 2 },
+                { "type": "TextBlock", "text": "${meta}", "isSubtle": true, "size": "Small", "spacing": "None", "wrap": true }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "TextBlock",
+      "text": "${empty}",
+      "isSubtle": true,
+      "wrap": true,
+      "$when": "${count(tasks) == 0}"
+    }
+  ],
+  "actions": [
+    { "type": "Action.Execute", "title": "Abrir ZenBan", "verb": "open" }
+  ]
+}

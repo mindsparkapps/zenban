@@ -4228,12 +4228,13 @@ select option:checked {
 }
 
 /* Imagen del tablero: pestaña sobre la esquina superior izquierda. Mide al menos ~72 px en pantalla
-   aunque se aleje la vista, para poder tocarla con el dedo y arrastrar el tablero */
+   aunque se aleje la vista, para poder tocarla con el dedo y arrastrar el tablero; pero nunca más de
+   la mitad del ancho de su tablero (--board-w), para que al alejar mucho no se encimen unas con otras */
 .board-image-tab {
   position: absolute;
   left: 18px;
   bottom: calc(100% - 1px);
-  width: max(150px, calc(72px * var(--inv-zoom, 1)));
+  width: min(max(150px, calc(72px * var(--inv-zoom, 1))), calc(var(--board-w, 1000px) * 0.5));
   aspect-ratio: 4 / 3;
   border: 3px solid var(--board-color);
   border-bottom: none;
