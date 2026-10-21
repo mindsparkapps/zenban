@@ -56,7 +56,8 @@ function addFrame(at = null) {
     color: FRAME_DEFAULT_COLOR,
     fill: 10,
     radius: Math.round(16 / zoom),
-    title: ''
+    title: '',
+    ...(typeof defaultStyleFor === 'function' ? defaultStyleFor('frame') : {})
   };
   getFrames().push(f);
   persist();
@@ -87,6 +88,12 @@ function applyFrameStyle(el, f) {
   el.style.setProperty('--frame-title-color', f.titleColor || '#ffffff');
   el.style.setProperty('--frame-title-size', `${f.titleSize || 13}px`);
   el.style.setProperty('--frame-title-weight', f.titleBold === false ? '400' : '700');
+  el.dataset.titleAlign = f.titleAlign || 'left';
+}
+
+// Título e ícono de arrastre se ocultan por separado (antes era uno solo: hideLabels)
+function frameHides(f) {
+  return { title: !!(f.hideTitle ?? f.hideLabels), tab: !!(f.hideTab ?? f.hideLabels) };
 }
 
 function renderFrames() {
@@ -96,11 +103,12 @@ function renderFrames() {
     el.className = 'canvas-frame';
     el.dataset.frameId = f.id;
     applyFrameStyle(el, f);
-    // "Ocultar título e ícono" (para presentar el diagrama): no se dibujan la pestaña ni el título
+    // "Ocultar título" / "Ocultar ícono" (para presentar el diagrama)
+    const hides = frameHides(f);
     el.innerHTML = `
       <div class="frame-drop-bar"></div>
-      ${f.image && !f.hideLabels ? `<div class="board-image-tab frame-image-tab" title="Arrastra para mover el frame"><img data-board-img="${escapeHtml(f.image)}" alt="" draggable="false"></div>` : ''}
-      ${f.title && !f.hideLabels ? `<div class="frame-title">${escapeHtml(f.title)}</div>` : ''}
+      ${f.image && !hides.tab ? `<div class="board-image-tab frame-image-tab" title="Arrastra para mover el frame"><img data-board-img="${escapeHtml(f.image)}" alt="" draggable="false"></div>` : ''}
+      ${f.title && !hides.title ? `<div class="frame-title">${escapeHtml(f.title)}</div>` : ''}
       ${f.locked ? '<button type="button" class="frame-lock-badge" title="Volver a mover el frame">✋ Trabajando dentro · <b>Listo</b></button>' : ''}
       <div class="frame-handle" title="Arrastra para agrandar o achicar"></div>`;
     el.querySelector('.frame-handle').addEventListener('pointerdown', (e) => startFrameResize(e, f, el));
@@ -246,6 +254,7 @@ function applyFrameSelection() {
   connectorLayer.querySelectorAll('.connector').forEach(g => {
     g.classList.toggle('is-selected', selection.has(`conn:${g.dataset.connId}`));
   });
+  if (typeof updateConnectHandle === 'function') updateConnectHandle();
 }
 
 // ----- Agrandar por la esquina -----
@@ -302,6 +311,15 @@ function clearConnectTargets() {
   document.querySelectorAll('.is-connect-target').forEach(x => x.classList.remove('is-connect-target'));
 }
 
+function startConnectorDraft(from, e) {
+  const line = document.createElementNS(SVG_NS, 'path');
+  line.setAttribute('class', 'connector-draft');
+  line.setAttribute('stroke-width', 3 / zoom);
+  connectorLayer.appendChild(line);
+  connectorDraft = { from, line, pointerId: e.pointerId };
+  try { viewportArea.setPointerCapture(e.pointerId); } catch (err) {}
+}
+
 viewportArea.addEventListener('pointerdown', (e) => {
   if (currentTool !== 'connector' || e.button !== 0 || isSpacePressed) return;
   if (e.target.closest('.toolbox, .zoom-hud, .mobile-fab, button, input, select, textarea')) return;
@@ -309,13 +327,35 @@ viewportArea.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   e.stopPropagation();
   if (!from) { showToast('Empieza el conector sobre un objeto (frame, tablero, imagen, texto o nota) y suéltalo sobre otro', 'info'); return; }
-  const line = document.createElementNS(SVG_NS, 'path');
-  line.setAttribute('class', 'connector-draft');
-  line.setAttribute('stroke-width', 3 / zoom);
-  connectorLayer.appendChild(line);
-  connectorDraft = { from, line, pointerId: e.pointerId };
-  viewportArea.setPointerCapture(e.pointerId);
+  startConnectorDraft(from, e);
 }, true);
+
+// ----- Manija de conexión: el círculo con flecha junto al objeto seleccionado -----
+// Se arrastra hasta otro objeto para unirlos, sin cambiar a la herramienta Conector
+const connectHandle = document.createElement('div');
+connectHandle.className = 'connect-handle';
+connectHandle.title = 'Arrastra hasta otro objeto para conectarlos';
+connectHandle.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="13 6 19 12 13 18"></polyline></svg>';
+connectHandle.hidden = true;
+zoomCanvas.appendChild(connectHandle);
+
+function updateConnectHandle() {
+  const key = selection.size === 1 ? [...selection][0] : '';
+  const r = currentTool === 'select' && /^(frame|text|img|board):/.test(key) ? objectRectByKey(key) : null;
+  connectHandle.hidden = !r;
+  if (!r) return;
+  connectHandle.dataset.key = key;
+  connectHandle.style.left = `${r.x + r.w}px`;
+  connectHandle.style.top = `${r.y + r.h / 2}px`;
+}
+
+connectHandle.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  connectHandle.hidden = true;
+  startConnectorDraft(connectHandle.dataset.key, e);
+});
 
 viewportArea.addEventListener('pointermove', (e) => {
   if (!connectorDraft || e.pointerId !== connectorDraft.pointerId) return;
@@ -351,6 +391,7 @@ function endConnectorDraft(e) {
   connectorDraft = null;
   line.remove();
   clearConnectTargets();
+  updateConnectHandle();
   const to = e.type === 'pointerup' ? objectKeyAtPoint(e.clientX, e.clientY) : null;
   if (!to || to === from) return;
   const exists = getConnectors().some(c => {
@@ -358,7 +399,10 @@ function endConnectorDraft(e) {
     return (f === from && t === to) || (f === to && t === from);
   });
   if (exists) { showToast('Esos objetos ya están conectados', 'info'); return; }
-  const c = { id: generateId('conn'), from, to, color: '#94a3b8', size: Math.max(1, +(3 / zoom).toFixed(1)), both: false, opacity: 1, ...inheritedConnectorStyle(from, to) };
+  // Estilo: el de los conectores que ya tocan esos objetos o, si no hay, el estilo principal
+  const inherited = inheritedConnectorStyle(from, to);
+  const base = Object.keys(inherited).length ? inherited : (typeof defaultStyleFor === 'function' ? defaultStyleFor('conn') : {});
+  const c = { id: generateId('conn'), from, to, color: '#94a3b8', size: Math.max(1, +(3 / zoom).toFixed(1)), both: false, opacity: 1, ...base };
   getConnectors().push(c);
   persist();
   renderConnectors();
@@ -399,8 +443,12 @@ function syncFrameControls(ctx) {
     ctxFrameTitleSize.value = String(f.titleSize || 13);
     ctxFrameTitleFill.value = String(f.titleFill ?? 100);
     document.getElementById('ctxFrameTitleBold').classList.toggle('is-active', f.titleBold !== false);
-    document.getElementById('ctxFrameHideLabels').classList.toggle('is-active', !!f.hideLabels);
-    document.querySelector('#ctxFrameHideLabels span:last-child').textContent = f.hideLabels ? 'Mostrar título e ícono' : 'Ocultar título e ícono';
+    const hides = frameHides(f);
+    document.getElementById('ctxFrameHideTitle').classList.toggle('is-active', hides.title);
+    document.querySelector('#ctxFrameHideTitle span:last-child').textContent = hides.title ? 'Mostrar título' : 'Ocultar título';
+    document.getElementById('ctxFrameHideTab').classList.toggle('is-active', hides.tab);
+    document.querySelector('#ctxFrameHideTab span:last-child').textContent = hides.tab ? 'Mostrar ícono' : 'Ocultar ícono';
+    document.querySelectorAll('[data-title-align]').forEach(b => b.classList.toggle('is-active', b.dataset.titleAlign === (f.titleAlign || 'left')));
     document.getElementById('ctxFrameImageRemove').hidden = !f.image;
   } else if (ctx.type === 'conn') {
     const c = selectedConnectors()[0];
@@ -448,16 +496,29 @@ document.getElementById('ctxFrameTitleBold').addEventListener('click', () => {
   updateContextBar();
 });
 
-// Ocultar el título y el ícono de arrastre (para presentar el diagrama); el frame se sigue moviendo por su borde
-document.getElementById('ctxFrameHideLabels').addEventListener('click', () => {
+document.querySelectorAll('[data-title-align]').forEach(b => b.addEventListener('click', () => {
+  eachFrame(f => { f.titleAlign = b.dataset.titleAlign; });
+  persist();
+  updateContextBar();
+}));
+
+// Ocultar el título o el ícono de arrastre (por separado) para presentar el diagrama; el frame se sigue moviendo por su borde
+function toggleFrameHide(part) {
   const frames = selectedFrames();
   if (!frames.length) return;
-  const hide = !frames[0].hideLabels;
-  frames.forEach(f => { f.hideLabels = hide; });
+  const hide = !frameHides(frames[0])[part];
+  frames.forEach(f => {
+    const h = frameHides(f);
+    delete f.hideLabels;
+    f.hideTitle = part === 'title' ? hide : h.title;
+    f.hideTab = part === 'tab' ? hide : h.tab;
+  });
   persist();
   renderFrames();
   updateContextBar();
-});
+}
+document.getElementById('ctxFrameHideTitle').addEventListener('click', () => toggleFrameHide('title'));
+document.getElementById('ctxFrameHideTab').addEventListener('click', () => toggleFrameHide('tab'));
 
 // "Trabajar dentro": el frame deja de tomar los clics hasta que se toca "Listo" en su etiqueta
 document.getElementById('ctxFrameLock').addEventListener('click', () => {

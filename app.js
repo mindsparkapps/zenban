@@ -3005,7 +3005,7 @@ async function addBgImageFromFile(file, clientX = null, clientY = null, opts = {
       center = screenToCanvas(rect.left + rect.width / 2, rect.top + rect.height / 2);
     }
 
-    const img = { id, x: Math.round(center.x - width / 2), y: Math.round(center.y - height / 2), w: width, h: height };
+    const img = { id, x: Math.round(center.x - width / 2), y: Math.round(center.y - height / 2), w: width, h: height, ...(typeof defaultStyleFor === 'function' ? defaultStyleFor('img') : {}) };
     getBgImages().push(img);
     persist();
     selection = new Set([`img:${id}`]);
@@ -3670,6 +3670,7 @@ function setTool(tool) {
   if (tool !== 'eraser') eraserCursor.hidden = true;
 
   if (isDrawingTool() && selection.size) setSelection([]);
+  if (typeof updateConnectHandle === 'function') updateConnectHandle();
 }
 
 // Construye un trazo suave (curvas por puntos medios)
@@ -4401,8 +4402,8 @@ function startGroupDrag(e) {
       o.f.y = Math.round(o.y + dy);
       if (o.el) { o.el.style.left = `${o.f.x}px`; o.el.style.top = `${o.f.y}px`; }
     });
-    // Las flechas entre frames los siguen
-    if (frms.length && typeof renderConnectors === 'function') renderConnectors();
+    // Las flechas los siguen (unen frames, tableros, imágenes, textos y notas), y también la manija de conexión
+    if (typeof renderConnectors === 'function') renderConnectors();
     if (singleImg) {
       // Sobre un link o un tablero gana ese destino; si no, una tarea
       imageTarget = imageDropTargetAt(ev.clientX, ev.clientY);
@@ -4468,7 +4469,7 @@ function startGroupDrag(e) {
     imgs.forEach(o => { o.i.x = o.x; o.i.y = o.y; if (o.el) { o.el.style.left = `${o.x}px`; o.el.style.top = `${o.y}px`; } });
     txts.forEach(o => { o.t.x = o.x; o.t.y = o.y; if (o.el) { o.el.style.left = `${o.x}px`; o.el.style.top = `${o.y}px`; } });
     frms.forEach(o => { o.f.x = o.x; o.f.y = o.y; if (o.el) { o.el.style.left = `${o.x}px`; o.el.style.top = `${o.y}px`; } });
-    if (frms.length && typeof renderConnectors === 'function') renderConnectors();
+    if (typeof renderConnectors === 'function') renderConnectors();
     highlightDropCard(null);
   };
 }
@@ -4706,7 +4707,9 @@ function addText(content = '', at = null, extra = null) {
     size: Math.max(4, Math.round(22 / zoom)),
     color: null,
     text: content.replace(/\r\n/g, '\n').replace(/\s+$/, ''),
-    ...(extra || {})
+    ...(extra || {}),
+    // Estilo principal del texto o de la nota adhesiva (si se eligió uno)
+    ...(typeof defaultStyleFor === 'function' ? defaultStyleFor(extra && extra.sticky ? 'sticky' : 'text') : {})
   };
   getTexts().push(t);
   if (currentTool === 'text') setTool('select');
@@ -4970,7 +4973,7 @@ viewportArea.addEventListener('pointerdown', (e) => {
   if (currentTool !== 'select' || isSpacePressed || isPanModeActive || e.button !== 0) return;
   if (e.pointerType === 'touch' && !e.isPrimary) return; // segundo dedo: es para mover el lienzo
   const t = e.target;
-  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle, .frame-handle')) return;
+  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle, .frame-handle, .connect-handle')) return;
   // Un link dentro de un texto del lienzo también sirve para tomar y mover ese texto (un clic corto lo abre)
   if (t.closest('button, input, select, textarea, a, label') && !t.closest('.canvas-text a')) return;
 
@@ -5607,6 +5610,8 @@ function openCanvasMenu(clientX, clientY, target) {
     else if (target.closest('.canvas-text')) key = `text:${target.closest('.canvas-text').dataset.textId}`;
     else if (target.closest('.bg-image')) key = `img:${target.closest('.bg-image').dataset.imageId}`;
     else if (target.closest('.board-frame')) key = `board:${target.closest('.board-frame').dataset.boardId}`;
+    else if (target.closest('[data-conn-id]')) key = `conn:${target.closest('[data-conn-id]').dataset.connId}`;
+    else if (target.closest('.canvas-frame')) key = `frame:${target.closest('.canvas-frame').dataset.frameId}`;
     if (key && !selection.has(key)) setSelection([key]);
     if (!key && !target.closest('.board-frame') && selection.size) setSelection([]);
   }
@@ -6548,7 +6553,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '83';
+const APP_VERSION = '84';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
