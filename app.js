@@ -1271,7 +1271,8 @@ function renderBoardContent() {
 
     const colsContainer = frame.querySelector('.board-columns');
     boardCols.forEach(col => {
-      const colTasks = tasks.filter(t => t.columnId === col.id && taskMatchesFilters(t, filters));
+      let colTasks = tasks.filter(t => t.columnId === col.id && taskMatchesFilters(t, filters));
+      if (col.sortByPriority) colTasks = sortByPriority(colTasks);
       colsContainer.appendChild(createColumnElement(col, colTasks));
     });
 
@@ -1296,6 +1297,26 @@ function renderBoardContent() {
   applySelectionVisuals();
 }
 
+// Columnas con "Ordenar por prioridad": las más críticas arriba (las de igual prioridad conservan su orden)
+const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3, note: 4 };
+function sortByPriority(list) {
+  return list
+    .map((t, i) => ({ t, i, r: PRIORITY_RANK[t.priority || 'medium'] ?? 2 }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map(x => x.t);
+}
+
+window.toggleColumnPrioritySort = function (colId, e) {
+  if (e) e.stopPropagation();
+  const col = columns.find(c => c.id === colId);
+  if (!col) return;
+  col.sortByPriority = !col.sortByPriority;
+  if (!col.sortByPriority) delete col.sortByPriority;
+  persist();
+  renderBoard();
+  showToast(col.sortByPriority ? `"${col.title}": ordenada por prioridad (más críticas arriba)` : `"${col.title}": orden manual`, 'info');
+};
+
 function createColumnElement(col, colTasks) {
   const columnEl = document.createElement('section');
   columnEl.className = 'kanban-column';
@@ -1312,6 +1333,9 @@ function createColumnElement(col, colTasks) {
       <span class="column-count-badge">${colTasks.length}</span>
     </div>
     <div class="column-actions">
+      <button class="col-btn col-sort-btn ${col.sortByPriority ? 'is-on' : ''}" title="${col.sortByPriority ? 'Ordenada por prioridad. Clic para volver al orden manual' : 'Ordenar por prioridad (más críticas arriba)'}" onclick="toggleColumnPrioritySort('${col.id}', event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4v16"></path><path d="M4 8l4-4 4 4"></path><line x1="14" y1="7" x2="21" y2="7"></line><line x1="14" y1="12" x2="19" y2="12"></line><line x1="14" y1="17" x2="17" y2="17"></line></svg>
+      </button>
       <button class="col-btn" title="Añadir tarea a ${escapeHtml(col.title)}" onclick="openTaskModal(null, '${col.id}')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -3083,6 +3107,20 @@ document.getElementById('copyAllSubtasksBtn').addEventListener('click', () => {
   copyWithToast(subtasksAsText(currentModalSubtasks), 'Subtareas copiadas');
 });
 
+// Link interno en la descripción: se agrega donde está el cursor (o al final)
+document.getElementById('taskInternalLinkBtn').addEventListener('click', () => {
+  const start = taskDescInput.selectionStart ?? taskDescInput.value.length;
+  const end = taskDescInput.selectionEnd ?? start;
+  openInternalLinkPicker(url => {
+    const v = taskDescInput.value;
+    const before = v.slice(0, start);
+    const insert = `${before && !/\s$/.test(before) ? ' ' : ''}${url} `;
+    taskDescInput.value = before + insert + v.slice(end);
+    taskDescInput.dispatchEvent(new Event('input'));
+    taskDescInput.focus();
+  });
+});
+
 // Texto que muestra cada link de la tarea ({ dirección: texto })
 let currentModalLinkNames = {};
 document.getElementById('taskLinksBtn').addEventListener('click', () => {
@@ -4449,6 +4487,15 @@ document.getElementById('ctxTextEdit').addEventListener('click', () => {
   const first = selectedTexts()[0];
   if (first) editText(first.id);
 });
+document.getElementById('ctxTextInternal').addEventListener('click', () => {
+  const t = selectedTexts()[0];
+  if (!t) return;
+  openInternalLinkPicker(url => {
+    t.text = t.text ? `${t.text}\n${url}` : url;
+    persist();
+    renderTexts();
+  });
+});
 document.getElementById('ctxTextLinks').addEventListener('click', () => {
   const t = selectedTexts()[0];
   if (!t) return;
@@ -5110,6 +5157,17 @@ canvasMenu.addEventListener('click', async (e) => {
   if (cmd === 'addText') addText('', menuCanvasPoint);
   if (cmd === 'photo') takePhoto(menuCanvasPoint);
   if (cmd === 'canvasColor') openCanvasColorPicker();
+  if (cmd === 'internalLink') {
+    const point = menuCanvasPoint;
+    openInternalLinkPicker(url => addText(url, point));
+  }
+  if (cmd === 'copyInternalLink') {
+    // Link al objeto seleccionado (tablero, texto o imagen) o, si no hay, al proyecto
+    const key = selection.size === 1 ? [...selection][0] : '';
+    const [type, id] = key.split(':');
+    const kind = { board: 'b', text: 't', img: 'i' }[type] || null;
+    copyWithToast(internalLinkUrl(activeProjectId, kind, kind ? id : null), 'Link interno copiado: pégalo en un texto o una tarea de otro proyecto');
+  }
   if (cmd === 'undo') undoLastChange();
 });
 
@@ -5848,7 +5906,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '66';
+const APP_VERSION = '67';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -6234,10 +6292,144 @@ function escapeHtml(str) {
 
 // Escapa el texto y convierte las direcciones web (https://… o www.…) en links que abren en otra pestaña.
 // names: { dirección: texto a mostrar } (se configura en "Links" de cada texto o tarea).
-const LINK_RE = /\[([^\]\n]+)\]\(((?:https?:\/\/|www\.)[^\s)<]+)\)|\b((?:https?:\/\/|www\.)[^\s<]+)/gi;
+const LINK_RE = /\[([^\]\n]+)\]\(((?:https?:\/\/|www\.|zenban:\/\/)[^\s)<]+)\)|\b((?:https?:\/\/|www\.|zenban:\/\/)[^\s<]+)/gi;
 const LINK_TRAIL_RE = /(?:[.,;:!?)\]]|&#39;|&quot;)+$/;
 function linkHref(url) {
+  if (isInternalLink(url)) return '#';
   return /^www\./i.test(url) ? `https://${url}` : url;
+}
+
+// ----- Links internos: saltan a otro proyecto (y a un tablero, texto, imagen o tarea de él) -----
+// Forma: zenban://p/<proyecto>[/b/<tablero> | /t/<texto> | /i/<imagen> | /k/<tarea>]
+function isInternalLink(url) {
+  return /^zenban:\/\//i.test(String(url || ''));
+}
+
+function parseInternalLink(url) {
+  const m = String(url).match(/^zenban:\/\/p\/([\w-]+)(?:\/([btik])\/([\w-]+))?/i);
+  return m ? { projectId: m[1], kind: m[2] ? m[2].toLowerCase() : null, id: m[3] || null } : null;
+}
+
+function internalLinkUrl(projectId, kind = null, id = null) {
+  return `zenban://p/${projectId}${kind && id ? `/${kind}/${id}` : ''}`;
+}
+
+// Proyecto (de este espacio o de otro conocido) por su id
+function findAnyProject(projectId) {
+  const local = projects.find(p => p.id === projectId);
+  if (local) return { project: local, space: null };
+  if (typeof knownOtherSpaces === 'function') {
+    for (const entry of knownOtherSpaces()) {
+      const p = (entry.projects || []).find(x => x.id === projectId);
+      if (p) return { project: p, space: entry.space };
+    }
+  }
+  return null;
+}
+
+// Texto que muestra un link interno sin nombre propio: "↪ Proyecto › Tablero"
+function internalLinkLabel(url) {
+  const ref = parseInternalLink(url);
+  const found = ref && findAnyProject(ref.projectId);
+  if (!found) return '↪ Proyecto';
+  let label = `↪ ${found.project.name}`;
+  if (ref.kind === 'b') {
+    const b = (found.project.boards || []).find(x => x.id === ref.id);
+    if (b) label += ` › ${b.title}`;
+  } else if (ref.kind === 'k') {
+    const t = (found.project.tasks || []).find(x => x.id === ref.id);
+    if (t) label += ` › ${t.title}`;
+  }
+  return label;
+}
+
+async function openInternalLink(url) {
+  const ref = parseInternalLink(url);
+  const found = ref && findAnyProject(ref.projectId);
+  if (!found) {
+    showToast('No encontré ese proyecto (puede que se haya borrado o esté en otro espacio)', 'warning');
+    return;
+  }
+  if (found.space) {
+    // Está en otro espacio (personal o compartido): se cambia de espacio y se abre
+    if (typeof switchToSpace !== 'function' || !(await switchToSpace(found.space, ref.projectId))) return;
+  } else if (ref.projectId !== activeProjectId) {
+    switchProject(ref.projectId);
+  }
+  setTimeout(() => focusInternalTarget(ref), 60);
+}
+
+function focusInternalTarget(ref) {
+  if (ref.kind === 'b') {
+    const b = boards.find(x => x.id === ref.id);
+    const el = b && getBoardEl(b.id);
+    if (b && el) { fitRectToScreen(b.x, b.y, el.offsetWidth, el.offsetHeight); setSelection([`board:${b.id}`]); return; }
+  } else if (ref.kind === 't') {
+    const t = getTexts().find(x => x.id === ref.id);
+    const el = t && getTextEl(t.id);
+    if (t && el) { fitRectToScreen(t.x, t.y, el.offsetWidth, el.offsetHeight); setSelection([`text:${t.id}`]); return; }
+  } else if (ref.kind === 'i') {
+    const i = getBgImages().find(x => x.id === ref.id);
+    if (i) { fitRectToScreen(i.x, i.y, i.w, i.h); setSelection([`img:${i.id}`]); return; }
+  } else if (ref.kind === 'k') {
+    const task = tasks.find(x => x.id === ref.id);
+    const col = task && columns.find(c => c.id === task.columnId);
+    const b = col && boards.find(x => x.id === col.boardId);
+    const el = b && getBoardEl(b.id);
+    if (b && el) fitRectToScreen(b.x, b.y, el.offsetWidth, el.offsetHeight);
+    const card = task && kanbanBoard.querySelector(`.kanban-card[data-task-id="${task.id}"]`);
+    if (card) {
+      card.scrollIntoView({ block: 'nearest' });
+      if (typeof highlightDroppedCard === 'function') highlightDroppedCard(task.id);
+    }
+    if (task) return;
+  }
+  fitBoardToScreen();
+}
+
+// Ventana para elegir a qué proyecto (o tablero) apunta un link interno nuevo
+function openInternalLinkPicker(onPick) {
+  let m = document.getElementById('internalLinkModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.className = 'modal-backdrop';
+    m.id = 'internalLinkModal';
+    m.innerHTML = `
+      <div class="modal-card modal-sm">
+        <div class="modal-header">
+          <h2>↪ Link a otro proyecto</h2>
+          <button class="modal-close-btn" type="button" data-close aria-label="Cerrar">&times;</button>
+        </div>
+        <div class="internal-link-body">
+          <p class="link-names-help">Elige a dónde salta el link. Después puedes cambiar su texto o ponerle una imagen en "Links".</p>
+          <div class="internal-link-list"></div>
+        </div>
+      </div>`;
+    m.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) m.style.display = 'none'; });
+    document.body.appendChild(m);
+  }
+  const item = (url, label, sub, indent) =>
+    `<button type="button" class="internal-link-item ${indent ? 'is-board' : ''}" data-url="${escapeHtml(url)}"><span>${escapeHtml(label)}</span>${sub ? `<small>${escapeHtml(sub)}</small>` : ''}</button>`;
+  let html = projects.map(p =>
+    item(internalLinkUrl(p.id), `📂 ${p.name}`, p.id === activeProjectId ? 'abierto' : '', false) +
+    (p.boards || []).map(b => item(internalLinkUrl(p.id, 'b', b.id), `▦ ${b.title}`, '', true)).join('')
+  ).join('');
+  if (typeof knownOtherSpaces === 'function') {
+    knownOtherSpaces().forEach(entry => {
+      if (!(entry.projects || []).length) return;
+      html += `<div class="internal-link-section">${typeof spaceTitle === 'function' ? escapeHtml(spaceTitle(entry.space)) : 'Otro espacio'}</div>`;
+      html += entry.projects.map(p => item(internalLinkUrl(p.id), `📂 ${p.name}`, '', false)).join('');
+    });
+  }
+  const list = m.querySelector('.internal-link-list');
+  list.innerHTML = html;
+  list.onclick = (e) => {
+    const b = e.target.closest('[data-url]');
+    if (!b) return;
+    m.style.display = 'none';
+    onPick(b.dataset.url);
+  };
+  m.style.display = 'flex';
 }
 function linkify(str, names = null) {
   return escapeHtml(str).replace(LINK_RE, (match, label, labelUrl, url) => {
@@ -6250,7 +6442,10 @@ function linkify(str, names = null) {
     const opt = linkOption(names, unescapeHtml(url));
     // Oculto: no se muestra (útil si ya se ve la miniatura del video)
     if (opt.hide) return trail;
-    const attrs = `class="auto-link${opt.image ? ' link-image' : ''}" href="${linkHref(url)}" data-url="${url}" target="_blank" rel="noopener noreferrer"`;
+    const internal = isInternalLink(url);
+    // Un link interno sin nombre propio muestra el proyecto al que salta
+    if (internal && !opt.text && !opt.image) opt.text = internalLinkLabel(unescapeHtml(url));
+    const attrs = `class="auto-link${opt.image ? ' link-image' : ''}${internal ? ' internal-link' : ''}" href="${linkHref(url)}" data-url="${url}"${internal ? '' : ' target="_blank" rel="noopener noreferrer"'}`;
     if (opt.image) {
       // Con imagen y texto, el texto se ve encima de la imagen
       const caption = opt.text ? `<span class="link-image-caption">${escapeHtml(opt.text)}</span>` : '';
@@ -6509,37 +6704,60 @@ function hydratePlaylists(root = document) {
   });
 }
 
-// ----- Links en el lienzo y en tarjetas: un clic o toque corto abre el link; mantenerlo apretado o arrastrarlo
-//       mueve el texto o la tarjeta que lo contiene, sin abrirlo -----
-const LINK_LONG_PRESS_MS = 400;
+// ----- Links en el lienzo, tarjetas y vista rápida: se abren con doble clic (doble toque en el celular).
+//       Un clic simple no los abre: selecciona, y mantener apretado o arrastrar mueve el texto o la tarjeta -----
+const LINK_SCOPE = '.canvas-text a, .kanban-card a, .card-peek a';
+const LINK_DOUBLE_MS = 450;
 let linkPress = null;
+let lastLinkClick = null;
 document.addEventListener('pointerdown', (e) => {
-  const a = e.target.closest('.canvas-text a, .kanban-card .card-desc a, .kanban-card .yt-previews a');
-  linkPress = a ? { a, time: Date.now(), x: e.clientX, y: e.clientY, moved: false } : null;
+  const a = e.target.closest(LINK_SCOPE);
+  linkPress = a ? { x: e.clientX, y: e.clientY, moved: false } : null;
 }, true);
 document.addEventListener('pointermove', (e) => {
   if (linkPress && !linkPress.moved && Math.hypot(e.clientX - linkPress.x, e.clientY - linkPress.y) > 6) linkPress.moved = true;
 }, true);
 document.addEventListener('click', (e) => {
-  const a = e.target.closest('a');
-  if (!a || !linkPress || linkPress.a !== a) return;
-  const long = linkPress.moved || Date.now() - linkPress.time > LINK_LONG_PRESS_MS;
+  const a = e.target.closest(LINK_SCOPE);
+  if (!a) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const moved = linkPress && linkPress.moved;
   linkPress = null;
-  if (long) {
-    e.preventDefault();
-    e.stopPropagation();
+  if (moved) { lastLinkClick = null; return; }
+  const href = a.getAttribute('href');
+  const now = Date.now();
+  // Segundo clic sobre el mismo link (aunque se haya vuelto a dibujar): se abre
+  if (lastLinkClick && lastLinkClick.href === href && now - lastLinkClick.time < LINK_DOUBLE_MS &&
+      Math.hypot(e.clientX - lastLinkClick.x, e.clientY - lastLinkClick.y) < 30) {
+    lastLinkClick = null;
+    openLink(a);
+    return;
   }
+  lastLinkClick = { href, time: now, x: e.clientX, y: e.clientY };
+}, true);
+// El doble clic sobre un link no edita el texto ni acerca la vista: solo abre el link
+document.addEventListener('dblclick', (e) => {
+  if (!e.target.closest(LINK_SCOPE)) return;
+  e.preventDefault();
+  e.stopPropagation();
 }, true);
 // En el celular, mantener apretado un link no abre el menú del navegador (vista previa del link)
 document.addEventListener('contextmenu', (e) => {
-  if (e.target.closest('.canvas-text a, .kanban-card a')) e.preventDefault();
+  if (e.target.closest(LINK_SCOPE)) e.preventDefault();
 }, true);
+
+function openLink(a) {
+  const url = a.dataset.url ? unescapeHtml(a.dataset.url) : a.getAttribute('href');
+  if (isInternalLink(url)) { openInternalLink(url); return; }
+  window.open(a.href, '_blank', 'noopener');
+}
 
 // ----- Ventanas: se mueven arrastrando su título, y el fondo se puede seguir usando -----
 // (por ejemplo, para copiar el texto de otra tarea mientras se edita una)
 document.addEventListener('pointerdown', (e) => {
   const header = e.target.closest('.modal-backdrop .modal-header');
-  if (!header || e.button !== 0 || e.target.closest('button, input, select, textarea, a')) return;
+  if (!header || e.button !== 0 || e.target.closest('button, input, select, textarea, a, label')) return;
   const card = header.closest('.modal-card');
   if (!card) return;
   e.preventDefault();
@@ -6574,25 +6792,50 @@ document.addEventListener('pointerdown', (e) => {
   window.addEventListener('pointercancel', onUp);
 });
 
-// Al cerrarse una ventana vuelve a su lugar para la próxima vez
+// Al abrirse una ventana se le agrega el interruptor de desenfoque; al cerrarse vuelve a su lugar
 new MutationObserver((records) => {
   records.forEach(r => {
     const m = r.target;
-    if (!(m instanceof Element) || !m.classList.contains('modal-backdrop') || m.style.display !== 'none') return;
-    m.querySelectorAll('.modal-card[data-dx]').forEach(card => {
-      delete card.dataset.dx;
-      delete card.dataset.dy;
-      card.style.translate = '';
-    });
+    if (!(m instanceof Element) || !m.classList.contains('modal-backdrop')) return;
+    if (m.style.display === 'none') {
+      m.querySelectorAll('.modal-card[data-dx]').forEach(card => {
+        delete card.dataset.dx;
+        delete card.dataset.dy;
+        card.style.translate = '';
+      });
+    } else {
+      addBlurToggle(m);
+    }
   });
 }).observe(document.body, { attributes: true, attributeFilter: ['style'], subtree: true });
 
-// Desenfoque y oscurecido del fondo detrás de las ventanas (Configuración)
+// Desenfoque y oscurecido del fondo detrás de las ventanas: nivel en Configuración y
+// un interruptor arriba en cada ventana para quitarlo al momento
 function applyModalBackdrop() {
-  const level = Math.min(100, Math.max(0, Number(appSettings.modalBackdrop ?? 15)));
+  const level = appSettings.modalBlurOff ? 0 : Math.min(100, Math.max(0, Number(appSettings.modalBackdrop ?? 15)));
   document.documentElement.style.setProperty('--modal-blur', `${(level / 100) * 8}px`);
-  document.documentElement.style.setProperty('--modal-dim', String(0.08 + (level / 100) * 0.62));
+  document.documentElement.style.setProperty('--modal-dim', String(0.05 + (level / 100) * 0.65));
+  document.querySelectorAll('.modal-blur-toggle input').forEach(i => { i.checked = !appSettings.modalBlurOff; });
 }
+
+function addBlurToggle(modal) {
+  const header = modal.querySelector('.modal-header');
+  if (!header || header.querySelector('.modal-blur-toggle')) return;
+  const label = document.createElement('label');
+  label.className = 'modal-blur-toggle';
+  label.title = 'Desenfocar el lienzo detrás de la ventana';
+  label.innerHTML = '<input type="checkbox"><span class="modal-blur-switch" aria-hidden="true"></span><span class="modal-blur-text">Desenfoque</span>';
+  const input = label.querySelector('input');
+  input.checked = !appSettings.modalBlurOff;
+  input.addEventListener('change', () => {
+    appSettings.modalBlurOff = !input.checked;
+    saveData(SETTINGS_KEY, appSettings);
+    applyModalBackdrop();
+  });
+  const close = header.querySelector('.modal-close-btn');
+  if (close) close.before(label); else header.appendChild(label);
+}
+
 applyModalBackdrop();
 
 // Completa lo que se dibuja sin datos todavía (listas de YouTube, imágenes de links y de tableros).
