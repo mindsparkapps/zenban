@@ -928,6 +928,28 @@ body.theme-light .moon-icon { display: none; }
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
+/* Recordatorio: sube sola a Alta y Urgente al acercarse su vencimiento */
+.priority-reminder {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+/* Tarea repetitiva (diaria, semanal, mensual) */
+.repeat-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #22d3ee;
+  background: rgba(34, 211, 238, 0.12);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  white-space: nowrap;
+}
+
 /* Nota: sin prioridad, estilo neutro */
 .priority-note {
   background: var(--bg-surface-hover);
@@ -3327,6 +3349,49 @@ select option:checked {
   font: inherit;
   line-height: inherit;
   color: inherit;
+}
+
+/* Aviso de carga al cambiar de proyecto o de espacio */
+.busy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.busy-overlay[hidden] {
+  display: none;
+}
+
+.busy-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-radius: 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-medium);
+  box-shadow: var(--shadow-xl);
+  color: var(--text-main);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.busy-spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid rgba(99, 102, 241, 0.25);
+  border-top-color: var(--accent-primary);
+  animation: busySpin 0.8s linear infinite;
+}
+
+@keyframes busySpin {
+  to { transform: rotate(360deg); }
 }
 
 /* Buscar imagen */

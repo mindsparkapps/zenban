@@ -21,8 +21,9 @@ function archiveEntry(task, project) {
   };
 }
 
-// Archiva tareas del proyecto abierto por id
+// Archiva tareas del proyecto abierto por id (las repetitivas nunca se archivan)
 function archiveTasks(ids, message) {
+  ids = ids.filter(id => { const t = tasks.find(x => x.id === id); return t && !t.repeat; });
   if (!ids.length) return 0;
   const project = getActiveProject();
   const set = new Set(ids);
@@ -39,6 +40,7 @@ function archiveTasks(ids, message) {
 window.archiveTask = function (taskId) {
   const t = tasks.find(x => x.id === taskId);
   if (!t) return;
+  if (t.repeat) { showToast('Las tareas repetitivas no se archivan: vuelven solas cada período', 'info'); return; }
   if (document.getElementById('taskModal').style.display === 'flex' && taskIdInput.value === taskId) closeTaskModal();
   archiveTasks([taskId], `"${t.title.substring(0, 30)}" archivada. Recupérala en Configuración → Tareas archivadas (o Ctrl+Z).`);
 };
@@ -46,7 +48,7 @@ window.archiveTask = function (taskId) {
 window.archiveColumnTasks = function (colId, onlyCompleted) {
   const col = columns.find(c => c.id === colId);
   if (!col) return;
-  const list = tasks.filter(t => t.columnId === colId && (!onlyCompleted || t.completed));
+  const list = tasks.filter(t => t.columnId === colId && !t.repeat && (!onlyCompleted || t.completed));
   if (!list.length) {
     showToast(onlyCompleted ? `"${col.title}" no tiene tareas completadas` : `"${col.title}" no tiene tareas`, 'info');
     return;
@@ -69,7 +71,7 @@ function runAutoArchive() {
   let total = 0;
   projects.forEach(project => {
     const list = project.id === activeProjectId ? tasks : (project.tasks || []);
-    const old = list.filter(t => t.completed && t.completedAt && t.completedAt < limit);
+    const old = list.filter(t => t.completed && !t.repeat && t.completedAt && t.completedAt < limit);
     if (!old.length) return;
     if (project.id === activeProjectId) {
       archiveTasks(old.map(t => t.id));

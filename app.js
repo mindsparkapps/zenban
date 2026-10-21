@@ -212,7 +212,7 @@ function taskMatchesFilters(task, f) {
     task.title.toLowerCase().includes(q) ||
     (task.description && task.description.toLowerCase().includes(q)) ||
     (task.tags && task.tags.some(tag => tag.toLowerCase().includes(q)));
-  const matchesPriority = f.priority === 'all' || task.priority === f.priority;
+  const matchesPriority = f.priority === 'all' || effectivePriority(task) === f.priority || task.priority === f.priority;
   const matchesTag = f.tag === 'all' || (task.tags && task.tags.some(tag => tag.toLowerCase() === f.tag.toLowerCase()));
   return matchesSearch && matchesPriority && matchesTag;
 }
@@ -271,6 +271,8 @@ function persist() {
     tasks.forEach(t => {
       if (t.completed && !t.completedAt) t.completedAt = Date.now();
       else if (!t.completed && t.completedAt) delete t.completedAt;
+      // Una repetitiva recuerda su última columna "abierta", para volver ahí en el siguiente período
+      if (t.repeat && !isDoneColumn(t.columnId)) t.repeatColumnId = t.columnId;
     });
     // Guarda el estado anterior para poder deshacer (agrupa cambios muy seguidos, p. ej. al escribir)
     const snap = projectSnapshot(project);
@@ -899,7 +901,7 @@ function returnPlaceholderToOrigin() {
 
 // ----- Vista rápida: con el mouse quieto sobre una tarjeta se ve todo su contenido sin abrirla -----
 const PEEK_DELAY_MS = 600;
-const PEEK_PRIORITY = { urgent: 'Urgente', high: 'Alta', medium: 'Media', low: 'Baja', note: 'Nota' };
+const PEEK_PRIORITY = { urgent: 'Urgente', high: 'Alta', medium: 'Media', low: 'Baja', note: 'Nota', reminder: '🔔 Recordatorio' };
 let peekEl = null;
 let peekTimer = null;
 let peekHideTimer = null;
@@ -944,7 +946,7 @@ function showPeek(card) {
   const el = peekPopup();
   el.innerHTML = `
     <div class="card-peek-top">
-      <span class="priority-badge priority-${task.priority || 'medium'}">${PEEK_PRIORITY[task.priority || 'medium']}</span>
+      <span class="priority-badge priority-${effectivePriority(task)}">${PEEK_PRIORITY[effectivePriority(task)]}</span>${task.repeat ? `<span class="repeat-badge">🔁 ${REPEAT_LABELS[task.repeat]}</span>` : ''}
       ${task.completed ? '<span class="card-peek-done">✓ Completada</span>' : ''}
       ${task.dueDate ? `<span class="card-due-date ${dueClass}">📅 ${escapeHtml(task.dueDate)}</span>` : ''}
     </div>
@@ -1302,11 +1304,99 @@ function renderBoardContent() {
   applySelectionVisuals();
 }
 
+// ----- Tareas repetitivas y prioridad Recordatorio -----
+// Una tarea repetitiva (cada día, semana o mes), al completarse, vuelve sola a su columna cuando
+// empieza el siguiente período, con el vencimiento del nuevo período. Nunca se archiva.
+// La prioridad 🔔 Recordatorio se ve como Recordatorio y sube a Alta y a Urgente a medida que se
+// acerca su vencimiento (o pasa).
+const REPEAT_LABELS = { daily: 'Diaria', weekly: 'Semanal', monthly: 'Mensual' };
+const REPEAT_DAYS = { daily: 1, weekly: 7, monthly: 30 };
+
+function dateToStr(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function strToDate(s) {
+  const [y, m, d] = String(s).split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+// Próximo vencimiento de una tarea repetitiva desde una fecha (incluida)
+function nextRepeatDue(task, fromStr) {
+  const from = strToDate(fromStr);
+  const anchor = strToDate(task.repeatAnchor || task.dueDate || fromStr);
+  if (task.repeat === 'daily') return fromStr;
+  if (task.repeat === 'weekly') {
+    const d = new Date(anchor);
+    while (d < from) d.setDate(d.getDate() + 7);
+    return dateToStr(d);
+  }
+  if (task.repeat === 'monthly') {
+    if (anchor >= from) return dateToStr(anchor);
+    const day = anchor.getDate();
+    let y = from.getFullYear();
+    let m = from.getMonth();
+    const inMonth = (yy, mm) => new Date(yy, mm, Math.min(day, new Date(yy, mm + 1, 0).getDate()));
+    let d = inMonth(y, m);
+    if (d < from) { m++; if (m > 11) { m = 0; y++; } d = inMonth(y, m); }
+    return dateToStr(d);
+  }
+  return fromStr;
+}
+
+// Prioridad que se muestra (y con la que se ordena y filtra)
+function effectivePriority(t) {
+  const p = t.priority || 'medium';
+  if (p !== 'reminder') return p;
+  if (t.completed || !t.dueDate) return 'reminder';
+  const end = strToDate(t.dueDate);
+  end.setHours(23, 59, 59, 999);
+  const remaining = end - Date.now();
+  const ratio = remaining / ((REPEAT_DAYS[t.repeat] || 7) * 86400000);
+  if (remaining <= 0 || ratio <= 0.2) return 'urgent';
+  if (ratio <= 0.5) return 'high';
+  return 'reminder';
+}
+
+// Vuelve a abrir las repetitivas completadas cuyo período ya pasó (en todos los proyectos de este espacio)
+function runRecurring() {
+  const today = getRelativeDate(0);
+  let changed = false;
+  let activeChanged = false;
+  projects.forEach(p => {
+    const isActive = p.id === activeProjectId;
+    const list = isActive ? tasks : (p.tasks || []);
+    const cols = isActive ? columns : (p.columns || []);
+    list.forEach(t => {
+      if (!t.repeat) return;
+      if (!t.dueDate) t.dueDate = nextRepeatDue(t, today);
+      if (!(t.completed && t.dueDate < today)) return;
+      t.completed = false;
+      delete t.completedAt;
+      const current = cols.find(c => c.id === t.columnId);
+      const back = cols.find(c => c.id === t.repeatColumnId && !isDoneColumn(c.id));
+      const sameBoard = current && cols.find(c => c.boardId === current.boardId && !isDoneColumn(c.id));
+      t.columnId = (back || sameBoard || current || { id: t.columnId }).id;
+      t.dueDate = nextRepeatDue(t, today);
+      changed = true;
+      if (isActive) activeChanged = true; else p.updatedAt = Date.now();
+    });
+  });
+  if (!changed) return;
+  if (activeChanged) persist(); else saveData(STORAGE_KEYS.PROJECTS, projects);
+  renderBoard();
+}
+setTimeout(runRecurring, 1500);
+setInterval(runRecurring, 60 * 1000);
+// La prioridad Recordatorio cambia con la hora: se redibuja cada 10 minutos si hay alguna
+setInterval(() => { if (tasks.some(t => t.priority === 'reminder') && !document.querySelector('.modal-backdrop[style*="flex"]')) renderBoard(); }, 10 * 60 * 1000);
+
 // Columnas con "Ordenar por prioridad": las más críticas arriba (las de igual prioridad conservan su orden)
-const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3, note: 4 };
+const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3, reminder: 3.5, note: 4 };
 function sortByPriority(list) {
   return list
-    .map((t, i) => ({ t, i, r: PRIORITY_RANK[t.priority || 'medium'] ?? 2 }))
+    .map((t, i) => ({ t, i, r: PRIORITY_RANK[effectivePriority(t)] ?? 2 }))
     .sort((a, b) => a.r - b.r || a.i - b.i)
     .map(x => x.t);
 }
@@ -1411,8 +1501,11 @@ function createCardElement(task) {
     high: 'Alta',
     medium: 'Media',
     low: 'Baja',
-    note: 'Nota'
+    note: 'Nota',
+    reminder: '🔔 Recordatorio'
   };
+  const prio = effectivePriority(task);
+  const reminderUp = task.priority === 'reminder' && prio !== 'reminder';
 
   // Subtasks progress calculation
   const totalSubtasks = task.subtasks ? task.subtasks.length : 0;
@@ -1462,9 +1555,10 @@ function createCardElement(task) {
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
         </button>
-        <span class="priority-badge priority-${task.priority || 'medium'}">
-          ${priorityLabels[task.priority || 'medium']}
+        <span class="priority-badge priority-${prio}" ${reminderUp ? 'title="Recordatorio: subió de prioridad porque se acerca su vencimiento"' : ''}>
+          ${reminderUp ? '🔔 ' : ''}${priorityLabels[prio]}
         </span>
+        ${task.repeat ? `<span class="repeat-badge" title="Tarea repetitiva: vuelve sola cada período">🔁 ${REPEAT_LABELS[task.repeat]}</span>` : ''}
       </div>
       <div class="card-top-right">
         <button type="button" class="card-copy-btn" title="Copiar la descripción" aria-label="Copiar la descripción">
@@ -1635,6 +1729,36 @@ function setDueDateEnabled(enabled) {
     taskDueDate.value = getRelativeDate(0);
   }
 }
+
+// Guarda "Repetir" en la tarea: la fecha elegida es el primer vencimiento (y fija el día de la semana o del mes)
+function applyRepeatFromModal(task) {
+  const repeat = taskRepeatSelect.value;
+  if (!repeat) {
+    delete task.repeat;
+    delete task.repeatAnchor;
+    delete task.repeatColumnId;
+    return;
+  }
+  const changed = task.repeat !== repeat || task.repeatAnchor !== task.dueDate;
+  task.repeat = repeat;
+  if (changed) task.repeatAnchor = task.dueDate || getRelativeDate(0);
+  if (!task.dueDate) task.dueDate = nextRepeatDue(task, getRelativeDate(0));
+  if (!isDoneColumn(task.columnId)) task.repeatColumnId = task.columnId;
+}
+
+// Repetir: al activarla, la tarea pasa a prioridad Recordatorio y lleva fecha (el primer vencimiento)
+const taskRepeatSelect = document.getElementById('taskRepeatSelect');
+function setRepeatField(value) {
+  taskRepeatSelect.value = value || '';
+  document.getElementById('taskRepeatHint').hidden = !value;
+}
+taskRepeatSelect.addEventListener('change', () => {
+  const value = taskRepeatSelect.value;
+  setRepeatField(value);
+  if (!value) return;
+  if (['medium', 'low', 'note'].includes(taskPrioritySelect.value)) taskPrioritySelect.value = 'reminder';
+  if (!taskHasDueDate.checked) setDueDateEnabled(true);
+});
 
 taskHasDueDate.addEventListener('change', () => {
   setDueDateEnabled(taskHasDueDate.checked);
@@ -1826,6 +1950,7 @@ window.openTaskModal = function(taskId = null, defaultColId = null, event = null
     taskPrioritySelect.value = task.priority || 'medium';
     taskDueDate.value = task.dueDate || '';
     setDueDateEnabled(!!task.dueDate);
+    setRepeatField(task.repeat || '');
     currentModalTags = [...(task.tags || [])];
     currentModalSubtasks = JSON.parse(JSON.stringify(task.subtasks || []));
     currentModalImages = JSON.parse(JSON.stringify(task.images || []));
@@ -1842,6 +1967,7 @@ window.openTaskModal = function(taskId = null, defaultColId = null, event = null
     taskPrioritySelect.value = 'medium';
     taskDueDate.value = '';
     setDueDateEnabled(false);
+    setRepeatField('');
     currentModalTags = [];
     currentModalSubtasks = [];
     currentModalImages = [];
@@ -2068,6 +2194,7 @@ taskForm.addEventListener('submit', (e) => {
       task.images = currentModalImages;
       task.linkNames = currentModalLinkNames;
       if (isDoneColumn(colId)) task.completed = true;
+      applyRepeatFromModal(task);
       showToast('Tarea actualizada', 'info');
     }
   } else {
@@ -2086,6 +2213,7 @@ taskForm.addEventListener('submit', (e) => {
       linkNames: currentModalLinkNames,
       createdAt: Date.now()
     };
+    applyRepeatFromModal(newTask);
     tasks.unshift(newTask);
     showToast('Nueva tarea añadida', 'success');
   }
@@ -2325,6 +2453,28 @@ function folderHeaderEl(folder, count, open, collapsed, key, extraClass = '') {
   return head;
 }
 
+// ----- Aviso de carga sobre el lienzo (al cambiar de proyecto o de espacio) -----
+let busyCount = 0;
+function showBusy(text) {
+  let el = document.getElementById('busyOverlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'busyOverlay';
+    el.className = 'busy-overlay';
+    el.innerHTML = '<div class="busy-box"><span class="busy-spinner" aria-hidden="true"></span><span class="busy-text"></span></div>';
+    document.body.appendChild(el);
+  }
+  el.querySelector('.busy-text').textContent = text || 'Cargando…';
+  busyCount++;
+  el.hidden = false;
+}
+
+function hideBusy() {
+  busyCount = Math.max(0, busyCount - 1);
+  const el = document.getElementById('busyOverlay');
+  if (el && !busyCount) el.hidden = true;
+}
+
 // ----- Orden de la lista de proyectos: estrellas, carpetas y orden manual (arrastrando) -----
 const STARRED_POSITION_KEY = 'zenban_starred_position'; // 'top' | 'bottom'
 const COLLAPSED_FOLDERS_KEY = 'zenban_collapsed_folders';
@@ -2391,8 +2541,13 @@ function projectItemEl(project, active, folder) {
     </button>
   `;
   li.querySelector('.project-item-main').addEventListener('click', () => {
-    switchProject(project.id);
     closeProjectMenu();
+    if (project.id === activeProjectId) return;
+    // Se muestra "Abriendo…" y se cambia en el siguiente cuadro (así el aviso alcanza a verse)
+    showBusy(`Abriendo «${project.name}»…`);
+    setTimeout(() => {
+      try { switchProject(project.id); } finally { hideBusy(); }
+    }, 40);
   });
   li.querySelector('.project-item-star').addEventListener('click', (e) => {
     e.stopPropagation();
@@ -5235,7 +5390,10 @@ function openCanvasMenu(clientX, clientY, target) {
   canvasMenu.querySelector('[data-cmd="archiveTask"]').hidden = !menuTaskId;
   canvasMenu.querySelector('[data-cmd="archiveDone"]').hidden = !menuColumnId;
   canvasMenu.querySelector('[data-cmd="archiveAll"]').hidden = !menuColumnId;
-  canvasMenu.querySelector('[data-cmd="group"]').hidden = selection.size < 2;
+  // Duplicar y Agrupar siempre a la vista (desactivados si no aplican); Desagrupar solo con un grupo
+  canvasMenu.querySelector('[data-cmd="duplicate"]').disabled = !hasSel;
+  canvasMenu.querySelector('[data-cmd="group"]').disabled = selection.size < 2;
+  canvasMenu.querySelector('[data-cmd="group"]').title = selection.size < 2 ? 'Selecciona dos o más objetos para agruparlos' : '';
   canvasMenu.querySelector('[data-cmd="ungroup"]').hidden = selectionGroups().size === 0;
 
   canvasMenu.hidden = false;
@@ -5293,6 +5451,7 @@ canvasMenu.addEventListener('click', async (e) => {
   if (cmd === 'archiveTask' && menuTaskId) archiveTask(menuTaskId);
   if (cmd === 'archiveDone' && menuColumnId) archiveColumnTasks(menuColumnId, true);
   if (cmd === 'archiveAll' && menuColumnId) archiveColumnTasks(menuColumnId, false);
+  if (cmd === 'duplicate') duplicateSelection();
   if (cmd === 'group') groupSelection();
   if (cmd === 'ungroup') ungroupSelection();
   if (cmd === 'sticky') addStickyNote(menuCanvasPoint);
@@ -6080,7 +6239,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '70';
+const APP_VERSION = '71';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

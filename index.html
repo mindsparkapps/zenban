@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=54">
+  <link rel="stylesheet" href="styles.css?v=55">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -122,6 +122,7 @@
             <option value="high">🟠 Alta</option>
             <option value="medium">🟡 Media</option>
             <option value="low">🟢 Baja</option>
+            <option value="reminder">🔔 Recordatorio</option>
             <option value="note">📝 Nota</option>
           </select>
         </div>
@@ -436,6 +437,7 @@
               <label for="taskPrioritySelect">Prioridad</label>
               <select id="taskPrioritySelect">
                 <option value="note">📝 Nota (sin prioridad)</option>
+                <option value="reminder">🔔 Recordatorio (sube sola al acercarse el vencimiento)</option>
                 <option value="low">🟢 Baja</option>
                 <option value="medium" selected>🟡 Media</option>
                 <option value="high">🟠 Alta</option>
@@ -452,7 +454,17 @@
               </label>
               <input type="date" id="taskDueDate" disabled>
             </div>
+            <div class="form-group col-half">
+              <label for="taskRepeatSelect">🔁 Repetir</label>
+              <select id="taskRepeatSelect">
+                <option value="">No se repite</option>
+                <option value="daily">Cada día</option>
+                <option value="weekly">Cada semana</option>
+                <option value="monthly">Cada mes</option>
+              </select>
+            </div>
           </div>
+          <p class="setup-text task-repeat-hint" id="taskRepeatHint" hidden>Al completarla vuelve sola a su columna cuando empieza el siguiente período. No se archiva. Con prioridad 🔔 Recordatorio sube a Alta y a Urgente a medida que se acerca su vencimiento.</p>
 
           <!-- Etiquetas reutilizables con color -->
           <div class="form-group">
@@ -769,6 +781,9 @@
     <div class="canvas-menu" id="canvasContextMenu" role="menu" hidden>
       <button type="button" data-cmd="copy" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span>Copiar</span><kbd>Ctrl+C</kbd></button>
       <button type="button" data-cmd="cut" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg><span>Cortar</span><kbd>Ctrl+X</kbd></button>
+      <button type="button" data-cmd="duplicate" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="13" height="13" rx="2"></rect><path d="M4 16V5a1 1 0 0 1 1-1h11"></path><line x1="14.5" y1="11.5" x2="14.5" y2="17.5"></line><line x1="11.5" y1="14.5" x2="17.5" y2="14.5"></line></svg><span>Duplicar</span><kbd>Ctrl+D</kbd></button>
+      <button type="button" data-cmd="group" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg><span>Agrupar</span><kbd>Ctrl+G</kbd></button>
+      <button type="button" data-cmd="ungroup" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5" stroke-dasharray="3 2"></rect><rect x="13" y="13" width="8" height="8" rx="1.5" stroke-dasharray="3 2"></rect></svg><span>Desagrupar</span><kbd>Ctrl+Shift+G</kbd></button>
       <button type="button" data-cmd="paste" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1"></rect></svg><span>Pegar aquí</span><kbd>Ctrl+V</kbd></button>
       <button type="button" data-cmd="addText" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg><span>Agregar texto aquí</span><kbd>T</kbd></button>
       <button type="button" data-cmd="photo" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg><span>Sacar foto aquí</span><kbd>C</kbd></button>
@@ -780,8 +795,6 @@
       <button type="button" data-cmd="archiveAll" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path></svg><span>Archivar todas las tareas de la columna</span></button>
       <button type="button" data-cmd="sticky" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v10l-6 6H4z"></path><path d="M14 20v-6h6"></path></svg><span>Nota adhesiva aquí</span><kbd>S</kbd></button>
       <button type="button" data-cmd="findImage" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>Biblioteca de imágenes…</span></button>
-      <button type="button" data-cmd="group" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg><span>Agrupar</span><kbd>Ctrl+G</kbd></button>
-      <button type="button" data-cmd="ungroup" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5" stroke-dasharray="3 2"></rect><rect x="13" y="13" width="8" height="8" rx="1.5" stroke-dasharray="3 2"></rect></svg><span>Desagrupar</span><kbd>Ctrl+Shift+G</kbd></button>
       <div class="canvas-menu-sep"></div>
       <button type="button" data-cmd="undo" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg><span>Deshacer</span><kbd>Ctrl+Z</kbd></button>
     </div>
@@ -889,11 +902,11 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=70"></script>
+  <script src="app.js?v=71"></script>
   <script src="share.js?v=4"></script>
   <script src="transfer.js?v=4"></script>
-  <script src="spaces.js?v=5"></script>
+  <script src="spaces.js?v=6"></script>
   <script src="capture.js?v=1"></script>
-  <script src="archive.js?v=1"></script>
+  <script src="archive.js?v=2"></script>
 </body>
 </html>

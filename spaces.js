@@ -304,7 +304,8 @@ async function switchToSpace(target, projectId = null) {
     signInWithGoogle();
     return false;
   }
-  showToast(`Abriendo ${spacePhrase(target)}…`, 'info');
+  // Puede tardar unos segundos (sube lo pendiente y trae el otro espacio): aviso de carga sobre el lienzo
+  showBusy(`Abriendo ${spacePhrase(target)}…`);
   try {
     // 1) Nada pendiente en el espacio actual
     await waitSyncIdle();
@@ -349,6 +350,8 @@ async function switchToSpace(target, projectId = null) {
     if (e.message === 'auth') signInWithGoogle();
     showToast('No se pudo abrir ese espacio. Revisa tu conexión e inténtalo de nuevo.', 'warning');
     return false;
+  } finally {
+    hideBusy();
   }
 }
 
