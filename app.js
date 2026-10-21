@@ -1446,7 +1446,7 @@ function createCardElement(task) {
 
     ${task.description ? `<p class="card-desc">${linkify(task.description, task.linkNames)}</p>` : ''}
 
-    ${youtubePreviews([task.description, ...(task.subtasks || []).map(s => s.text)].join('\n'), 2)}
+    ${youtubePreviews([task.description, ...(task.subtasks || []).map(s => s.text)].join('\n'), 2, 'compact')}
 
     ${totalSubtasks > 0 ? `
       <div class="card-subtasks">
@@ -1526,7 +1526,7 @@ function createCardElement(task) {
   });
 
   // Los links de la descripción abren su página sin abrir la tarea
-  card.querySelectorAll('.card-desc a, .yt-preview').forEach(a => a.addEventListener('click', (e) => e.stopPropagation()));
+  card.querySelectorAll('.card-desc a, .yt-preview, .yt-playlist a').forEach(a => a.addEventListener('click', (e) => e.stopPropagation()));
 
   // Clicking on card opens modal (unless check button or menu clicked)
   card.addEventListener('click', (e) => {
@@ -5529,7 +5529,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '62';
+const APP_VERSION = '63';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -5987,24 +5987,121 @@ function openLinkNamesDialog(urls, names, onSave) {
   if (!window.matchMedia('(pointer: coarse)').matches) list.querySelector('input').focus();
 }
 
-// Id de los videos de YouTube mencionados en un texto (youtube.com/watch?v=, youtu.be/, /shorts/, /embed/, /live/)
-const YOUTUBE_RE = /(?:youtube\.com\/(?:watch\?(?:[^\s)]*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/gi;
-function youtubeIds(str) {
-  const ids = [];
-  for (const m of String(str || '').matchAll(YOUTUBE_RE)) if (!ids.includes(m[1])) ids.push(m[1]);
-  return ids;
+// Videos y listas de reproducción de YouTube mencionados en un texto.
+// Un link con list= (aunque traiga también un video) se muestra como lista.
+const YOUTUBE_URL_RE = /(?:https?:\/\/)?(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be)\/[^\s<>"')\]]+/gi;
+const YOUTUBE_VIDEO_RE = /(?:youtube\.com\/(?:watch\?(?:[^\s)]*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/i;
+function youtubeRefs(str) {
+  const videos = [];
+  const lists = [];
+  for (const [url] of String(str || '').matchAll(YOUTUBE_URL_RE)) {
+    const list = (url.match(/[?&]list=([\w-]{10,64})/) || [])[1];
+    if (list) { if (!lists.includes(list)) lists.push(list); continue; }
+    const video = (url.match(YOUTUBE_VIDEO_RE) || [])[1];
+    if (video && !videos.includes(video)) videos.push(video);
+  }
+  return { videos, lists };
 }
 
-// Imágenes de vista previa de los videos de YouTube de un texto (tocarlas abre el video)
-function youtubePreviews(str, max = 3) {
-  const ids = youtubeIds(str).slice(0, max);
-  if (!ids.length) return '';
+// Vista previa de los videos (miniatura) y listas de YouTube de un texto; tocarlas abre YouTube.
+// mode 'full': la lista completa con sus videos (vista rápida, textos del lienzo); 'compact': solo su portada (tarjetas)
+function youtubePreviews(str, max = 3, mode = 'full') {
+  const { videos, lists } = youtubeRefs(str);
+  const ids = videos.slice(0, max);
+  if (!ids.length && !lists.length) return '';
   // Sin espacios entre etiquetas: los textos del lienzo respetan los saltos de línea
-  return `<div class="yt-previews">${ids.map(id =>
+  return `<div class="yt-previews">${lists.slice(0, max).map(list => playlistHtml(list, mode)).join('')}${ids.map(id =>
     `<a class="yt-preview" href="https://www.youtube.com/watch?v=${id}" target="_blank" rel="noopener noreferrer" title="Ver en YouTube">` +
     `<img src="https://i.ytimg.com/vi/${id}/hqdefault.jpg" alt="Video de YouTube" loading="lazy" decoding="async" draggable="false">` +
     `<span class="yt-play" aria-hidden="true"></span></a>`).join('')}</div>`;
 }
+
+// ----- Listas de reproducción: el servidor de ZenBan (Worker del MCP) lee sus videos -----
+const PLAYLIST_API = 'https://zenban-mcp.zenban-mcp.workers.dev/youtube/playlist?list=';
+const PLAYLIST_TTL = 12 * 3600 * 1000;
+const playlistCache = new Map();   // id → datos
+const playlistLoading = new Map(); // id → promesa
+
+function cachedPlaylist(id) {
+  if (playlistCache.has(id)) return playlistCache.get(id);
+  try {
+    const saved = JSON.parse(localStorage.getItem(`zenban_yt_pl_${id}`) || 'null');
+    if (saved && Date.now() - saved.at < PLAYLIST_TTL) {
+      playlistCache.set(id, saved.data);
+      return saved.data;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function loadPlaylist(id) {
+  if (playlistLoading.has(id)) return playlistLoading.get(id);
+  const p = fetch(PLAYLIST_API + encodeURIComponent(id))
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(`playlist ${r.status}`)))
+    .then(data => {
+      playlistCache.set(id, data);
+      try { localStorage.setItem(`zenban_yt_pl_${id}`, JSON.stringify({ at: Date.now(), data })); } catch (e) {}
+      return data;
+    })
+    .finally(() => playlistLoading.delete(id));
+  playlistLoading.set(id, p);
+  return p;
+}
+
+function playlistHtml(id, mode) {
+  const data = cachedPlaylist(id);
+  const listUrl = `https://www.youtube.com/playlist?list=${id}`;
+  if (!data) {
+    // Se completa al llegar los datos (hydratePlaylists)
+    return `<div class="yt-playlist is-loading" data-list="${id}" data-mode="${mode}"><a class="yt-playlist-head" href="${listUrl}" target="_blank" rel="noopener noreferrer"><span class="yt-playlist-cover yt-skeleton"></span><span class="yt-playlist-info"><b>Lista de reproducción</b><small>Cargando videos…</small></span></a></div>`;
+  }
+  const first = data.videos[0];
+  const more = data.count > data.videos.length ? data.count : data.videos.length;
+  const head = `<a class="yt-playlist-head" href="${listUrl}" target="_blank" rel="noopener noreferrer" title="Ver la lista en YouTube">` +
+    `<span class="yt-playlist-cover">${first ? `<img src="https://i.ytimg.com/vi/${first.id}/mqdefault.jpg" alt="" loading="lazy" decoding="async" draggable="false">` : ''}<span class="yt-playlist-count">▶ ${more} videos</span></span>` +
+    `<span class="yt-playlist-info"><b>${escapeHtml(data.title)}</b><small>${escapeHtml(data.author || 'YouTube')} · ${more} videos</small></span></a>`;
+  if (mode === 'compact') return `<div class="yt-playlist is-compact" data-list="${id}" data-ready="1">${head}</div>`;
+  const items = data.videos.map((v, i) =>
+    `<a class="yt-pl-item" href="https://www.youtube.com/watch?v=${v.id}&amp;list=${id}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(v.title)}">` +
+    `<span class="yt-pl-index">${i + 1}</span>` +
+    `<span class="yt-pl-thumb"><img src="https://i.ytimg.com/vi/${v.id}/mqdefault.jpg" alt="" loading="lazy" decoding="async" draggable="false">${v.duration ? `<span class="yt-pl-duration">${escapeHtml(v.duration)}</span>` : ''}</span>` +
+    `<span class="yt-pl-text"><b>${escapeHtml(v.title)}</b><small>${escapeHtml(v.channel || '')}</small></span></a>`).join('');
+  const rest = data.count > data.videos.length
+    ? `<a class="yt-pl-more" href="${listUrl}" target="_blank" rel="noopener noreferrer">Ver los ${data.count} videos en YouTube</a>` : '';
+  return `<div class="yt-playlist" data-list="${id}" data-ready="1">${head}<div class="yt-pl-items">${items}</div>${rest}</div>`;
+}
+
+// Completa las listas que quedaron "Cargando…" (se llama sola cuando aparecen en pantalla)
+function hydratePlaylists(root = document) {
+  root.querySelectorAll('.yt-playlist.is-loading:not([data-fetching])').forEach(el => {
+    el.dataset.fetching = '1';
+    const id = el.dataset.list;
+    loadPlaylist(id).then(() => {
+      document.querySelectorAll(`.yt-playlist.is-loading[data-list="${id}"]`).forEach(x => {
+        x.outerHTML = playlistHtml(id, x.dataset.mode || 'full');
+      });
+    }).catch(() => {
+      document.querySelectorAll(`.yt-playlist.is-loading[data-list="${id}"]`).forEach(x => {
+        x.classList.remove('is-loading');
+        x.dataset.ready = '1';
+        const small = x.querySelector('small');
+        if (small) small.textContent = 'No se pudo cargar (puede ser privada). Toca para verla en YouTube.';
+        const cover = x.querySelector('.yt-skeleton');
+        if (cover) cover.classList.remove('yt-skeleton');
+      });
+    });
+  });
+}
+
+let playlistHydrateQueued = false;
+new MutationObserver(() => {
+  if (playlistHydrateQueued) return;
+  playlistHydrateQueued = true;
+  requestAnimationFrame(() => {
+    playlistHydrateQueued = false;
+    if (document.querySelector('.yt-playlist.is-loading:not([data-fetching])')) hydratePlaylists();
+  });
+}).observe(document.body, { childList: true, subtree: true });
 
 // Subtareas numeradas: "1. texto", una por línea
 function subtasksAsText(subtasks) {

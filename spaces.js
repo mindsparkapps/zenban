@@ -70,12 +70,46 @@ async function loadOtherSpaces(force = false) {
     }
     OtherSpaces.entries = entries;
     OtherSpaces.loadedAt = Date.now();
+    saveOtherSpacesCache(entries);
     return entries;
   })();
   try { return await OtherSpaces.loading; } finally { OtherSpaces.loading = null; }
 }
 
+// Copia liviana de los otros espacios (solo nombres) para mostrarlos al instante la próxima vez,
+// mientras se actualizan desde Drive
+const OTHER_SPACES_CACHE_KEY = 'zenban_other_spaces_v1';
+
+function saveOtherSpacesCache(entries) {
+  try {
+    localStorage.setItem(OTHER_SPACES_CACHE_KEY, JSON.stringify({
+      email: myEmail(),
+      entries: entries.filter(e => !e.error).map(e => ({
+        space: e.space,
+        hasFile: e.hasFile,
+        projects: e.projects.map(p => ({ id: p.id, name: p.name, color: p.color, meta: projectMeta(p) }))
+      }))
+    }));
+  } catch (e) {}
+}
+
+function loadOtherSpacesCache() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(OTHER_SPACES_CACHE_KEY) || 'null');
+    if (saved && saved.email && saved.email === myEmail()) return saved.entries || [];
+  } catch (e) {}
+  return [];
+}
+
+// Los espacios conocidos, sin el actual (la copia guardada puede incluirlo si se cambió de espacio)
+function knownOtherSpaces() {
+  const here = xferHere();
+  const sameSpace = (a, b) => spaceIsShared(a) === spaceIsShared(b) && (!spaceIsShared(a) || a.folderId === b.folderId);
+  return (OtherSpaces.entries.length ? OtherSpaces.entries : loadOtherSpacesCache()).filter(e => !sameSpace(e.space, here));
+}
+
 function projectMeta(project) {
+  if (project.meta) return project.meta;
   const total = (project.tasks || []).length;
   const done = (project.tasks || []).filter(t => t.completed).length;
   const cols = (project.columns || []).length;
@@ -127,17 +161,30 @@ renderProjectSwitcher = function () {
       if (!n.querySelector('.project-shared-mark')) n.insertAdjacentHTML('afterbegin', '<span class="project-shared-mark" title="Compartido">👥</span>');
     });
   }
-  if (!signedIn()) return;
+  // Conectando con Google (la sesión se recupera al abrir la app): se avisa que faltan los otros espacios
+  const connecting = !signedIn() && syncEnabled();
+  if (!signedIn() && !connecting) return;
   projectList.insertBefore(sectionHeader(here, 'Espacio actual'), projectList.firstChild);
-  const entries = OtherSpaces.entries;
-  if (!entries.length && OtherSpaces.loading) {
-    const li = document.createElement('li');
-    li.className = 'project-section-note';
-    li.textContent = 'Buscando tus otros espacios…';
-    projectList.appendChild(li);
+  const loading = connecting || !!OtherSpaces.loading;
+  const entries = knownOtherSpaces();
+  if (!entries.length && loading) {
+    // Todavía no se sabe qué hay: sección "cargando" con filas grises animadas
+    const head = document.createElement('li');
+    head.className = 'project-section is-shared';
+    head.innerHTML = `<span>👥 Otros espacios</span>${loadingNote(connecting ? 'Conectando…' : 'Cargando…')}`;
+    projectList.appendChild(head);
+    for (let i = 0; i < 2; i++) {
+      const li = document.createElement('li');
+      li.className = 'project-item project-skeleton';
+      li.innerHTML = '<span class="skeleton-dot skeleton-line"></span><span class="skeleton-text"><span class="skeleton-line"></span><span class="skeleton-line is-short"></span></span>';
+      projectList.appendChild(li);
+    }
   }
   entries.forEach(entry => {
-    projectList.appendChild(sectionHeader(entry.space));
+    const header = sectionHeader(entry.space);
+    // Mientras se actualizan desde Drive, se muestran los de la última vez con la señal de carga
+    if (loading) header.insertAdjacentHTML('beforeend', loadingNote('Actualizando…'));
+    projectList.appendChild(header);
     if (entry.error) {
       const li = document.createElement('li');
       li.className = 'project-section-note';
@@ -156,13 +203,29 @@ renderProjectSwitcher = function () {
   });
 };
 
-// Al abrir el menú se buscan (o refrescan) los otros espacios
+function loadingNote(label) {
+  return `<small class="project-loading"><span class="project-spinner" aria-hidden="true"></span>${escapeHtml(label)}</small>`;
+}
+
+// Al abrir el menú se buscan (o refrescan) los otros espacios.
+// Si la sesión de Google aún se está recuperando, se espera a que termine (hasta 20 s).
+let waitSignInTimer = null;
 const baseOpenProjectMenu = openProjectMenu;
 openProjectMenu = function () {
   baseOpenProjectMenu();
-  if (!signedIn()) return;
-  loadOtherSpaces().then(() => { if (!projectMenu.hidden) renderProjectSwitcher(); }).catch(() => {});
-  if (OtherSpaces.loading) renderProjectSwitcher();
+  clearInterval(waitSignInTimer);
+  const refresh = () => {
+    loadOtherSpaces().then(() => { if (!projectMenu.hidden) renderProjectSwitcher(); }).catch(() => { if (!projectMenu.hidden) renderProjectSwitcher(); });
+    if (OtherSpaces.loading) renderProjectSwitcher();
+  };
+  if (signedIn()) { refresh(); return; }
+  if (!syncEnabled()) return;
+  renderProjectSwitcher();
+  const end = Date.now() + 20000;
+  waitSignInTimer = setInterval(() => {
+    if (projectMenu.hidden || Date.now() > end) { clearInterval(waitSignInTimer); if (!projectMenu.hidden) renderProjectSwitcher(); return; }
+    if (signedIn()) { clearInterval(waitSignInTimer); refresh(); }
+  }, 400);
 };
 
 // ----- Cambiar de espacio sin perder datos -----
@@ -321,6 +384,14 @@ document.getElementById('projectForm').addEventListener('submit', () => {
     .project-section.is-shared { color: #10b981; }
     .project-section small { font-size: 0.68rem; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--text-dim); }
     .project-section-note { padding: 4px 14px 8px; font-size: 0.8rem; color: var(--text-muted); list-style: none; }
+    .project-loading { display: inline-flex; align-items: center; gap: 5px; color: #10b981 !important; }
+    .project-spinner { width: 11px; height: 11px; border-radius: 50%; border: 2px solid rgba(16, 185, 129, 0.25); border-top-color: #10b981; animation: projectSpin 0.8s linear infinite; }
+    @keyframes projectSpin { to { transform: rotate(360deg); } }
+    .project-skeleton { display: flex; align-items: center; gap: 10px; padding: 10px 12px; list-style: none; pointer-events: none; }
+    .skeleton-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .skeleton-text { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+    .skeleton-text .skeleton-line { display: block; height: 10px; border-radius: 5px; width: 70%; }
+    .skeleton-text .skeleton-line.is-short { width: 40%; height: 8px; }
     .project-shared-mark { margin-right: 4px; }
     .project-item.is-other-space .project-item-name { opacity: 0.92; }
     .project-space-icon { margin-right: 2px; }
