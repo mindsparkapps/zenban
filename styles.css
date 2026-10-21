@@ -1184,6 +1184,16 @@ body.theme-light .moon-icon { display: none; }
   cursor: pointer;
 }
 
+/* Link o tablero donde se va a soltar una imagen */
+.auto-link.is-image-drop,
+.board-header.is-image-drop,
+.board-image-tab.is-image-drop {
+  outline: calc(3px * var(--inv-zoom, 1)) dashed #22c55e;
+  outline-offset: 3px;
+  background-color: rgba(34, 197, 94, 0.15);
+  border-radius: 8px;
+}
+
 /* Link mostrado como imagen */
 .auto-link.link-image {
   display: inline-block;
@@ -2346,6 +2356,110 @@ body.theme-light .moon-icon { display: none; }
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* Manija para ordenar, estrella y carpetas */
+.project-drag {
+  flex-shrink: 0;
+  width: 22px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  opacity: 0.5;
+}
+
+.project-item:hover .project-drag {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .project-drag { width: 30px; opacity: 0.8; }
+}
+
+.project-item.is-dragging {
+  opacity: 0.6;
+  outline: 2px dashed var(--accent-primary);
+}
+
+.project-list.is-sorting {
+  user-select: none;
+}
+
+.project-item.in-folder {
+  margin-left: 14px;
+}
+
+.project-item-star {
+  width: 30px;
+  height: 32px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.05rem;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+}
+
+.project-item-star:hover {
+  background: var(--bg-surface-hover);
+  color: #f59e0b;
+}
+
+.project-item-star.is-starred {
+  color: #f59e0b;
+}
+
+.project-folder {
+  list-style: none;
+  border-radius: var(--radius-sm);
+}
+
+.project-folder-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.project-folder-btn:hover {
+  background: var(--bg-surface-hover);
+}
+
+.project-folder-btn small {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.project-folder-chevron {
+  display: inline-block;
+  transition: transform 0.15s;
+  color: var(--text-dim);
+}
+
+.project-folder.is-open .project-folder-chevron {
+  transform: rotate(90deg);
+}
+
+.project-folder.is-drop {
+  outline: 2px dashed var(--accent-primary);
+  background: var(--accent-primary-light);
 }
 
 .project-item {

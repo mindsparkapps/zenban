@@ -2243,41 +2243,164 @@ function renderProjectSwitcher() {
   document.title = `${active.name} • ZenBan`;
 
   projectList.innerHTML = '';
-  projects.forEach(project => {
-    const total = (project.tasks || []).length;
-    const done = (project.tasks || []).filter(t => t.completed).length;
-    const colCount = (project.columns || []).length;
-    const isActive = project.id === active.id;
-
-    const li = document.createElement('li');
-    li.className = `project-item ${isActive ? 'is-active' : ''}`;
-    li.innerHTML = `
-      <button type="button" class="project-item-main" title="Abrir ${escapeHtml(project.name)}">
-        <span class="project-dot" style="background-color: ${project.color || '#6366f1'}"></span>
-        <span class="project-item-text">
-          <span class="project-item-name">${escapeHtml(project.name)}</span>
-          <span class="project-item-meta">${colCount} columna${colCount === 1 ? '' : 's'} · ${done}/${total} tareas</span>
-        </span>
-        ${isActive ? `<svg class="project-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>` : ''}
-      </button>
-      <button type="button" class="project-item-edit" title="Editar proyecto" aria-label="Editar ${escapeHtml(project.name)}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 20h9"></path>
-          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-        </svg>
-      </button>
-    `;
-    li.querySelector('.project-item-main').addEventListener('click', () => {
-      switchProject(project.id);
-      closeProjectMenu();
-    });
-    li.querySelector('.project-item-edit').addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeProjectMenu();
-      openProjectModal(project.id);
-    });
-    projectList.appendChild(li);
+  const collapsed = collapsedFolders();
+  projectGroups(projects).forEach(group => {
+    if (group.folder) {
+      // Carpeta: se pliega o despliega tocándola; si tiene el proyecto abierto, se muestra abierta
+      const open = !collapsed.has(group.folder) || group.items.some(p => p.id === active.id);
+      const head = document.createElement('li');
+      head.className = `project-folder ${open ? 'is-open' : ''}`;
+      head.dataset.folder = group.folder;
+      head.innerHTML = `<button type="button" class="project-folder-btn" title="${open ? 'Plegar' : 'Desplegar'} la carpeta">
+        <span class="project-folder-chevron">▸</span><span>📁 ${escapeHtml(group.folder)}</span><small>${group.items.length}</small></button>`;
+      head.querySelector('button').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (open) collapsed.add(group.folder); else collapsed.delete(group.folder);
+        saveCollapsedFolders(collapsed);
+        renderProjectSwitcher();
+      });
+      projectList.appendChild(head);
+      if (!open) return;
+    }
+    group.items.forEach(project => projectList.appendChild(projectItemEl(project, active, group.folder)));
   });
+}
+
+// ----- Orden de la lista de proyectos: estrellas, carpetas y orden manual (arrastrando) -----
+const STARRED_POSITION_KEY = 'zenban_starred_position'; // 'top' | 'bottom'
+const COLLAPSED_FOLDERS_KEY = 'zenban_collapsed_folders';
+
+function starredPosition() {
+  return localStorage.getItem(STARRED_POSITION_KEY) === 'bottom' ? 'bottom' : 'top';
+}
+
+function collapsedFolders() {
+  try { return new Set(JSON.parse(localStorage.getItem(COLLAPSED_FOLDERS_KEY) || '[]')); } catch (e) { return new Set(); }
+}
+
+function saveCollapsedFolders(set) {
+  localStorage.setItem(COLLAPSED_FOLDERS_KEY, JSON.stringify([...set]));
+}
+
+function projectFolder(p) {
+  return (p.folder || '').trim();
+}
+
+// Grupos de la lista: primero los proyectos sueltos y después cada carpeta (A-Z).
+// Dentro de cada grupo, los de estrella arriba o abajo (según Configuración) y el resto en su orden manual.
+function projectGroups(list) {
+  const byOrder = (a, b) => (a.order ?? list.indexOf(a)) - (b.order ?? list.indexOf(b));
+  const starredFirst = starredPosition() === 'top';
+  const sortGroup = (items) => {
+    const starred = items.filter(p => p.starred).sort(byOrder);
+    const rest = items.filter(p => !p.starred).sort(byOrder);
+    return starredFirst ? [...starred, ...rest] : [...rest, ...starred];
+  };
+  const folders = [...new Set(list.map(projectFolder).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  return [
+    { folder: '', items: sortGroup(list.filter(p => !projectFolder(p))) },
+    ...folders.map(folder => ({ folder, items: sortGroup(list.filter(p => projectFolder(p) === folder)) }))
+  ].filter(g => g.folder || g.items.length);
+}
+
+function projectItemEl(project, active, folder) {
+  const total = (project.tasks || []).length;
+  const done = (project.tasks || []).filter(t => t.completed).length;
+  const colCount = (project.columns || []).length;
+  const isActive = project.id === active.id;
+
+  const li = document.createElement('li');
+  li.className = `project-item ${isActive ? 'is-active' : ''} ${folder ? 'in-folder' : ''}`;
+  li.dataset.projectId = project.id;
+  li.dataset.folder = folder || '';
+  li.innerHTML = `
+    <span class="project-drag" title="Arrastra para ordenar o mover a una carpeta" aria-hidden="true">⠿</span>
+    <button type="button" class="project-item-main" title="Abrir ${escapeHtml(project.name)}">
+      <span class="project-dot" style="background-color: ${project.color || '#6366f1'}"></span>
+      <span class="project-item-text">
+        <span class="project-item-name">${escapeHtml(project.name)}</span>
+        <span class="project-item-meta">${colCount} columna${colCount === 1 ? '' : 's'} · ${done}/${total} tareas</span>
+      </span>
+      ${isActive ? `<svg class="project-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>` : ''}
+    </button>
+    <button type="button" class="project-item-star ${project.starred ? 'is-starred' : ''}" title="${project.starred ? 'Quitar la estrella' : 'Marcar con estrella'}" aria-label="Estrella">${project.starred ? '★' : '☆'}</button>
+    <button type="button" class="project-item-edit" title="Editar proyecto" aria-label="Editar ${escapeHtml(project.name)}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 20h9"></path>
+        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+      </svg>
+    </button>
+  `;
+  li.querySelector('.project-item-main').addEventListener('click', () => {
+    switchProject(project.id);
+    closeProjectMenu();
+  });
+  li.querySelector('.project-item-star').addEventListener('click', (e) => {
+    e.stopPropagation();
+    project.starred = !project.starred;
+    project.updatedAt = Date.now();
+    saveData(STORAGE_KEYS.PROJECTS, projects);
+    renderProjectSwitcher();
+  });
+  li.querySelector('.project-item-edit').addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeProjectMenu();
+    openProjectModal(project.id);
+  });
+  li.querySelector('.project-drag').addEventListener('pointerdown', (e) => startProjectDrag(e, li, project));
+  return li;
+}
+
+// Arrastrar un proyecto por su manija: se reordena o se pasa a otra carpeta (o fuera de ellas)
+function startProjectDrag(e, li, project) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  li.classList.add('is-dragging');
+  projectList.classList.add('is-sorting');
+  let targetFolder = projectFolder(project);
+  const onMove = (ev) => {
+    const under = document.elementFromPoint(ev.clientX, ev.clientY);
+    const overItem = under && under.closest('.project-item[data-project-id]');
+    const overFolder = under && under.closest('.project-folder');
+    projectList.querySelectorAll('.project-folder.is-drop').forEach(x => x.classList.remove('is-drop'));
+    if (overFolder && projectList.contains(overFolder)) {
+      // Sobre una carpeta: entra al final de esa carpeta
+      overFolder.classList.add('is-drop');
+      targetFolder = overFolder.dataset.folder;
+      let last = overFolder;
+      while (last.nextElementSibling && last.nextElementSibling.classList.contains('in-folder')) last = last.nextElementSibling;
+      if (last !== li) last.after(li);
+    } else if (overItem && overItem !== li && projectList.contains(overItem)) {
+      const r = overItem.getBoundingClientRect();
+      if (ev.clientY < r.top + r.height / 2) overItem.before(li); else overItem.after(li);
+      targetFolder = overItem.dataset.folder || '';
+    }
+    // Cerca de los bordes, la lista se desplaza
+    const box = projectList.getBoundingClientRect();
+    if (ev.clientY < box.top + 30) projectList.scrollTop -= 8;
+    else if (ev.clientY > box.bottom - 30) projectList.scrollTop += 8;
+  };
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    li.classList.remove('is-dragging');
+    projectList.classList.remove('is-sorting');
+    project.folder = targetFolder || undefined;
+    if (!project.folder) delete project.folder;
+    // Nuevo orden: el que quedó en la lista (solo los proyectos de este espacio)
+    [...projectList.querySelectorAll('.project-item[data-project-id]')].forEach((el, i) => {
+      const p = projects.find(x => x.id === el.dataset.projectId);
+      if (p && p.order !== i) { p.order = i; p.updatedAt = Date.now(); }
+    });
+    project.updatedAt = Date.now();
+    saveData(STORAGE_KEYS.PROJECTS, projects);
+    renderProjectSwitcher();
+  };
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
 }
 
 function switchProject(projectId) {
@@ -2350,6 +2473,12 @@ window.openProjectModal = function(projectId = null) {
     projectTemplateGroup.style.display = 'none';
     deleteProjectBtn.style.display = 'none';
   }
+  // Carpeta: se elige una existente o se escribe un nombre nuevo para crearla
+  const folderInput = document.getElementById('projectFolderInput');
+  const current = projectId ? projects.find(p => p.id === projectId) : null;
+  folderInput.value = current ? projectFolder(current) : '';
+  document.getElementById('projectFolderList').innerHTML = [...new Set(projects.map(projectFolder).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'es')).map(f => `<option value="${escapeHtml(f)}"></option>`).join('');
 
   buildColorPalette(projectColorPalette, projectColorInput);
   projectModal.style.display = 'flex';
@@ -2370,12 +2499,14 @@ projectForm.addEventListener('submit', (e) => {
 
   const id = projectIdInput.value;
   const color = projectColorInput.value;
+  const folder = document.getElementById('projectFolderInput').value.trim().replace(/\s+/g, ' ');
 
   if (id) {
     const project = projects.find(p => p.id === id);
     if (project) {
       project.name = name;
       project.color = color;
+      if (folder) project.folder = folder; else delete project.folder;
       showToast('Proyecto actualizado', 'info');
     }
     persist();
@@ -2391,6 +2522,7 @@ projectForm.addEventListener('submit', (e) => {
       boards: [],
       createdAt: Date.now()
     };
+    if (folder) newProject.folder = folder;
     projects.push(newProject);
     persist();
     switchProject(newProject.id);
@@ -2809,6 +2941,107 @@ async function addFilesToTask(taskId, files) {
   renderBoard();
   showToast(`${added === 1 ? 'Imagen agregada' : added + ' imágenes agregadas'} a "${task.title.substring(0, 28)}"`, 'success');
 }
+
+// ----- Soltar una imagen sobre un link (se muestra con esa imagen) o sobre un tablero (su pestaña) -----
+// Sirve tanto para una imagen del lienzo arrastrada como para una que viene de afuera (archivo o navegador).
+function imageDropTargetAt(clientX, clientY) {
+  const nodes = document.elementsFromPoint(clientX, clientY);
+  for (const n of nodes) {
+    if (!(n instanceof Element)) continue;
+    const link = n.closest('a.auto-link[data-url]');
+    if (link) {
+      const textEl = link.closest('.canvas-text');
+      const card = link.closest('.kanban-card');
+      const owner = textEl ? getTexts().find(t => t.id === textEl.dataset.textId)
+        : card ? tasks.find(t => t.id === card.dataset.taskId) : null;
+      if (owner) return { type: 'link', owner, url: unescapeHtml(link.dataset.url), el: link };
+    }
+    const boardPart = n.closest('.board-image-tab, .board-header');
+    if (boardPart) {
+      const frame = boardPart.closest('.board-frame');
+      const board = frame && boards.find(b => b.id === frame.dataset.boardId);
+      if (board) return { type: 'board', board, el: boardPart };
+    }
+  }
+  return null;
+}
+
+let imageDropHighlight = null;
+function highlightImageDropTarget(target) {
+  const el = target ? target.el : null;
+  if (imageDropHighlight === el) return;
+  if (imageDropHighlight) imageDropHighlight.classList.remove('is-image-drop');
+  imageDropHighlight = el;
+  if (el) el.classList.add('is-image-drop');
+}
+
+function applyImageToTarget(target, ref) {
+  if (target.type === 'link') {
+    const names = target.owner.linkNames || (target.owner.linkNames = {});
+    names[target.url] = { text: linkOption(names, target.url).text || '', hide: false, image: ref };
+    showToast('Imagen puesta en el link', 'success');
+  } else {
+    target.board.image = ref;
+    showToast(`Imagen puesta en el tablero "${target.board.title}"`, 'success');
+  }
+  persist();
+  renderBoard();
+  renderTexts();
+}
+
+// Imagen de otra página: se intenta guardar una copia; si el sitio no lo permite, se usa su dirección
+async function imageRefFromUrl(url) {
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    const blob = await res.blob();
+    if (!res.ok || !blob.type.startsWith('image/')) throw new Error('no es imagen');
+    return (await storeImageFile(new File([blob], 'imagen', { type: blob.type }))).id;
+  } catch (e) {
+    return /^https?:/i.test(url) ? url : null;
+  }
+}
+
+// Dirección de la imagen arrastrada desde un navegador (o null)
+function draggedImageUrl(dt) {
+  const html = dt.getData('text/html') || '';
+  const m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+  if (m) return m[1].replace(/&amp;/g, '&');
+  const uri = (dt.getData('text/uri-list') || '').split('\n').find(l => l && !l.startsWith('#'));
+  if (uri && /\.(png|jpe?g|gif|webp|avif|svg)(\?|#|$)/i.test(uri.trim())) return uri.trim();
+  return null;
+}
+
+// Arrastrando desde afuera: se marca el link o tablero de destino
+viewportArea.addEventListener('dragover', (e) => {
+  const types = Array.from((e.dataTransfer && e.dataTransfer.types) || []);
+  if (!types.some(t => t === 'Files' || t === 'text/uri-list' || t === 'text/html')) return;
+  const target = imageDropTargetAt(e.clientX, e.clientY);
+  highlightImageDropTarget(target);
+  if (target) {
+    e.preventDefault();
+    viewportArea.classList.remove('is-drop-target');
+  }
+}, true);
+viewportArea.addEventListener('dragleave', (e) => {
+  if (!viewportArea.contains(e.relatedTarget)) highlightImageDropTarget(null);
+}, true);
+// Soltada sobre un link o un tablero: va a ese link o tablero (antes que los demás manejadores)
+viewportArea.addEventListener('drop', async (e) => {
+  highlightImageDropTarget(null);
+  const dt = e.dataTransfer;
+  if (!dt) return;
+  const target = imageDropTargetAt(e.clientX, e.clientY);
+  if (!target) return;
+  const file = Array.from(dt.files || []).find(f => f.type.startsWith('image/'));
+  const url = file ? null : draggedImageUrl(dt);
+  if (!file && !url) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  viewportArea.classList.remove('is-drop-target');
+  const ref = file ? (await storeImageFile(file)).id : await imageRefFromUrl(url);
+  if (ref) applyImageToTarget(target, ref);
+  else showToast('No se pudo usar esa imagen', 'warning');
+}, true);
 
 function transferBgImageToTask(imageId, taskId) {
   const task = tasks.find(t => t.id === taskId);
@@ -3485,6 +3718,7 @@ boardImageInput.addEventListener('change', async () => {
 function hydrateBoardImages(root = document) {
   root.querySelectorAll('img[data-board-img]:not([src])').forEach(img => {
     const id = img.dataset.boardImg;
+    if (isRemoteImage(id)) { img.src = id; return; }
     const cached = cachedImageVariant(id, 480);
     if (cached) { img.src = cached; return; }
     img.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
@@ -3607,6 +3841,9 @@ function getContentBounds() {
   boards.forEach(b => {
     const el = getBoardEl(b.id);
     extend(b.x, b.y, el ? el.offsetWidth : 600, el ? el.offsetHeight : 300);
+    // La pestaña con la imagen del tablero sobresale hacia arriba
+    const tab = el && el.querySelector('.board-image-tab');
+    if (tab) extend(b.x, b.y - tab.offsetHeight, tab.offsetWidth, tab.offsetHeight);
   });
   getBgImages().forEach(i => extend(i.x, i.y, i.w, i.h));
   getTexts().forEach(t => {
@@ -3685,7 +3922,7 @@ function startGroupDrag(e) {
   const imgs = getBgImages().filter(i => selection.has(`img:${i.id}`)).map(i => ({ i, el: bgImageLayer.querySelector(`.bg-image[data-image-id="${i.id}"]`), x: i.x, y: i.y }));
   const txts = getTexts().filter(t => selection.has(`text:${t.id}`)).map(t => ({ t, el: getTextEl(t.id), x: t.x, y: t.y }));
   const singleImg = selection.size === 1 && imgs.length === 1 ? imgs[0] : null;
-  let moved = false, dx = 0, dy = 0, targetCard = null;
+  let moved = false, dx = 0, dy = 0, targetCard = null, imageTarget = null;
 
   selectGestureActive = true;
   viewportArea.setPointerCapture(e.pointerId);
@@ -3714,9 +3951,12 @@ function startGroupDrag(e) {
       if (o.el) { o.el.style.left = `${o.t.x}px`; o.el.style.top = `${o.t.y}px`; }
     });
     if (singleImg) {
-      targetCard = document.elementsFromPoint(ev.clientX, ev.clientY).find(n => n.classList && n.classList.contains('kanban-card')) || null;
+      // Sobre un link o un tablero gana ese destino; si no, una tarea
+      imageTarget = imageDropTargetAt(ev.clientX, ev.clientY);
+      highlightImageDropTarget(imageTarget);
+      targetCard = imageTarget ? null : document.elementsFromPoint(ev.clientX, ev.clientY).find(n => n.classList && n.classList.contains('kanban-card')) || null;
       highlightDropCard(targetCard);
-      if (singleImg.el) singleImg.el.classList.toggle('is-over-card', !!targetCard);
+      if (singleImg.el) singleImg.el.classList.toggle('is-over-card', !!(targetCard || imageTarget));
     }
   };
 
@@ -3729,8 +3969,19 @@ function startGroupDrag(e) {
     cancelSelectGesture = null;
     brds.forEach(o => o.el && o.el.classList.remove('is-moving'));
     highlightDropCard(null);
+    highlightImageDropTarget(null);
     if (!moved) return;
 
+    // Imagen del lienzo soltada sobre un link o un tablero: pasa a ser la imagen de ese link o tablero
+    if (singleImg && imageTarget) {
+      singleImg.i.x = singleImg.x;
+      singleImg.i.y = singleImg.y;
+      getActiveProject().bgImages = getBgImages().filter(i => i.id !== singleImg.i.id);
+      selection.delete(`img:${singleImg.i.id}`);
+      renderBgImages();
+      applyImageToTarget(imageTarget, singleImg.i.id);
+      return;
+    }
     if (singleImg && targetCard) {
       singleImg.i.x = singleImg.x;
       singleImg.i.y = singleImg.y;
@@ -5509,9 +5760,9 @@ function referencedImageIds() {
     (p.bgImages || []).forEach(i => ids.add(i.id));
     (p.tasks || []).forEach(t => (t.images || []).forEach(i => ids.add(i.id)));
     // Imágenes de las pestañas de los tableros y de los links que se muestran como imagen
-    (p.boards || []).forEach(b => { if (b.image) ids.add(b.image); });
+    (p.boards || []).forEach(b => { if (b.image && !isRemoteImage(b.image)) ids.add(b.image); });
     [...(p.tasks || []), ...(p.texts || [])].forEach(o => Object.values(o.linkNames || {}).forEach(v => {
-      if (v && typeof v === 'object' && v.image) ids.add(v.image);
+      if (v && typeof v === 'object' && v.image && !isRemoteImage(v.image)) ids.add(v.image);
     }));
   });
   return ids;
@@ -5578,7 +5829,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '64';
+const APP_VERSION = '65';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -5629,6 +5880,7 @@ function openSettings() {
     settingZoomMin.add(new Option(`${Math.round(appSettings.zoomMin * 100)}%`, value));
   }
   settingZoomMin.value = value;
+  document.getElementById('settingStarredPosition').value = starredPosition();
   settingToolsAutoHide.checked = !!appSettings.toolsAutoHide;
   settingToolsOpacity.value = String(appSettings.toolsHiddenOpacity);
   syncToolsOpacityField();
@@ -5778,6 +6030,8 @@ document.getElementById('settingsForm').addEventListener('submit', (e) => {
   appSettings.toolsAutoHide = settingToolsAutoHide.checked;
   appSettings.toolsHiddenOpacity = Number(settingToolsOpacity.value);
   saveData(SETTINGS_KEY, appSettings);
+  localStorage.setItem(STARRED_POSITION_KEY, document.getElementById('settingStarredPosition').value);
+  renderProjectSwitcher();
   ZOOM_CONFIG.MIN = appSettings.zoomMin;
   // Si ahora la vista está más alejada que el nuevo mínimo, se acerca hasta el mínimo
   if (zoom < ZOOM_CONFIG.MIN) zoomAtCenter(ZOOM_CONFIG.MIN / zoom);
@@ -5962,7 +6216,7 @@ function linkify(str, names = null) {
     const opt = linkOption(names, unescapeHtml(url));
     // Oculto: no se muestra (útil si ya se ve la miniatura del video)
     if (opt.hide) return trail;
-    const attrs = `class="auto-link${opt.image ? ' link-image' : ''}" href="${linkHref(url)}" target="_blank" rel="noopener noreferrer"`;
+    const attrs = `class="auto-link${opt.image ? ' link-image' : ''}" href="${linkHref(url)}" data-url="${url}" target="_blank" rel="noopener noreferrer"`;
     if (opt.image) {
       return `<a ${attrs} title="${escapeHtml(opt.text || unescapeHtml(url))}"><img data-link-img="${escapeHtml(opt.image)}" alt="${escapeHtml(opt.text || 'Link')}" draggable="false"></a>${trail}`;
     }
@@ -5978,10 +6232,16 @@ function linkOption(names, url) {
   return { text: (v.text || '').trim(), hide: !!v.hide, image: v.image || null };
 }
 
+// Una imagen puede ser una guardada en ZenBan (id) o una dirección web (traída de un navegador sin permiso para copiarla)
+function isRemoteImage(ref) {
+  return /^(https?:|data:)/i.test(String(ref || ''));
+}
+
 // Los links mostrados como imagen cargan su imagen guardada al aparecer en pantalla
 function hydrateLinkImages(root = document) {
   root.querySelectorAll('img[data-link-img]:not([src])').forEach(img => {
     const id = img.dataset.linkImg;
+    if (isRemoteImage(id)) { img.src = id; return; }
     const cached = cachedImageVariant(id, 480);
     if (cached) { img.src = cached; return; }
     img.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
