@@ -228,18 +228,75 @@ function loadData(key, fallback) {
 }
 
 function saveData(key, value) {
-  if ((key === STORAGE_KEYS.PROJECTS || key === STORAGE_KEYS.TAGS) && spaceChangedElsewhere()) {
+  const isData = key === STORAGE_KEYS.PROJECTS || key === STORAGE_KEYS.TAGS;
+  if (isData && spaceChangedElsewhere()) {
     reloadForSpaceChange();
     return;
   }
+  // Otra ventana o pestaña de ZenBan guardó mientras tanto: se combina con lo suyo antes de guardar
+  // (antes la última en guardar pisaba lo de la otra, y una tarea nueva podía desaparecer)
+  if (isData && !(typeof SYNC !== 'undefined' && SYNC && SYNC.applying) && otherWindowSaved()) {
+    adoptOtherWindowData();
+    value = key === STORAGE_KEYS.PROJECTS ? projects : tagLibrary;
+  }
+  const text = JSON.stringify(value);
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(key, text);
   } catch (e) {
     console.error('Error saving data to localStorage', e);
   }
+  if (isData) markDataSaved(key, text);
   // Avisar a la sincronización con Drive que hubo cambios locales
-  if (key === STORAGE_KEYS.PROJECTS || key === STORAGE_KEYS.TAGS) onLocalDataChanged();
+  if (isData) onLocalDataChanged();
 }
+
+// ----- Varias ventanas abiertas (la app instalada y una pestaña, dos pestañas…) -----
+// Cada ventana guarda una marca al guardar. Si al guardar la marca no es la que esta ventana conoce,
+// otra ventana guardó: se combinan ambas versiones (por id, como en la sincronización) en vez de pisarla.
+// (con var: saveData puede llamarse al cargar, antes de llegar a estas líneas)
+var DATA_REV_KEY = 'zenban_data_rev';
+var knownDataRev = localStorage.getItem(DATA_REV_KEY) || '';
+// Lo último que esta ventana leyó o guardó (texto): es la base para combinar si otra ventana guarda después
+var dataBaseText = {
+  [STORAGE_KEYS.PROJECTS]: localStorage.getItem(STORAGE_KEYS.PROJECTS) || '[]',
+  [STORAGE_KEYS.TAGS]: localStorage.getItem(STORAGE_KEYS.TAGS) || '[]'
+};
+
+function otherWindowSaved() {
+  if (!dataBaseText) return false;
+  return (localStorage.getItem(DATA_REV_KEY) || '') !== knownDataRev;
+}
+
+function markDataSaved(key, text) {
+  if (!dataBaseText) return;
+  knownDataRev = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  try { localStorage.setItem(DATA_REV_KEY, knownDataRev); } catch (e) {}
+  dataBaseText[key] = text;
+}
+
+function adoptOtherWindowData() {
+  const parse = (t) => { try { return JSON.parse(t); } catch (e) { return []; } };
+  const storedText = { p: localStorage.getItem(STORAGE_KEYS.PROJECTS) || '[]', t: localStorage.getItem(STORAGE_KEYS.TAGS) || '[]' };
+  const stored = { projects: parse(storedText.p), tags: parse(storedText.t), deletedProjects: deletedProjects() };
+  const base = { projects: parse(dataBaseText[STORAGE_KEYS.PROJECTS]), tags: parse(dataBaseText[STORAGE_KEYS.TAGS]) };
+  knownDataRev = localStorage.getItem(DATA_REV_KEY) || '';
+  dataBaseText[STORAGE_KEYS.PROJECTS] = storedText.p;
+  dataBaseText[STORAGE_KEYS.TAGS] = storedText.t;
+  const merged = mergePayloads(localPayload(), stored, base);
+  if (merged.projects.length && !sameJson(dataPart(merged), dataPart(localPayload()))) applyPayload(merged);
+}
+
+// Lo que guarda otra ventana se ve también aquí (si no se está a mitad de un cambio; si no, al terminar)
+let otherWindowPending = false;
+function syncFromOtherWindow() {
+  if (!otherWindowSaved()) { otherWindowPending = false; return; }
+  if (userIsInteracting() || SYNC.busy) { otherWindowPending = true; return; }
+  otherWindowPending = false;
+  adoptOtherWindowData();
+}
+window.addEventListener('storage', (e) => { if (e.key === DATA_REV_KEY) syncFromOtherWindow(); });
+window.addEventListener('focus', syncFromOtherWindow);
+document.addEventListener('pointerup', () => { if (otherWindowPending) setTimeout(syncFromOtherWindow, 50); });
 
 function getActiveProject() {
   return projects.find(p => p.id === activeProjectId) || projects[0];
@@ -4422,10 +4479,7 @@ function startGroupDrag(e) {
   const txts = getTexts().filter(t => moveKeys.has(`text:${t.id}`)).map(t => ({ t, el: getTextEl(t.id), x: t.x, y: t.y }));
   const frms = typeof getFrames === 'function' ? getFrames().filter(f => moveKeys.has(`frame:${f.id}`)).map(f => ({ f, el: getFrameEl(f.id), x: f.x, y: f.y })) : [];
   const singleImg = selection.size === 1 && imgs.length === 1 ? imgs[0] : null;
-  // Un texto con listas de YouTube soltado sobre un widget de progreso suma sus listas
-  const singleListText = selection.size === 1 && txts.length === 1 && !Array.isArray(txts[0].t.ytLists)
-    && youtubeRefs(txts[0].t.text).lists.length ? txts[0] : null;
-  let moved = false, dx = 0, dy = 0, targetCard = null, imageTarget = null, progressTarget = null;
+  let moved = false, dx = 0, dy = 0, targetCard = null, imageTarget = null;
 
   selectGestureActive = true;
   viewportArea.setPointerCapture(e.pointerId);
@@ -4468,12 +4522,6 @@ function startGroupDrag(e) {
       highlightDropCard(targetCard);
       if (singleImg.el) singleImg.el.classList.toggle('is-over-card', !!(targetCard || imageTarget));
     }
-    if (singleListText) {
-      const w = document.elementsFromPoint(ev.clientX, ev.clientY).find(n => n.classList && n.classList.contains('is-ytprogress'));
-      if (progressTarget && progressTarget !== w) progressTarget.classList.remove('is-drop-target');
-      progressTarget = w || null;
-      if (progressTarget) progressTarget.classList.add('is-drop-target');
-    }
   };
 
   const onUp = (ev) => {
@@ -4486,17 +4534,7 @@ function startGroupDrag(e) {
     brds.forEach(o => o.el && o.el.classList.remove('is-moving'));
     highlightDropCard(null);
     highlightImageDropTarget(null);
-    if (progressTarget) progressTarget.classList.remove('is-drop-target');
     if (!moved) return;
-
-    // Texto con listas de YouTube soltado sobre un widget de progreso: vuelve a su lugar y sus listas se suman
-    if (singleListText && progressTarget) {
-      singleListText.t.x = singleListText.x;
-      singleListText.t.y = singleListText.y;
-      const widget = getTexts().find(t => t.id === progressTarget.dataset.textId);
-      if (widget) addListsToYtWidget(widget, singleListText.t);
-      return;
-    }
 
     // Imagen del lienzo soltada sobre un link o un tablero: pasa a ser la imagen de ese link o tablero
     if (singleImg && imageTarget) {
@@ -5048,7 +5086,7 @@ viewportArea.addEventListener('pointerdown', (e) => {
   if (currentTool !== 'select' || isSpacePressed || isPanModeActive || e.button !== 0) return;
   if (e.pointerType === 'touch' && !e.isPrimary) return; // segundo dedo: es para mover el lienzo
   const t = e.target;
-  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle, .frame-handle, .connect-handle')) return;
+  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle, .frame-handle, .connect-handle, .ytlist-handle')) return;
   // Un link dentro de un texto del lienzo también sirve para tomar y mover ese texto (un clic corto lo abre)
   if (t.closest('button, input, select, textarea, a, label') && !t.closest('.canvas-text a')) return;
 
@@ -5923,8 +5961,32 @@ const SYNC_KEYS = {
   DELETED: 'zenban_deleted_projects',
   SWITCH: 'zenban_space_switch',
   CLIENT_ID: 'zenban_google_client_id',
-  STATE: 'zenban_oauth_state'
+  STATE: 'zenban_oauth_state',
+  TOKEN: 'zenban_sync_token' // sesión de Google vigente: al abrir la app se sincroniza sin volver a entrar
 };
+
+function saveSyncToken() {
+  try { localStorage.setItem(SYNC_KEYS.TOKEN, JSON.stringify({ token: SYNC.token, exp: SYNC.tokenExp })); } catch (e) {}
+}
+
+function forgetSyncToken() {
+  SYNC.token = null;
+  localStorage.removeItem(SYNC_KEYS.TOKEN);
+}
+
+// Al abrir la app (o en otra ventana): si la sesión guardada sigue vigente, se usa
+function restoreSyncToken() {
+  if (SYNC.token && Date.now() < SYNC.tokenExp) return true;
+  try {
+    const saved = JSON.parse(localStorage.getItem(SYNC_KEYS.TOKEN) || 'null');
+    if (saved && saved.token && Date.now() < saved.exp) {
+      SYNC.token = saved.token;
+      SYNC.tokenExp = saved.exp;
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
 const DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.appdata openid email profile';
 const DATA_FILE_NAME = 'zenban-data.json';
 
@@ -5969,7 +6031,7 @@ function onLocalDataChanged() {
   SYNC.gen++;
   setDirty(true);
   if (!syncEnabled()) return;
-  if (SYNC.token) scheduleSync(2500);
+  if (SYNC.token || restoreSyncToken()) scheduleSync(2500);
   else setSyncStatus('pending');
 }
 
@@ -6024,6 +6086,7 @@ function setSyncStatus(status) {
   accountChip.title = SYNC_STATUS_TEXT[status] || 'Cuenta';
   renderSyncAge();
   if (typeof renderReconnectState === 'function' && document.getElementById('syncNowBtn')) renderReconnectState();
+  if (typeof renderSyncBanner === 'function') renderSyncBanner();
 }
 
 // Cuánto hace de la última sincronización: bajo el nombre ZenBan (en vez de "Todo Kanban Pro")
@@ -6058,6 +6121,50 @@ function renderSyncAge() {
   tag.title = lastSyncedAt() ? `Última sincronización: ${new Date(lastSyncedAt()).toLocaleString()}` : '';
 }
 setInterval(renderSyncAge, 30000);
+
+// ----- Aviso visible cuando no se está sincronizando (sesión vencida, error o sin conexión) -----
+// Antes solo cambiaba un puntito junto a la foto y era fácil seguir trabajando sin notar que nada se subía.
+const SYNC_BANNER_SNOOZE_KEY = 'zenban_sync_banner_snooze';
+function renderSyncBanner() {
+  let bar = document.getElementById('syncBanner');
+  const on = syncEnabled() && savedUser();
+  const expired = sessionExpired();
+  const offline = !navigator.onLine || SYNC.status === 'offline';
+  const failing = expired || offline || SYNC.status === 'error';
+  const ageMin = lastSyncedAt() ? (Date.now() - lastSyncedAt()) / 60000 : Infinity;
+  const snoozed = Number(sessionStorage.getItem(SYNC_BANNER_SNOOZE_KEY) || 0) > Date.now();
+  const show = on && failing && (isDirty() || ageMin > 5) && !snoozed;
+  if (!show) { if (bar) bar.hidden = true; return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'syncBanner';
+    bar.className = 'sync-banner';
+    bar.setAttribute('role', 'alert');
+    bar.innerHTML = '<span class="sync-banner-icon" aria-hidden="true">⚠</span><span class="sync-banner-text"></span>' +
+      '<button type="button" class="sync-banner-btn"></button>' +
+      '<button type="button" class="sync-banner-close" title="Ocultar unos minutos" aria-label="Ocultar">×</button>';
+    bar.querySelector('.sync-banner-btn').addEventListener('click', () => {
+      if (sessionExpired()) signInWithGoogle(); else syncNow();
+    });
+    bar.querySelector('.sync-banner-close').addEventListener('click', () => {
+      sessionStorage.setItem(SYNC_BANNER_SNOOZE_KEY, String(Date.now() + 10 * 60 * 1000));
+      bar.hidden = true;
+    });
+    document.body.appendChild(bar);
+  }
+  const age = syncAgeText() || 'nunca';
+  bar.querySelector('.sync-banner-text').textContent = isDirty()
+    ? `Tienes cambios sin subir a Drive · última sincronización: ${age}`
+    : `Sin sincronizar (${age}): puede que no estés viendo lo último de tus otros dispositivos`;
+  const btn = bar.querySelector('.sync-banner-btn');
+  btn.hidden = offline;
+  btn.textContent = expired ? 'Reconectar y sincronizar' : 'Sincronizar ahora';
+  bar.classList.toggle('is-dirty', isDirty());
+  bar.hidden = false;
+}
+setInterval(renderSyncBanner, 30000);
+window.addEventListener('online', renderSyncBanner);
+window.addEventListener('offline', renderSyncBanner);
 
 function renderAccount() {
   const user = savedUser();
@@ -6155,6 +6262,7 @@ async function onTokenResponse(resp) {
   }
   SYNC.token = resp.access_token;
   SYNC.tokenExp = Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000;
+  saveSyncToken();
   try {
     const info = await (await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${SYNC.token}` }
@@ -6177,7 +6285,7 @@ function signOutGoogle() {
   if (SYNC.token && window.google && google.accounts && google.accounts.oauth2) {
     try { google.accounts.oauth2.revoke(SYNC.token, () => {}); } catch (e) {}
   }
-  SYNC.token = null;
+  forgetSyncToken();
   SYNC.fileId = null;
   SYNC.remoteVersion = null;
   SYNC.imageFiles = null;
@@ -6263,7 +6371,7 @@ async function driveFetch(url, opts = {}) {
   }
   const r = await fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${SYNC.token}` } });
   if (r.status === 401) {
-    SYNC.token = null;
+    forgetSyncToken();
     throw new Error('auth');
   }
   if (r.status === 403) {
@@ -6498,6 +6606,8 @@ async function syncNow() {
   SYNC.busy = true;
   setSyncStatus('syncing');
   try {
+    // Lo que guardó otra ventana de ZenBan se suma antes de comparar con Drive
+    if (otherWindowSaved()) adoptOtherWindowData();
     const gen = SYNC.gen;
     if (inShared() && typeof checkSharedFolder === 'function' && !(await checkSharedFolder())) return;
     const file = await findDataFile();
@@ -6512,6 +6622,7 @@ async function syncNow() {
     const local = localPayload();
 
     let result = local;
+    let mergeBase = null; // copia de la última sincronización (para saber qué nunca llegó a Drive)
     const switching = localStorage.getItem(SYNC_KEYS.SWITCH) === '1';
     if (switching && !(remote && Array.isArray(remote.projects) && remote.projects.length)) {
       // Se entró a un espacio vacío: empieza con un proyecto nuevo, sin copiar los del espacio anterior
@@ -6530,6 +6641,7 @@ async function syncNow() {
         result = useDrive ? dataPart(remote) : mergePayloads(local, remote, null);
       } else {
         const base = await SyncBase.get();
+        mergeBase = base;
         // Sin copia de la última sincronización y sin cambios aquí: Drive manda (evita revivir lo borrado en otro lado)
         result = !base && !isDirty() ? dataPart(remote) : mergePayloads(local, remote, base);
       }
@@ -6538,7 +6650,7 @@ async function syncNow() {
     // Si hubo cambios aquí mientras se descargaba, se vuelve a empezar para no perderlos
     // (o si otra pestaña cambió de espacio mientras tanto)
     if (spaceChangedElsewhere()) return;
-    if (SYNC.gen !== gen && !switching) {
+    if ((SYNC.gen !== gen || otherWindowSaved()) && !switching) {
       SYNC.again = true;
       return;
     }
@@ -6550,8 +6662,15 @@ async function syncNow() {
       return;
     }
 
-    if (!sameJson(dataPart(result), dataPart(local))) applyPayload(result);
-    else localStorage.setItem(SYNC_KEYS.DELETED, JSON.stringify(result.deletedProjects || []));
+    if (!sameJson(dataPart(result), dataPart(local))) {
+      // Si algo de este dispositivo va a dejar de estar, antes se guarda una copia para poder recuperarlo
+      if (typeof backupBeforeReplace === 'function') {
+        // (al cambiar de espacio es normal que se vaya todo lo del espacio anterior: se guarda, sin aviso)
+        await backupBeforeReplace(local, result, switching ? local : mergeBase, switching ? 'Antes de cambiar de espacio' : 'Antes de traer cambios de Drive');
+        if (SYNC.gen !== gen || otherWindowSaved() || userIsInteracting()) { SYNC.again = true; return; }
+      }
+      applyPayload(result);
+    } else localStorage.setItem(SYNC_KEYS.DELETED, JSON.stringify(result.deletedProjects || []));
 
     // Versión de Drive con la que queda sincronizado (si se sube, la siguiente consulta la obtiene)
     SYNC.remoteVersion = file ? String(file.version) : null;
@@ -6709,13 +6828,16 @@ document.getElementById('signOutBtn').addEventListener('click', () => {
 
 // Traer cambios de otros dispositivos al volver a la app y cada cierto tiempo
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && SYNC.token) syncNow();
+  if (document.visibilityState !== 'visible') return;
+  // Otra ventana pudo reconectar con Google mientras tanto
+  if (syncEnabled() && restoreSyncToken()) syncNow();
+  else renderSyncBanner();
 });
 window.addEventListener('online', () => { if (SYNC.token) syncNow(); });
 // Con datos compartidos se revisan los cambios de los demás cada 15 segundos; si no, cada 45
 let lastPoll = 0;
 setInterval(() => {
-  if (!SYNC.token || document.visibilityState !== 'visible') return;
+  if (document.visibilityState !== 'visible' || !syncEnabled() || !restoreSyncToken()) return;
   if (Date.now() - lastPoll < (inShared() ? 15000 : 45000)) return;
   lastPoll = Date.now();
   syncNow();
@@ -6723,7 +6845,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '85';
+const APP_VERSION = '86';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -6836,6 +6958,9 @@ function openSettings() {
   document.getElementById('settingStarredPosition').value = starredPosition();
   if (typeof renderArchiveSetting === 'function') renderArchiveSetting();
   document.getElementById('settingImageSources').value = appSettings.imageSources ?? DEFAULT_IMAGE_SOURCES;
+  document.getElementById('settingYtCheckSize').value = String(appSettings.ytCheckSize ?? YT_CHECK_DEFAULT.size);
+  document.getElementById('settingYtCheckSizeValue').textContent = `${Math.round((appSettings.ytCheckSize ?? YT_CHECK_DEFAULT.size) * 100)}%`;
+  document.getElementById('settingYtCheckColor').value = appSettings.ytCheckColor || YT_CHECK_DEFAULT.color;
   const backdropInput = document.getElementById('settingModalBackdrop');
   backdropInput.value = String(appSettings.modalBackdrop ?? 15);
   document.getElementById('settingModalBackdropValue').textContent = `${backdropInput.value}%`;
@@ -6982,6 +7107,13 @@ document.getElementById('settingModalBackdrop').addEventListener('input', (e) =>
 refreshAutoHide();
 
 document.getElementById('openSettingsBtn').addEventListener('click', openSettings);
+// Vista previa de las casillas mientras se ajustan (Cancelar las devuelve como estaban)
+['settingYtCheckSize', 'settingYtCheckColor'].forEach(id => document.getElementById(id).addEventListener('input', () => {
+  const size = Number(document.getElementById('settingYtCheckSize').value);
+  document.getElementById('settingYtCheckSizeValue').textContent = `${Math.round(size * 100)}%`;
+  applyYtCheckStyle(size, document.getElementById('settingYtCheckColor').value);
+}));
+['closeSettingsBtn', 'cancelSettingsBtn'].forEach(id => document.getElementById(id).addEventListener('click', () => applyYtCheckStyle()));
 document.getElementById('resetImageSourcesBtn').addEventListener('click', () => {
   document.getElementById('settingImageSources').value = DEFAULT_IMAGE_SOURCES;
 });
@@ -7003,6 +7135,9 @@ document.getElementById('settingsForm').addEventListener('submit', (e) => {
   localStorage.setItem(STARRED_POSITION_KEY, document.getElementById('settingStarredPosition').value);
   appSettings.modalBackdrop = Number(document.getElementById('settingModalBackdrop').value);
   appSettings.imageSources = document.getElementById('settingImageSources').value.trim();
+  appSettings.ytCheckSize = Number(document.getElementById('settingYtCheckSize').value);
+  appSettings.ytCheckColor = document.getElementById('settingYtCheckColor').value;
+  applyYtCheckStyle();
   saveData(SETTINGS_KEY, appSettings);
   applyModalBackdrop();
   renderProjectSwitcher();
@@ -7038,10 +7173,13 @@ document.getElementById('googleSetupForm').addEventListener('submit', (e) => {
   signInWithGoogle();
 });
 
+// Si la sesión de Google guardada sigue vigente, se sincroniza apenas se abre la app
+const hadSavedToken = syncEnabled() && restoreSyncToken();
 renderAccount();
 renderAppVersion();
 const redirectedToken = consumeRedirectToken();
 if (redirectedToken) onTokenResponse(redirectedToken);
+else if (hadSavedToken) setTimeout(syncNow, 300);
 
 // =============================================================================
 // 8. Search, Filtering & Theme Switcher
@@ -7962,7 +8100,7 @@ function ytProgressWidgetHtml(t) {
   return `<div class="ytp-widget"><div class="ytp-head"><b>${escapeHtml(t.text || 'Progreso de listas')}</b>` +
     `<span class="ytp-total">${pct}% · ${done}/${total}</span></div>${ytProgressBarHtml(done, total)}` +
     (lists.length ? `<div class="ytp-lists">${rows}</div>`
-      : '<p class="ytp-empty">Arrastra encima un texto o nota con listas de YouTube para sumar su progreso.</p>') + '</div>';
+      : '<p class="ytp-empty">Selecciona este cuadro y arrastra su círculo verde ＋ hasta una lista de YouTube para sumar su progreso.</p>') + '</div>';
 }
 
 function refreshYtProgressWidgets() {
@@ -7977,14 +8115,14 @@ function refreshYtProgressWidgets() {
 
 function addYtProgressWidget(at) {
   const t = addText('Progreso de listas', at, { ytLists: [], fixedWidth: true, w: Math.round(380 / zoom), size: Math.max(4, Math.round(16 / zoom)) });
-  showToast('Arrastra encima los textos o notas que tengan listas de YouTube para sumar su progreso', 'info');
+  showToast('Arrastra el círculo verde ＋ hasta una lista de YouTube para sumarla al progreso', 'info');
   return t;
 }
 
-// Suma al widget las listas de un texto soltado encima
-function addListsToYtWidget(widget, source) {
-  const lists = youtubeRefs(source.text).lists.filter(id => !widget.ytLists.includes(id));
-  if (!lists.length) { showToast('Esas listas ya están en el progreso', 'info'); return; }
+// Suma listas al widget (se arrastra su círculo verde + hasta una lista)
+function addListIdsToYtWidget(widget, ids) {
+  const lists = ids.filter(id => !widget.ytLists.includes(id));
+  if (!lists.length) { showToast(ids.length === 1 ? 'Esa lista ya está en el progreso' : 'Esas listas ya están en el progreso', 'info'); return; }
   widget.ytLists = [...widget.ytLists, ...lists];
   persist();
   renderTexts();
@@ -8008,6 +8146,14 @@ function refreshYtProgress() {
   document.querySelectorAll('[data-progress-list]').forEach(el => { el.outerHTML = ytListProgressHtml(el.dataset.progressList); });
   if (typeof refreshYtProgressWidgets === 'function') refreshYtProgressWidgets();
 }
+
+// Tamaño y color de las casillas (⚙️ Configuración). Por defecto grandes y con la marca verde.
+const YT_CHECK_DEFAULT = { size: 1.7, color: '#22c55e' };
+function applyYtCheckStyle(size = appSettings.ytCheckSize ?? YT_CHECK_DEFAULT.size, color = appSettings.ytCheckColor || YT_CHECK_DEFAULT.color) {
+  document.documentElement.style.setProperty('--yt-check-size', `${size}em`);
+  document.documentElement.style.setProperty('--yt-check-color', color);
+}
+applyYtCheckStyle();
 
 document.addEventListener('change', (e) => {
   const box = e.target.closest && e.target.closest('[data-yt-check]');

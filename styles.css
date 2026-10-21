@@ -1619,22 +1619,51 @@ body.theme-light .moon-icon { display: none; }
   padding-left: 0.2em;
 }
 
+/* Casilla de "visto": grande y con la marca del color elegido (⚙️ Configuración; verde por defecto) */
 .yt-pl-check {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2.2em;
+  width: calc(var(--yt-check-size, 1.7em) + 1em);
   align-self: stretch;
   cursor: pointer;
 }
 
 .yt-pl-check input {
-  width: 1.15em;
-  height: 1.15em;
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: var(--yt-check-size, 1.7em);
+  height: var(--yt-check-size, 1.7em);
   margin: 0;
-  accent-color: #22c55e;
+  border: 0.14em solid rgba(255, 255, 255, 0.55);
+  border-radius: 0.3em;
+  background: rgba(255, 255, 255, 0.06);
   cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.yt-pl-check input:hover {
+  border-color: var(--yt-check-color, #22c55e);
+}
+
+.yt-pl-check input:checked {
+  border-color: var(--yt-check-color, #22c55e);
+  background: color-mix(in srgb, var(--yt-check-color, #22c55e) 16%, transparent);
+}
+
+/* La marca (✓) dibujada con dos bordes, del color elegido */
+.yt-pl-check input:checked::after {
+  content: '';
+  position: absolute;
+  left: 32%;
+  top: 12%;
+  width: 28%;
+  height: 52%;
+  border: solid var(--yt-check-color, #22c55e);
+  border-width: 0 0.18em 0.18em 0;
+  transform: rotate(45deg);
 }
 
 .yt-pl-row.is-done .yt-pl-item {
@@ -1759,6 +1788,160 @@ body.theme-light .moon-icon { display: none; }
 
 .ytp-remove:hover {
   color: #f87171;
+}
+
+/* Aviso de "sin sincronizar": arriba, bien visible */
+.sync-banner {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: max-content;
+  z-index: 2400;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: calc(100vw - 24px);
+  padding: 0.55rem 0.6rem 0.55rem 0.9rem;
+  border-radius: 999px;
+  background: #b45309;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  animation: popIn 0.2s ease-out;
+}
+
+.sync-banner[hidden] {
+  display: none;
+}
+
+.sync-banner.is-dirty {
+  background: #dc2626;
+}
+
+.sync-banner-text {
+  min-width: 0;
+}
+
+.sync-banner-btn {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sync-banner-close {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.3rem;
+}
+
+@media (max-width: 640px) {
+  .sync-banner {
+    top: 112px;
+    border-radius: 14px;
+    font-size: 0.78rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+/* Copias de seguridad */
+.backups-card {
+  max-width: 640px;
+  width: calc(100vw - 32px);
+}
+
+.backups-body {
+  padding: 1rem 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.backups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.backup-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.backup-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.backup-info small {
+  color: var(--text-muted);
+}
+
+.backup-info .backup-missing {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.settings-inline-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+
+/* Manija del widget de progreso: se arrastra hasta una lista de YouTube para sumarla */
+.ytlist-handle {
+  position: absolute;
+  z-index: 60;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -26px;
+  transform: translateX(calc(-12px * var(--inv-zoom, 1))) scale(var(--inv-zoom, 1));
+  transform-origin: 100% 50%;
+  border-radius: 50%;
+  background: #16a34a;
+  color: #fff;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.ytlist-handle[hidden] {
+  display: none;
+}
+
+.yt-playlist.is-ytlist-target {
+  outline: calc(3px * var(--inv-zoom, 1)) dashed #22c55e;
+  outline-offset: 2px;
 }
 
 .ytp-empty {

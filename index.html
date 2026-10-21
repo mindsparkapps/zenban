@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=67">
+  <link rel="stylesheet" href="styles.css?v=69">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -990,6 +990,16 @@
             <button type="button" class="btn btn-ghost btn-sm" id="openArchiveBtn">📦 Ver tareas archivadas</button>
           </div>
           <div class="form-group">
+            <label>Copias de seguridad</label>
+            <p class="setup-text">Si algo desaparece al sincronizar, aquí lo recuperas.</p>
+            <button type="button" class="btn btn-ghost btn-sm" id="openBackupsBtn">🛟 Ver copias de seguridad</button>
+          </div>
+          <div class="form-group">
+            <label for="settingYtCheckSize" class="settings-range-label">Casillas de las listas de YouTube: <strong id="settingYtCheckSizeValue">170%</strong></label>
+            <input type="range" id="settingYtCheckSize" min="1" max="3" step="0.1" value="1.7">
+            <label class="settings-inline-color">Color de la marca <input type="color" id="settingYtCheckColor" value="#22c55e"></label>
+          </div>
+          <div class="form-group">
             <label for="settingImageSources">Fuentes de imágenes en la biblioteca</label>
             <textarea id="settingImageSources" rows="5" wrap="off" spellcheck="false" placeholder="Nombre | https://sitio.com/buscar?q={q}"></textarea>
             <p class="setup-text">Una por línea: <code>Nombre | URL</code>. <code>{q}</code> se cambia por lo que escribas en el filtro de la biblioteca. Se abren en el navegador; descarga o copia la imagen y pégala o arrástrala al lienzo.</p>
@@ -1033,14 +1043,15 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=85"></script>
+  <script src="app.js?v=86"></script>
   <script src="share.js?v=7"></script>
   <script src="transfer.js?v=7"></script>
   <script src="spaces.js?v=8"></script>
   <script src="capture.js?v=1"></script>
   <script src="archive.js?v=3"></script>
   <script src="translator.js?v=3"></script>
-  <script src="frames.js?v=4"></script>
+  <script src="frames.js?v=5"></script>
   <script src="objstyle.js?v=2"></script>
+  <script src="backups.js?v=1"></script>
 </body>
 </html>

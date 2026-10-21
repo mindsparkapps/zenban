@@ -340,6 +340,7 @@ connectHandle.hidden = true;
 zoomCanvas.appendChild(connectHandle);
 
 function updateConnectHandle() {
+  if (typeof updateYtListHandle === 'function' && typeof ytListHandle !== 'undefined') updateYtListHandle();
   const key = selection.size === 1 ? [...selection][0] : '';
   const r = currentTool === 'select' && /^(frame|text|img|board):/.test(key) ? objectRectByKey(key) : null;
   connectHandle.hidden = !r;
@@ -348,6 +349,91 @@ function updateConnectHandle() {
   connectHandle.style.left = `${r.x + r.w}px`;
   connectHandle.style.top = `${r.y + r.h / 2}px`;
 }
+
+// ----- Manija del widget "Progreso de listas": círculo verde (+) a su izquierda. Se arrastra hasta una
+//       lista de YouTube (en un texto, nota o tarea) y esa lista se suma al widget -----
+const ytListHandle = document.createElement('div');
+ytListHandle.className = 'ytlist-handle';
+ytListHandle.title = 'Arrastra hasta una lista de YouTube para sumarla a este progreso';
+ytListHandle.textContent = '+';
+ytListHandle.hidden = true;
+zoomCanvas.appendChild(ytListHandle);
+let ytListDraft = null;
+
+function updateYtListHandle() {
+  const key = selection.size === 1 ? [...selection][0] : '';
+  const t = currentTool === 'select' && key.startsWith('text:') ? getTexts().find(x => x.id === key.slice(5)) : null;
+  const r = t && Array.isArray(t.ytLists) ? objectRectByKey(key) : null;
+  ytListHandle.hidden = !r || !!ytListDraft;
+  if (!r) return;
+  ytListHandle.dataset.textId = t.id;
+  ytListHandle.style.left = `${r.x}px`;
+  ytListHandle.style.top = `${r.y + r.h / 2}px`;
+}
+
+// Listas de YouTube bajo un punto: la lista exacta si se suelta sobre una; si no, todas las del texto o la tarea
+function ytListsAtPoint(clientX, clientY) {
+  for (const n of document.elementsFromPoint(clientX, clientY)) {
+    if (!(n instanceof Element) || n.closest('.is-ytprogress')) continue;
+    const pl = n.closest('.yt-playlist[data-list]');
+    if (pl) return { ids: [pl.dataset.list], el: pl };
+    const textEl = n.closest('.canvas-text');
+    if (textEl) {
+      const t = getTexts().find(x => x.id === textEl.dataset.textId);
+      const ids = t ? youtubeRefs(t.text).lists : [];
+      if (ids.length) return { ids, el: textEl };
+    }
+    const card = n.closest('.kanban-card');
+    if (card) {
+      const task = tasks.find(x => x.id === card.dataset.taskId);
+      const ids = task ? youtubeRefs([task.description, ...(task.subtasks || []).map(s => s.text)].join('\n')).lists : [];
+      if (ids.length) return { ids, el: card };
+    }
+  }
+  return null;
+}
+
+ytListHandle.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const t = getTexts().find(x => x.id === ytListHandle.dataset.textId);
+  if (!t) return;
+  const line = document.createElementNS(SVG_NS, 'path');
+  line.setAttribute('class', 'connector-draft');
+  line.setAttribute('stroke-width', 3 / zoom);
+  connectorLayer.appendChild(line);
+  ytListDraft = { t, line, pointerId: e.pointerId, target: null };
+  ytListHandle.hidden = true;
+  try { viewportArea.setPointerCapture(e.pointerId); } catch (err) {}
+});
+
+viewportArea.addEventListener('pointermove', (e) => {
+  if (!ytListDraft || e.pointerId !== ytListDraft.pointerId) return;
+  const p = screenToCanvas(e.clientX, e.clientY);
+  const a = objectRectByKey(`text:${ytListDraft.t.id}`);
+  if (!a) return;
+  const start = rectEdgePoint(a, p);
+  ytListDraft.line.setAttribute('d', `M ${start.x} ${start.y} L ${p.x} ${p.y} ${arrowHead(start.x, start.y, p.x, p.y, 3 / zoom)}`);
+  const hit = ytListsAtPoint(e.clientX, e.clientY);
+  if (ytListDraft.target && (!hit || hit.el !== ytListDraft.target)) ytListDraft.target.classList.remove('is-ytlist-target', 'is-connect-target');
+  ytListDraft.target = hit ? hit.el : null;
+  if (hit) hit.el.classList.add(hit.el.classList.contains('yt-playlist') ? 'is-ytlist-target' : 'is-connect-target');
+});
+
+function endYtListDraft(e) {
+  if (!ytListDraft || e.pointerId !== ytListDraft.pointerId) return;
+  const { t, line, target } = ytListDraft;
+  ytListDraft = null;
+  line.remove();
+  if (target) target.classList.remove('is-ytlist-target', 'is-connect-target');
+  const hit = e.type === 'pointerup' ? ytListsAtPoint(e.clientX, e.clientY) : null;
+  if (hit) addListIdsToYtWidget(t, hit.ids);
+  else if (e.type === 'pointerup') showToast('Suéltalo sobre una lista de YouTube (en un texto, una nota o una tarea)', 'info');
+  setSelection([`text:${t.id}`]);
+}
+viewportArea.addEventListener('pointerup', endYtListDraft);
+viewportArea.addEventListener('pointercancel', endYtListDraft);
 
 connectHandle.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
