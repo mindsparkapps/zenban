@@ -82,6 +82,11 @@ function applyFrameStyle(el, f) {
   el.classList.toggle('is-locked', !!f.locked);
   // Ancho del frame: limita el tamaño de su pestaña de imagen al alejar la vista (como en los tableros)
   el.style.setProperty('--board-w', `${f.w}px`);
+  // Estilo del título
+  el.style.setProperty('--frame-title-bg', hexToRgba(f.titleBg || f.color, (f.titleFill ?? 100) / 100));
+  el.style.setProperty('--frame-title-color', f.titleColor || '#ffffff');
+  el.style.setProperty('--frame-title-size', `${f.titleSize || 13}px`);
+  el.style.setProperty('--frame-title-weight', f.titleBold === false ? '400' : '700');
 }
 
 function renderFrames() {
@@ -91,9 +96,11 @@ function renderFrames() {
     el.className = 'canvas-frame';
     el.dataset.frameId = f.id;
     applyFrameStyle(el, f);
+    // "Ocultar título e ícono" (para presentar el diagrama): no se dibujan la pestaña ni el título
     el.innerHTML = `
-      ${f.image ? `<div class="board-image-tab frame-image-tab" title="Arrastra para mover el frame"><img data-board-img="${escapeHtml(f.image)}" alt="" draggable="false"></div>` : ''}
-      ${f.title ? `<div class="frame-title">${escapeHtml(f.title)}</div>` : ''}
+      <div class="frame-drop-bar"></div>
+      ${f.image && !f.hideLabels ? `<div class="board-image-tab frame-image-tab" title="Arrastra para mover el frame"><img data-board-img="${escapeHtml(f.image)}" alt="" draggable="false"></div>` : ''}
+      ${f.title && !f.hideLabels ? `<div class="frame-title">${escapeHtml(f.title)}</div>` : ''}
       ${f.locked ? '<button type="button" class="frame-lock-badge" title="Volver a mover el frame">✋ Trabajando dentro · <b>Listo</b></button>' : ''}
       <div class="frame-handle" title="Arrastra para agrandar o achicar"></div>`;
     el.querySelector('.frame-handle').addEventListener('pointerdown', (e) => startFrameResize(e, f, el));
@@ -322,6 +329,22 @@ viewportArea.addEventListener('pointermove', (e) => {
   connectorDraft.line.setAttribute('d', `M ${start.x} ${start.y} L ${p.x} ${p.y} ${arrowHead(start.x, start.y, p.x, p.y, 3 / zoom)}`);
 });
 
+// Un conector nuevo copia el estilo de los que ya tocan esos objetos; si hay varios, el último configurado
+// (styledAt se guarda al cambiar color, grosor, opacidad o puntas; si no hay, el más nuevo)
+function inheritedConnectorStyle(from, to) {
+  let best = null, bestAt = -1;
+  getConnectors().forEach((c, i) => {
+    const ends = [endpointKey(c.from), endpointKey(c.to)];
+    if (!ends.includes(from) && !ends.includes(to)) return;
+    const at = c.styledAt || i;
+    if (at >= bestAt) { best = c; bestAt = at; }
+  });
+  if (!best) return {};
+  const style = { color: best.color, size: best.size, opacity: best.opacity ?? 1, both: !!best.both };
+  if (best.styledAt) style.styledAt = best.styledAt;
+  return style;
+}
+
 function endConnectorDraft(e) {
   if (!connectorDraft || e.pointerId !== connectorDraft.pointerId) return;
   const { from, line } = connectorDraft;
@@ -335,7 +358,7 @@ function endConnectorDraft(e) {
     return (f === from && t === to) || (f === to && t === from);
   });
   if (exists) { showToast('Esos objetos ya están conectados', 'info'); return; }
-  const c = { id: generateId('conn'), from, to, color: '#94a3b8', size: Math.max(1, +(3 / zoom).toFixed(1)), both: false, opacity: 1 };
+  const c = { id: generateId('conn'), from, to, color: '#94a3b8', size: Math.max(1, +(3 / zoom).toFixed(1)), both: false, opacity: 1, ...inheritedConnectorStyle(from, to) };
   getConnectors().push(c);
   persist();
   renderConnectors();
@@ -353,6 +376,10 @@ const ctxConnColor = document.getElementById('ctxConnColor');
 const ctxConnSize = document.getElementById('ctxConnSize');
 const ctxFrameOpacity = document.getElementById('ctxFrameOpacity');
 const ctxConnOpacity = document.getElementById('ctxConnOpacity');
+const ctxFrameTitleBg = document.getElementById('ctxFrameTitleBg');
+const ctxFrameTitleColor = document.getElementById('ctxFrameTitleColor');
+const ctxFrameTitleSize = document.getElementById('ctxFrameTitleSize');
+const ctxFrameTitleFill = document.getElementById('ctxFrameTitleFill');
 
 // Llena los controles con el frame o conector seleccionado (lo llama updateContextBar)
 function syncFrameControls(ctx) {
@@ -367,6 +394,13 @@ function syncFrameControls(ctx) {
     ctxFrameRadius.max = String(Math.max(80, Math.round(Math.min(f.w, f.h) / 2)));
     ctxFrameRadius.value = String(f.radius || 0);
     ctxFrameOpacity.value = String(Math.round((f.opacity ?? 1) * 100));
+    ctxFrameTitleBg.value = f.titleBg || f.color || FRAME_DEFAULT_COLOR;
+    ctxFrameTitleColor.value = f.titleColor || '#ffffff';
+    ctxFrameTitleSize.value = String(f.titleSize || 13);
+    ctxFrameTitleFill.value = String(f.titleFill ?? 100);
+    document.getElementById('ctxFrameTitleBold').classList.toggle('is-active', f.titleBold !== false);
+    document.getElementById('ctxFrameHideLabels').classList.toggle('is-active', !!f.hideLabels);
+    document.querySelector('#ctxFrameHideLabels span:last-child').textContent = f.hideLabels ? 'Mostrar título e ícono' : 'Ocultar título e ícono';
     document.getElementById('ctxFrameImageRemove').hidden = !f.image;
   } else if (ctx.type === 'conn') {
     const c = selectedConnectors()[0];
@@ -394,6 +428,36 @@ ctxFrameRadius.addEventListener('input', () => eachFrame(f => { f.radius = Numbe
 ctxFrameRadius.addEventListener('change', () => persist());
 ctxFrameOpacity.addEventListener('input', () => eachFrame(f => { f.opacity = Number(ctxFrameOpacity.value) / 100; }));
 ctxFrameOpacity.addEventListener('change', () => persist());
+
+// Estilo del título: se muestra/oculta el grupo de controles
+const ctxFrameTitleStyle = document.getElementById('ctxFrameTitleStyle');
+ctxFrameTitleStyle.addEventListener('click', () => {
+  const opts = document.getElementById('ctxFrameTitleOpts');
+  opts.hidden = !opts.hidden;
+  ctxFrameTitleStyle.setAttribute('aria-expanded', String(!opts.hidden));
+});
+ctxFrameTitleBg.addEventListener('input', () => eachFrame(f => { f.titleBg = ctxFrameTitleBg.value; }));
+ctxFrameTitleColor.addEventListener('input', () => eachFrame(f => { f.titleColor = ctxFrameTitleColor.value; }));
+ctxFrameTitleSize.addEventListener('input', () => eachFrame(f => { f.titleSize = Number(ctxFrameTitleSize.value); }));
+ctxFrameTitleFill.addEventListener('input', () => eachFrame(f => { f.titleFill = Number(ctxFrameTitleFill.value); }));
+[ctxFrameTitleBg, ctxFrameTitleColor, ctxFrameTitleSize, ctxFrameTitleFill].forEach(input => input.addEventListener('change', () => persist()));
+document.getElementById('ctxFrameTitleBold').addEventListener('click', () => {
+  const bold = !(selectedFrames()[0] && selectedFrames()[0].titleBold !== false);
+  eachFrame(f => { f.titleBold = bold; });
+  persist();
+  updateContextBar();
+});
+
+// Ocultar el título y el ícono de arrastre (para presentar el diagrama); el frame se sigue moviendo por su borde
+document.getElementById('ctxFrameHideLabels').addEventListener('click', () => {
+  const frames = selectedFrames();
+  if (!frames.length) return;
+  const hide = !frames[0].hideLabels;
+  frames.forEach(f => { f.hideLabels = hide; });
+  persist();
+  renderFrames();
+  updateContextBar();
+});
 
 // "Trabajar dentro": el frame deja de tomar los clics hasta que se toca "Listo" en su etiqueta
 document.getElementById('ctxFrameLock').addEventListener('click', () => {
@@ -429,7 +493,7 @@ document.getElementById('ctxFrameImageRemove').addEventListener('click', () => {
   updateContextBar();
 });
 
-const eachConn = (fn) => { selectedConnectors().forEach(fn); renderConnectors(); };
+const eachConn = (fn) => { const now = Date.now(); selectedConnectors().forEach(c => { fn(c); c.styledAt = now; }); renderConnectors(); };
 ctxConnColor.addEventListener('input', () => { eachConn(c => { c.color = ctxConnColor.value; }); ctxDot.style.background = ctxConnColor.value; });
 ctxConnColor.addEventListener('change', () => persist());
 ctxConnSize.addEventListener('input', () => eachConn(c => { c.size = +(Number(ctxConnSize.value) / zoom).toFixed(2); }));

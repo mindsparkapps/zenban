@@ -3356,7 +3356,44 @@ select option:checked {
   text-decoration: underline;
 }
 
-/* Título del frame: arriba a la izquierda, con su color */
+/* Barra superior del frame: al soltar ahí una imagen se ve la línea segmentada (como en los tableros) */
+.frame-drop-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(40px * var(--inv-zoom, 1));
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.frame-drop-bar.is-image-drop {
+  outline: calc(3px * var(--inv-zoom, 1)) dashed #22c55e;
+  outline-offset: calc(-3px * var(--inv-zoom, 1));
+  background-color: rgba(34, 197, 94, 0.18);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.ctx-frame-title-opts {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.ctx-frame-title-opts[hidden] {
+  display: none;
+}
+
+#ctxFrameTitleStyle[aria-expanded="true"],
+#ctxFrameHideLabels.is-active,
+#ctxFrameTitleBold.is-active {
+  background: var(--accent-primary-light);
+  border-color: var(--accent-primary);
+}
+
+/* Título del frame: arriba a la izquierda, con su color (configurable: fondo, texto, tamaño y relleno) */
 .frame-title {
   position: absolute;
   left: calc(10px * var(--inv-zoom, 1));
@@ -3364,10 +3401,10 @@ select option:checked {
   max-width: calc(100% - 20px * var(--inv-zoom, 1));
   padding: calc(3px * var(--inv-zoom, 1)) calc(9px * var(--inv-zoom, 1));
   border-radius: calc(8px * var(--inv-zoom, 1));
-  background: var(--frame-color, #6366f1);
-  color: #fff;
-  font-weight: 700;
-  font-size: calc(13px * var(--inv-zoom, 1));
+  background: var(--frame-title-bg, var(--frame-color, #6366f1));
+  color: var(--frame-title-color, #fff);
+  font-weight: var(--frame-title-weight, 700);
+  font-size: calc(var(--frame-title-size, 13px) * var(--inv-zoom, 1));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

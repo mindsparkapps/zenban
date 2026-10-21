@@ -3305,13 +3305,14 @@ function imageDropTargetAt(clientX, clientY) {
     if (framePart && typeof getFrames === 'function') {
       const fel = framePart.closest('.canvas-frame');
       const frame = fel && getFrames().find(f => f.id === fel.dataset.frameId);
-      if (frame) return { type: 'frame', frame, el: framePart };
+      // La pestaña se marca a sí misma; el título marca la barra superior (línea segmentada)
+      if (frame) return { type: 'frame', frame, el: framePart.classList.contains('frame-title') ? (fel.querySelector('.frame-drop-bar') || framePart) : framePart };
     }
     // Barra superior del frame (aunque no tenga título ni pestaña), como el encabezado de un tablero
     if (n.classList.contains('canvas-frame') && !n.classList.contains('is-locked') && typeof getFrames === 'function'
       && clientY - n.getBoundingClientRect().top <= 40) {
       const frame = getFrames().find(f => f.id === n.dataset.frameId);
-      if (frame) return { type: 'frame', frame, el: n };
+      if (frame) return { type: 'frame', frame, el: n.querySelector('.frame-drop-bar') || n };
     }
   }
   return null;
@@ -6547,7 +6548,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '82';
+const APP_VERSION = '83';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=63">
+  <link rel="stylesheet" href="styles.css?v=64">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -180,6 +180,27 @@
         <!-- Frame(s) -->
         <div class="ctx-panel" data-ctx="frame" hidden>
           <input type="text" class="ctx-frame-title" id="ctxFrameTitle" placeholder="Título del frame" maxlength="80" aria-label="Título del frame">
+          <button type="button" class="ctx-btn" id="ctxFrameTitleStyle" title="Estilo del título (color, texto, tamaño y relleno)" aria-expanded="false"><span>Aa</span><span>Estilo del título</span></button>
+          <span class="ctx-frame-title-opts" id="ctxFrameTitleOpts" hidden>
+            <label class="ctx-color" title="Color de fondo del título">
+              <span>Fondo</span>
+              <input type="color" id="ctxFrameTitleBg" value="#6366f1">
+            </label>
+            <label class="ctx-color" title="Color del texto del título">
+              <span>Texto</span>
+              <input type="color" id="ctxFrameTitleColor" value="#ffffff">
+            </label>
+            <label class="ctx-range" title="Tamaño del texto del título">
+              <span>Tamaño</span>
+              <input type="range" id="ctxFrameTitleSize" min="9" max="48" step="1" value="13">
+            </label>
+            <label class="ctx-range" title="Relleno del fondo del título (0 = sin fondo)">
+              <span>Relleno</span>
+              <input type="range" id="ctxFrameTitleFill" min="0" max="100" step="5" value="100">
+            </label>
+            <button type="button" class="ctx-btn" id="ctxFrameTitleBold" title="Negrita"><b>N</b></button>
+          </span>
+          <button type="button" class="ctx-btn" id="ctxFrameHideLabels" title="Ocultar el título y el ícono de arrastre (para presentar el diagrama)"><span>👁</span><span>Ocultar título e ícono</span></button>
           <label class="ctx-color" title="Color del borde">
             <span>Color</span>
             <input type="color" id="ctxFrameColor" value="#6366f1">
@@ -970,13 +991,13 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=82"></script>
+  <script src="app.js?v=83"></script>
   <script src="share.js?v=7"></script>
   <script src="transfer.js?v=7"></script>
   <script src="spaces.js?v=8"></script>
   <script src="capture.js?v=1"></script>
   <script src="archive.js?v=3"></script>
   <script src="translator.js?v=3"></script>
-  <script src="frames.js?v=2"></script>
+  <script src="frames.js?v=3"></script>
 </body>
 </html>
