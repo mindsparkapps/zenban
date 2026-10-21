@@ -161,17 +161,31 @@ renderProjectSwitcher = function () {
       if (!n.querySelector('.project-shared-mark')) n.insertAdjacentHTML('afterbegin', '<span class="project-shared-mark" title="Compartido">👥</span>');
     });
   }
-  // Conectando con Google (la sesión se recupera al abrir la app): se avisa que faltan los otros espacios
-  const connecting = !signedIn() && syncEnabled();
-  if (!signedIn() && !connecting) return;
+  // Sin sesión de Google (venció al cerrar la app): se está conectando, o no se pudo y se ofrece reintentar
+  const failed = !signedIn() && syncEnabled() && OtherSpaces.connectFailed;
+  const connecting = !signedIn() && syncEnabled() && !failed;
+  if (!signedIn() && !connecting && !failed) return;
   projectList.insertBefore(sectionHeader(here, 'Espacio actual'), projectList.firstChild);
-  const loading = connecting || !!OtherSpaces.loading;
-  const entries = knownOtherSpaces();
+  if (failed) {
+    const head = document.createElement('li');
+    head.className = 'project-section is-shared';
+    head.innerHTML = '<span>👥 Otros espacios</span><small>Sin conexión con Google</small>';
+    const li = document.createElement('li');
+    li.className = 'project-section-note';
+    li.innerHTML = '<button type="button" class="btn btn-primary btn-sm project-connect-btn">Conectar con Google</button>';
+    li.querySelector('button').addEventListener('click', (e) => { e.stopPropagation(); openProjectMenu(); });
+    projectList.appendChild(head);
+    projectList.appendChild(li);
+  }
+  const syncing = signedIn() && SYNC.busy;
+  const loading = connecting || syncing || !!OtherSpaces.loading;
+  const entries = failed ? [] : knownOtherSpaces();
+  const loadingLabel = connecting ? 'Conectando…' : syncing ? 'Sincronizando…' : 'Cargando…';
   if (!entries.length && loading) {
     // Todavía no se sabe qué hay: sección "cargando" con filas grises animadas
     const head = document.createElement('li');
     head.className = 'project-section is-shared';
-    head.innerHTML = `<span>👥 Otros espacios</span>${loadingNote(connecting ? 'Conectando…' : 'Cargando…')}`;
+    head.innerHTML = `<span>👥 Otros espacios</span>${loadingNote(loadingLabel)}`;
     projectList.appendChild(head);
     for (let i = 0; i < 2; i++) {
       const li = document.createElement('li');
@@ -207,26 +221,53 @@ function loadingNote(label) {
   return `<small class="project-loading"><span class="project-spinner" aria-hidden="true"></span>${escapeHtml(label)}</small>`;
 }
 
-// Al abrir el menú se buscan (o refrescan) los otros espacios.
-// Si la sesión de Google aún se está recuperando, se espera a que termine (hasta 20 s).
+// Al abrir el menú: si la sesión de Google venció, se conecta (y sincroniza) primero;
+// después se buscan o refrescan los otros espacios. Si no se logra en 25 s, se ofrece reintentar.
 let waitSignInTimer = null;
+const REOPEN_PROJECTS_KEY = 'zenban_reopen_projects';
 const baseOpenProjectMenu = openProjectMenu;
 openProjectMenu = function () {
   baseOpenProjectMenu();
   clearInterval(waitSignInTimer);
-  const refresh = () => {
-    loadOtherSpaces().then(() => { if (!projectMenu.hidden) renderProjectSwitcher(); }).catch(() => { if (!projectMenu.hidden) renderProjectSwitcher(); });
-    if (OtherSpaces.loading) renderProjectSwitcher();
+  OtherSpaces.connectFailed = false;
+  const rerender = () => { if (!projectMenu.hidden) renderProjectSwitcher(); };
+  const refresh = async () => {
+    renderProjectSwitcher();
+    // Primero se sube lo pendiente de este espacio, así la lista y el cambio de espacio parten al día
+    if (isDirty() || !SYNC.remoteVersion) await syncNow().catch(() => {});
+    loadOtherSpaces().then(rerender).catch(rerender);
+    if (OtherSpaces.loading) rerender();
   };
   if (signedIn()) { refresh(); return; }
   if (!syncEnabled()) return;
+  // Se inicia sesión ahora (el toque del usuario permite abrir la ventana de Google).
+  // En la app instalada del celular es por redirección: al volver se abre la lista sola.
+  if (isInstalledApp()) localStorage.setItem(REOPEN_PROJECTS_KEY, String(Date.now()));
+  signInWithGoogle();
   renderProjectSwitcher();
-  const end = Date.now() + 20000;
+  const end = Date.now() + 25000;
   waitSignInTimer = setInterval(() => {
-    if (projectMenu.hidden || Date.now() > end) { clearInterval(waitSignInTimer); if (!projectMenu.hidden) renderProjectSwitcher(); return; }
-    if (signedIn()) { clearInterval(waitSignInTimer); refresh(); }
+    if (projectMenu.hidden) { clearInterval(waitSignInTimer); return; }
+    if (signedIn()) { clearInterval(waitSignInTimer); refresh(); return; }
+    if (Date.now() > end) {
+      clearInterval(waitSignInTimer);
+      OtherSpaces.connectFailed = true;
+      rerender();
+    }
   }, 400);
 };
+
+// Volviendo del inicio de sesión por redirección: abre de nuevo la lista de proyectos
+(function reopenProjectsAfterLogin() {
+  const at = Number(localStorage.getItem(REOPEN_PROJECTS_KEY) || 0);
+  localStorage.removeItem(REOPEN_PROJECTS_KEY);
+  if (!at || Date.now() - at > 5 * 60 * 1000) return;
+  const end = Date.now() + 20000;
+  const timer = setInterval(() => {
+    if (signedIn()) { clearInterval(timer); openProjectMenu(); }
+    else if (Date.now() > end) clearInterval(timer);
+  }, 400);
+})();
 
 // ----- Cambiar de espacio sin perder datos -----
 function toStoredSpace(s) {

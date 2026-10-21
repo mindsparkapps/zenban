@@ -1241,6 +1241,11 @@ function renderBoardContent() {
       </header>
       <div class="board-columns"></div>
     `;
+    // Imagen del tablero: pestaña arriba a la izquierda (para reconocerlo y arrastrarlo; no se achica demasiado al alejar)
+    if (board.image) {
+      frame.insertAdjacentHTML('afterbegin', `<div class="board-image-tab" title="Arrastra para mover el tablero"><img data-board-img="${escapeHtml(board.image)}" alt="" draggable="false"></div>`);
+      hydrateBoardImages(frame);
+    }
     frame.querySelector('[data-board-action="add-column"]').addEventListener('click', () => openColumnModal(null, board.id));
     frame.querySelector('[data-board-action="edit"]').addEventListener('click', () => openBoardModal(board.id));
 
@@ -2455,11 +2460,8 @@ const ImageStore = {
   keys() { return this.run('readonly', s => s.getAllKeys()); },
   async gc() {
     try {
-      const used = new Set();
-      projects.forEach(p => {
-        (p.bgImages || []).forEach(i => used.add(i.id));
-        (p.tasks || []).forEach(t => (t.images || []).forEach(i => used.add(i.id)));
-      });
+      // Lienzo, tareas, pestañas de tableros y links con imagen (la misma lista que se sincroniza)
+      const used = referencedImageIds();
       const all = await this.keys();
       // Las versiones reducidas ("id@tamaño") se conservan mientras su imagen original se use
       for (const k of all || []) if (!used.has(String(k).split('@')[0])) await this.purge(k);
@@ -3454,6 +3456,42 @@ const boardTemplateGroup = document.getElementById('boardTemplateGroup');
 const boardTemplateSelect = document.getElementById('boardTemplateSelect');
 const deleteBoardBtn = document.getElementById('deleteBoardBtn');
 
+// Imagen del tablero (pestaña arriba a la izquierda para reconocerlo y arrastrarlo)
+const boardImagePreview = document.getElementById('boardImagePreview');
+const boardImageInput = document.getElementById('boardImageInput');
+const boardImageRemoveBtn = document.getElementById('boardImageRemoveBtn');
+let boardModalImage = null;
+
+function renderBoardImageField() {
+  boardImagePreview.innerHTML = boardModalImage ? `<img data-board-img="${escapeHtml(boardModalImage)}" alt="">` : '<span>Sin imagen</span>';
+  boardImageRemoveBtn.hidden = !boardModalImage;
+  hydrateBoardImages(boardImagePreview);
+}
+
+document.getElementById('boardImagePickBtn').addEventListener('click', () => boardImageInput.click());
+boardImageRemoveBtn.addEventListener('click', () => { boardModalImage = null; renderBoardImageField(); });
+boardImageInput.addEventListener('change', async () => {
+  const file = boardImageInput.files && boardImageInput.files[0];
+  boardImageInput.value = '';
+  if (!file) return;
+  try {
+    boardModalImage = (await storeImageFile(file)).id;
+    renderBoardImageField();
+  } catch (e) {
+    showToast('No se pudo usar esa imagen', 'warning');
+  }
+});
+
+function hydrateBoardImages(root = document) {
+  root.querySelectorAll('img[data-board-img]:not([src])').forEach(img => {
+    const id = img.dataset.boardImg;
+    const cached = cachedImageVariant(id, 480);
+    if (cached) { img.src = cached; return; }
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+    getImageVariantUrl(id, 480).then(url => { if (url) img.src = url; });
+  });
+}
+
 window.openBoardModal = function(boardId = null) {
   ensureBoards();
   if (boardId) {
@@ -3463,6 +3501,7 @@ window.openBoardModal = function(boardId = null) {
     boardIdInput.value = board.id;
     boardTitleInput.value = board.title;
     boardColorInput.value = board.color || '#6366f1';
+    boardModalImage = board.image || null;
     boardTemplateGroup.style.display = 'none';
     deleteBoardBtn.style.display = 'block';
   } else {
@@ -3470,10 +3509,12 @@ window.openBoardModal = function(boardId = null) {
     boardIdInput.value = '';
     boardTitleInput.value = '';
     boardColorInput.value = PALETTE_COLORS[boards.length % PALETTE_COLORS.length];
+    boardModalImage = null;
     boardTemplateGroup.style.display = '';
     boardTemplateSelect.value = 'basic';
     deleteBoardBtn.style.display = 'none';
   }
+  renderBoardImageField();
   buildColorPalette(boardColorPalette, boardColorInput);
   boardModal.style.display = 'flex';
   setTimeout(() => boardTitleInput.focus(), 60);
@@ -3497,6 +3538,8 @@ boardForm.addEventListener('submit', (e) => {
     if (board) {
       board.title = title;
       board.color = boardColorInput.value;
+      if (boardModalImage) board.image = boardModalImage;
+      else delete board.image;
     }
     showToast('Tablero actualizado', 'info');
   } else {
@@ -3510,6 +3553,7 @@ boardForm.addEventListener('submit', (e) => {
       x: hasContent ? Math.round(bounds.maxX + 80) : COLUMN_LAYOUT.ORIGIN_X,
       y: hasContent ? Math.round(bounds.minY) : COLUMN_LAYOUT.ORIGIN_Y
     };
+    if (boardModalImage) board.image = boardModalImage;
     // Lleva la vista hasta el nuevo tablero
     panX = 90 - board.x * zoom;
     panY = 40 - board.y * zoom;
@@ -5464,6 +5508,11 @@ function referencedImageIds() {
   projects.forEach(p => {
     (p.bgImages || []).forEach(i => ids.add(i.id));
     (p.tasks || []).forEach(t => (t.images || []).forEach(i => ids.add(i.id)));
+    // Imágenes de las pestañas de los tableros y de los links que se muestran como imagen
+    (p.boards || []).forEach(b => { if (b.image) ids.add(b.image); });
+    [...(p.tasks || []), ...(p.texts || [])].forEach(o => Object.values(o.linkNames || {}).forEach(v => {
+      if (v && typeof v === 'object' && v.image) ids.add(v.image);
+    }));
   });
   return ids;
 }
@@ -5529,7 +5578,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '63';
+const APP_VERSION = '64';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -5910,9 +5959,33 @@ function linkify(str, names = null) {
     // La puntuación al final ("…/docs." o "(…/docs)") no es parte del link
     const trail = (url.match(LINK_TRAIL_RE) || [''])[0];
     if (trail) url = url.slice(0, -trail.length);
-    const raw = unescapeHtml(url);
-    const name = names && typeof names[raw] === 'string' && names[raw].trim();
-    return `<a class="auto-link" href="${linkHref(url)}" target="_blank" rel="noopener noreferrer"${name ? ` title="${url}"` : ''}>${name ? escapeHtml(name) : url}</a>${trail}`;
+    const opt = linkOption(names, unescapeHtml(url));
+    // Oculto: no se muestra (útil si ya se ve la miniatura del video)
+    if (opt.hide) return trail;
+    const attrs = `class="auto-link${opt.image ? ' link-image' : ''}" href="${linkHref(url)}" target="_blank" rel="noopener noreferrer"`;
+    if (opt.image) {
+      return `<a ${attrs} title="${escapeHtml(opt.text || unescapeHtml(url))}"><img data-link-img="${escapeHtml(opt.image)}" alt="${escapeHtml(opt.text || 'Link')}" draggable="false"></a>${trail}`;
+    }
+    return `<a ${attrs}${opt.text ? ` title="${url}"` : ''}>${opt.text ? escapeHtml(opt.text) : url}</a>${trail}`;
+  });
+}
+
+// Cómo se muestra un link: { text, hide, image }. Se guarda como texto (lo más común) o como objeto.
+function linkOption(names, url) {
+  const v = names && names[url];
+  if (!v) return {};
+  if (typeof v === 'string') return { text: v.trim() };
+  return { text: (v.text || '').trim(), hide: !!v.hide, image: v.image || null };
+}
+
+// Los links mostrados como imagen cargan su imagen guardada al aparecer en pantalla
+function hydrateLinkImages(root = document) {
+  root.querySelectorAll('img[data-link-img]:not([src])').forEach(img => {
+    const id = img.dataset.linkImg;
+    const cached = cachedImageVariant(id, 480);
+    if (cached) { img.src = cached; return; }
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+    getImageVariantUrl(id, 480).then(url => { if (url) img.src = url; });
   });
 }
 
@@ -5952,7 +6025,7 @@ function openLinkNamesDialog(urls, names, onSave) {
           <button class="modal-close-btn" type="button" data-close aria-label="Cerrar">&times;</button>
         </div>
         <form class="link-names-form">
-          <p class="link-names-help">Escribe el texto que se mostrará en cada link. Déjalo vacío para mostrar la dirección.</p>
+          <p class="link-names-help">Elige cómo se ve cada link: con un texto (vacío muestra la dirección), con una imagen, o sin mostrarse (por ejemplo, si ya se ve la miniatura del video).</p>
           <div class="link-names-list"></div>
           <div class="modal-actions">
             <div class="spacer"></div>
@@ -5967,18 +6040,65 @@ function openLinkNamesDialog(urls, names, onSave) {
     document.body.appendChild(m);
   }
   const list = m.querySelector('.link-names-list');
+  const state = urls.map(url => ({ ...linkOption(names, url) }));
   list.innerHTML = urls.map((url, i) => `
-    <div class="form-group link-name-row">
+    <div class="form-group link-name-row" data-row="${i}">
       <label for="linkName${i}" class="link-name-url" title="${escapeHtml(url)}">${escapeHtml(url)}</label>
-      <input type="text" id="linkName${i}" data-url-index="${i}" placeholder="Texto a mostrar" value="${escapeHtml((names && names[url]) || '')}">
+      <input type="text" id="linkName${i}" data-url-index="${i}" placeholder="Texto a mostrar" value="${escapeHtml(state[i].text || '')}">
+      <div class="link-name-options">
+        <label class="link-name-hide"><input type="checkbox" data-hide="${i}" ${state[i].hide ? 'checked' : ''}> No mostrar el link</label>
+        <button type="button" class="btn btn-ghost btn-sm" data-pick-image="${i}">🖼 Imagen</button>
+        <span class="link-name-thumb" data-thumb="${i}"></span>
+      </div>
     </div>`).join('');
+  const picker = document.createElement('input');
+  picker.type = 'file';
+  picker.accept = 'image/*';
+  let pickingRow = -1;
+  const paintRow = (i) => {
+    const row = list.querySelector(`[data-row="${i}"]`);
+    const thumb = row.querySelector('[data-thumb]');
+    thumb.innerHTML = state[i].image
+      ? `<img data-link-img="${escapeHtml(state[i].image)}" alt=""><button type="button" class="link-name-thumb-x" data-remove-image="${i}" title="Quitar la imagen">&times;</button>`
+      : '';
+    hydrateLinkImages(thumb);
+    const hide = row.querySelector('[data-hide]').checked;
+    row.querySelector('input[type="text"]').disabled = hide;
+    row.classList.toggle('is-hidden-link', hide);
+  };
+  urls.forEach((_, i) => paintRow(i));
+  list.onchange = (e) => {
+    if (e.target.matches('[data-hide]')) paintRow(Number(e.target.dataset.hide));
+  };
+  list.onclick = (e) => {
+    const pick = e.target.closest('[data-pick-image]');
+    if (pick) { pickingRow = Number(pick.dataset.pickImage); picker.click(); return; }
+    const remove = e.target.closest('[data-remove-image]');
+    if (remove) { const i = Number(remove.dataset.removeImage); state[i].image = null; paintRow(i); }
+  };
+  picker.onchange = async () => {
+    const file = picker.files && picker.files[0];
+    picker.value = '';
+    if (!file || pickingRow < 0) return;
+    try {
+      const { id } = await storeImageFile(file);
+      state[pickingRow].image = id;
+      paintRow(pickingRow);
+    } catch (err) {
+      showToast('No se pudo usar esa imagen', 'warning');
+    }
+  };
   const form = m.querySelector('form');
   form.onsubmit = (e) => {
     e.preventDefault();
     const result = {};
-    list.querySelectorAll('input[data-url-index]').forEach(inp => {
-      const v = inp.value.trim();
-      if (v) result[urls[Number(inp.dataset.urlIndex)]] = v;
+    urls.forEach((url, i) => {
+      const row = list.querySelector(`[data-row="${i}"]`);
+      const text = row.querySelector('input[type="text"]').value.trim();
+      const hide = row.querySelector('[data-hide]').checked;
+      const image = state[i].image;
+      if (hide || image) result[url] = { text, hide, image: image || null };
+      else if (text) result[url] = text;
     });
     m.style.display = 'none';
     onSave(result);
@@ -6093,14 +6213,17 @@ function hydratePlaylists(root = document) {
   });
 }
 
-let playlistHydrateQueued = false;
+// Completa lo que se dibuja sin datos todavía (listas de YouTube, imágenes de links y de tableros).
+// Con un temporizador corto (no requestAnimationFrame, que no corre con la app en segundo plano).
+let mediaHydrateQueued = false;
 new MutationObserver(() => {
-  if (playlistHydrateQueued) return;
-  playlistHydrateQueued = true;
-  requestAnimationFrame(() => {
-    playlistHydrateQueued = false;
+  if (mediaHydrateQueued) return;
+  mediaHydrateQueued = true;
+  setTimeout(() => {
+    mediaHydrateQueued = false;
     if (document.querySelector('.yt-playlist.is-loading:not([data-fetching])')) hydratePlaylists();
-  });
+    if (document.querySelector('img[data-link-img]:not([src]), img[data-board-img]:not([src])')) { hydrateLinkImages(); hydrateBoardImages(); }
+  }, 30);
 }).observe(document.body, { childList: true, subtree: true });
 
 // Subtareas numeradas: "1. texto", una por línea
