@@ -307,8 +307,13 @@ async function openShareModal(invites = null) {
     e.target.disabled = false;
     renderMembers();
   });
-  el('shareLeaveBtn').addEventListener('click', () => {
-    if (confirm('¿Dejar de usar los datos compartidos en este dispositivo?\n\nLos datos compartidos siguen en la carpeta y las demás personas no se ven afectadas.')) leaveSharedSpace();
+  el('shareLeaveBtn').addEventListener('click', async () => {
+    const ok = await askConfirm({
+      title: '¿Dejar de usar los datos compartidos?',
+      message: 'En este dispositivo volverás a tus datos personales. Los datos compartidos siguen en la carpeta y las demás personas no se ven afectadas.',
+      confirmText: 'Volver a mis datos', icon: '👥'
+    });
+    if (ok) leaveSharedSpace();
   });
 }
 

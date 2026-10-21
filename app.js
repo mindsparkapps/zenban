@@ -1854,12 +1854,14 @@ function createTagFromInput() {
   tagSearchInput.focus();
 }
 
-function deleteTag(tag) {
+async function deleteTag(tag) {
   const usage = projects.reduce((n, p) => n + (p.tasks || []).filter(t => (t.tags || []).some(x => x.toLowerCase() === tag.name.toLowerCase())).length, 0);
-  const msg = usage > 0
-    ? `¿Eliminar la etiqueta "${tag.name}"? Se quitará de ${usage} tarea(s).`
-    : `¿Eliminar la etiqueta "${tag.name}"?`;
-  if (!confirm(msg)) return;
+  const ok = await askConfirm({
+    title: `¿Eliminar la etiqueta «${tag.name}»?`,
+    message: usage > 0 ? `Se quitará de ${usage} tarea(s).` : 'Ninguna tarea la usa.',
+    confirmText: 'Eliminar', danger: true
+  });
+  if (!ok) return;
 
   const key = tag.name.toLowerCase();
   tagLibrary = tagLibrary.filter(t => t !== tag);
@@ -2225,11 +2227,16 @@ taskForm.addEventListener('submit', (e) => {
 });
 
 // Delete Task
-deleteTaskBtn.addEventListener('click', () => {
+deleteTaskBtn.addEventListener('click', async () => {
   const id = taskIdInput.value;
   if (!id) return;
-
-  if (confirm('¿Estás seguro de que deseas eliminar esta tarea?')) {
+  const task = tasks.find(t => t.id === id);
+  const ok = await askConfirm({
+    title: '¿Eliminar esta tarea?',
+    message: `«${task ? task.title : ''}» se borrará con sus subtareas e imágenes. Si solo quieres sacarla del tablero, usa 📦 Archivar.`,
+    confirmText: 'Eliminar', danger: true
+  });
+  if (ok) {
     const removedTask = tasks.find(t => t.id === id);
     if (removedTask) deleteTaskImages(removedTask);
     tasks = tasks.filter(t => t.id !== id);
@@ -2367,15 +2374,19 @@ columnForm.addEventListener('submit', (e) => {
   renderBoard();
 });
 
-deleteColumnBtn.addEventListener('click', () => {
+deleteColumnBtn.addEventListener('click', async () => {
   const id = columnIdInput.value;
   if (!id) return;
 
   const tasksInCol = tasks.filter(t => t.columnId === id);
   if (tasksInCol.length > 0) {
-    if (!confirm(`La columna contiene ${tasksInCol.length} tarea(s). ¿Deseas eliminarla y descartar sus tareas?`)) {
-      return;
-    }
+    const col = columns.find(c => c.id === id);
+    const ok = await askConfirm({
+      title: `¿Eliminar la columna «${col ? col.title : ''}»?`,
+      message: `Tiene ${tasksInCol.length} tarea(s) que también se borrarán.`,
+      confirmText: 'Eliminar columna', danger: true
+    });
+    if (!ok) return;
   }
 
   columns = columns.filter(c => c.id !== id);
@@ -2451,6 +2462,48 @@ function folderHeaderEl(folder, count, open, collapsed, key, extraClass = '') {
     renderProjectSwitcher();
   });
   return head;
+}
+
+// ----- Ventana de confirmación con el estilo de ZenBan (en vez de la del navegador) -----
+// askConfirm({ title, message, confirmText, cancelText, danger, icon }) → Promise<boolean>
+// Enter acepta, Esc cancela. El mensaje acepta saltos de línea.
+function askConfirm(opts) {
+  const o = typeof opts === 'string' ? { message: opts } : (opts || {});
+  return new Promise(resolve => {
+    const m = document.createElement('div');
+    m.className = 'modal-backdrop confirm-backdrop';
+    m.style.display = 'flex';
+    const paragraphs = String(o.message || '').split(/\n\s*\n|\n/).filter(Boolean)
+      .map(p => `<p>${escapeHtml(p)}</p>`).join('');
+    m.innerHTML = `
+      <div class="modal-card confirm-card ${o.danger ? 'is-danger' : ''}" role="alertdialog" aria-modal="true">
+        <div class="confirm-head">
+          <span class="confirm-icon" aria-hidden="true">${o.icon || (o.danger ? '🗑️' : '❔')}</span>
+          <h2>${escapeHtml(o.title || '¿Confirmas?')}</h2>
+        </div>
+        <div class="confirm-body">${paragraphs}</div>
+        <div class="confirm-actions">
+          <button type="button" class="btn btn-ghost" data-answer="no">${escapeHtml(o.cancelText || 'Cancelar')}</button>
+          <button type="button" class="btn ${o.danger ? 'btn-danger' : 'btn-primary'}" data-answer="yes">${escapeHtml(o.confirmText || 'Aceptar')}</button>
+        </div>
+      </div>`;
+    const done = (answer) => {
+      document.removeEventListener('keydown', onKey, true);
+      m.remove();
+      resolve(answer);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); }
+    };
+    m.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-answer]');
+      if (b) done(b.dataset.answer === 'yes');
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(m);
+    setTimeout(() => m.querySelector('[data-answer="yes"]').focus(), 30);
+  });
 }
 
 // ----- Aviso de carga sobre el lienzo (al cambiar de proyecto o de espacio) -----
@@ -2747,17 +2800,19 @@ projectForm.addEventListener('submit', (e) => {
   closeProjectModal();
 });
 
-deleteProjectBtn.addEventListener('click', () => {
+deleteProjectBtn.addEventListener('click', async () => {
   const id = projectIdInput.value;
   if (!id || projects.length <= 1) return;
 
   const project = projects.find(p => p.id === id);
   if (!project) return;
   const taskCount = (project.tasks || []).length;
-  const msg = taskCount > 0
-    ? `¿Eliminar el proyecto "${project.name}" con sus ${taskCount} tarea(s)? Esta acción no se puede deshacer.`
-    : `¿Eliminar el proyecto "${project.name}"?`;
-  if (!confirm(msg)) return;
+  const ok = await askConfirm({
+    title: `¿Eliminar el proyecto «${project.name}»?`,
+    message: taskCount > 0 ? `Se borrarán sus ${taskCount} tarea(s), tableros e imágenes. No se puede deshacer.` : 'No se puede deshacer.',
+    confirmText: 'Eliminar proyecto', danger: true
+  });
+  if (!ok) return;
 
   (project.bgImages || []).forEach(img => ImageStore.del(img.id));
   (project.tasks || []).forEach(deleteTaskImages);
@@ -3812,13 +3867,18 @@ function undoDrawing() {
   renderDrawings();
 }
 
-function clearDrawings() {
+async function clearDrawings() {
   const drawings = getDrawings();
   if (drawings.length === 0) {
     showToast('No hay dibujos en este proyecto', 'info');
     return;
   }
-  if (!confirm(`¿Borrar los ${drawings.length} trazo(s) dibujados en este proyecto?`)) return;
+  const ok = await askConfirm({
+    title: '¿Borrar todos los dibujos?',
+    message: `Se borrarán los ${drawings.length} trazo(s) de este proyecto. Puedes recuperarlos con Ctrl+Z.`,
+    confirmText: 'Borrar dibujos', danger: true
+  });
+  if (!ok) return;
   undoStack.push({ type: 'clear', strokes: drawings.slice() });
   getActiveProject().drawings = [];
   persist();
@@ -4035,16 +4095,18 @@ boardForm.addEventListener('submit', (e) => {
   renderProjectSwitcher();
 });
 
-deleteBoardBtn.addEventListener('click', () => {
+deleteBoardBtn.addEventListener('click', async () => {
   const id = boardIdInput.value;
   const board = boards.find(b => b.id === id);
   if (!board) return;
   const colIds = columns.filter(c => c.boardId === id).map(c => c.id);
   const taskCount = tasks.filter(t => colIds.includes(t.columnId)).length;
-  const msg = taskCount > 0
-    ? `¿Eliminar el tablero "${board.title}" con sus ${colIds.length} columna(s) y ${taskCount} tarea(s)? No se puede deshacer.`
-    : `¿Eliminar el tablero "${board.title}"?`;
-  if (!confirm(msg)) return;
+  const ok = await askConfirm({
+    title: `¿Eliminar el tablero «${board.title}»?`,
+    message: taskCount > 0 ? `Se borrarán sus ${colIds.length} columna(s) y ${taskCount} tarea(s). No se puede deshacer.` : 'No tiene tareas.',
+    confirmText: 'Eliminar tablero', danger: true
+  });
+  if (!ok) return;
 
   tasks.filter(t => colIds.includes(t.columnId)).forEach(deleteTaskImages);
   tasks = tasks.filter(t => !colIds.includes(t.columnId));
@@ -5117,16 +5179,22 @@ async function duplicateSelection() {
 }
 
 // Elimina lo seleccionado. Los tableros piden confirmación.
-function deleteSelection({ skipConfirm = false } = {}) {
+// skipConfirm: al cortar o mover (no pregunta y deja las imágenes); confirmed: ya se preguntó
+function deleteSelection({ skipConfirm = false, confirmed = false } = {}) {
   const strokeIds = selectedStrokes().map(s => s.id);
   const imageIds = selectedImages().map(i => i.id);
   const textIds = selectedTexts().map(t => t.id);
   const boardIds = boards.filter(b => selection.has(`board:${b.id}`)).map(b => b.id);
 
-  if (boardIds.length && !skipConfirm) {
+  if (boardIds.length && !skipConfirm && !confirmed) {
     const colIds = columns.filter(c => boardIds.includes(c.boardId)).map(c => c.id);
     const n = tasks.filter(t => colIds.includes(t.columnId)).length;
-    if (!confirm(`¿Eliminar ${boardIds.length} tablero(s) con ${colIds.length} columna(s) y ${n} tarea(s)?`)) return false;
+    askConfirm({
+      title: boardIds.length === 1 ? '¿Eliminar este tablero?' : `¿Eliminar ${boardIds.length} tableros?`,
+      message: `Se borrarán ${colIds.length} columna(s) y ${n} tarea(s), junto con lo demás seleccionado.`,
+      confirmText: 'Eliminar', danger: true
+    }).then(ok => { if (ok) deleteSelection({ confirmed: true }); });
+    return false;
   }
 
   if (strokeIds.length) {
@@ -6114,7 +6182,11 @@ async function syncNow() {
       } else if (lastSyncedAt() === 0) {
         // Primera vez con estos datos en este dispositivo: nunca se pisa nada sin preguntar
         const where = inShared() ? `la carpeta compartida "${currentSpace().folderName || 'ZenBan'}"` : 'tu Google Drive';
-        const useDrive = confirm(`Ya hay datos de ZenBan en ${where}.\n\nAceptar: usar esos datos en este dispositivo (lo que hay aquí se reemplaza).\nCancelar: combinar esos datos con lo que hay en este dispositivo (no se pierde nada).`);
+        const useDrive = await askConfirm({
+          title: 'Ya hay datos de ZenBan',
+          message: `Hay datos guardados en ${where}.\nUsar los de Drive reemplaza lo que hay en este dispositivo. Combinar junta ambos (no se pierde nada).`,
+          confirmText: 'Usar los de Drive', cancelText: 'Combinar con los de aquí', icon: '☁️'
+        });
         result = useDrive ? dataPart(remote) : mergePayloads(local, remote, null);
       } else {
         const base = await SyncBase.get();
@@ -6245,7 +6317,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '72';
+const APP_VERSION = '73';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

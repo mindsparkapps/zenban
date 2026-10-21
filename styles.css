@@ -3351,6 +3351,70 @@ select option:checked {
   color: inherit;
 }
 
+/* Ventana de confirmación propia (reemplaza a la del navegador) */
+.confirm-backdrop {
+  z-index: 3000;
+}
+
+.confirm-card {
+  max-width: 420px;
+  padding: 1.4rem 1.5rem 1.2rem;
+  gap: 0.9rem;
+  border-top: 3px solid var(--accent-primary);
+}
+
+.confirm-card.is-danger {
+  border-top-color: var(--accent-danger, #ef4444);
+}
+
+.confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.confirm-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  font-size: 1.2rem;
+  background: var(--accent-primary-light);
+}
+
+.confirm-card.is-danger .confirm-icon {
+  background: var(--accent-danger-light, rgba(239, 68, 68, 0.15));
+}
+
+.confirm-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+}
+
+.confirm-body p {
+  margin: 0 0 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.confirm-body p:last-child {
+  margin-bottom: 0;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 /* Aviso de carga al cambiar de proyecto o de espacio */
 .busy-overlay {
   position: fixed;

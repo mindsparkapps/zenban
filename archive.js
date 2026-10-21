@@ -45,7 +45,7 @@ window.archiveTask = function (taskId) {
   archiveTasks([taskId], `"${t.title.substring(0, 30)}" archivada. Recupérala en Configuración → Tareas archivadas (o Ctrl+Z).`);
 };
 
-window.archiveColumnTasks = function (colId, onlyCompleted) {
+window.archiveColumnTasks = async function (colId, onlyCompleted) {
   const col = columns.find(c => c.id === colId);
   if (!col) return;
   const list = tasks.filter(t => t.columnId === colId && !t.repeat && (!onlyCompleted || t.completed));
@@ -54,7 +54,12 @@ window.archiveColumnTasks = function (colId, onlyCompleted) {
     return;
   }
   const what = onlyCompleted ? `las ${list.length} tarea(s) completadas` : `las ${list.length} tarea(s)`;
-  if (!confirm(`¿Seguro que quieres archivar ${what} de "${col.title}"?\n\nSalen del tablero y puedes recuperarlas en Configuración → Tareas archivadas.`)) return;
+  const ok = await askConfirm({
+    title: `¿Archivar ${what}?`,
+    message: `De la columna «${col.title}». Salen del tablero y puedes recuperarlas en Configuración → Tareas archivadas.`,
+    confirmText: 'Archivar', icon: '📦'
+  });
+  if (!ok) return;
   archiveTasks(list.map(t => t.id), `${list.length} tarea(s) archivada(s)`);
 };
 
@@ -121,11 +126,17 @@ function restoreArchived(projectId, taskId) {
   showToast(`"${task.title.substring(0, 30)}" recuperada en "${project.name}" › ${col.title}`, 'success');
 }
 
-function deleteArchived(projectId, taskId) {
+async function deleteArchived(projectId, taskId) {
   const project = projects.find(p => p.id === projectId);
   if (!project) return;
   const entry = archivedTasksOf(project).find(t => t.id === taskId);
-  if (!entry || !confirm(`¿Borrar para siempre "${entry.title}"?`)) return;
+  if (!entry) return;
+  const ok = await askConfirm({
+    title: '¿Borrar para siempre?',
+    message: `«${entry.title}» se eliminará del archivo y no se podrá recuperar.`,
+    confirmText: 'Borrar', danger: true
+  });
+  if (!ok) return;
   project.archivedTasks = archivedTasksOf(project).filter(t => t.id !== taskId);
   project.updatedAt = Date.now();
   if (project.id === activeProjectId) persist(); else saveData(STORAGE_KEYS.PROJECTS, projects);
@@ -180,7 +191,7 @@ function openArchiveModal() {
     const r = e.target.closest('[data-restore]');
     if (r) { restoreArchived(r.dataset.project, r.dataset.restore); paint(); renderArchiveSetting(); return; }
     const d = e.target.closest('[data-delete]');
-    if (d) { deleteArchived(d.dataset.project, d.dataset.delete); paint(); renderArchiveSetting(); }
+    if (d) deleteArchived(d.dataset.project, d.dataset.delete).then(() => { paint(); renderArchiveSetting(); });
   };
   search.value = '';
   search.oninput = paint;
