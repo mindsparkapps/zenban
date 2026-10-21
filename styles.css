@@ -1970,6 +1970,17 @@ body.theme-light .moon-icon { display: none; }
   overflow: hidden;
   animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   max-height: 90vh;
+  /* En el celular, 90 % del alto que realmente se ve (sin la barra del navegador) */
+  max-height: 90dvh;
+}
+
+/* El contenido de cualquier ventana se desplaza si no cabe (el título queda fijo arriba):
+   así siempre se llega a los botones Guardar / Cancelar, también en el celular */
+.modal-card > *:not(.modal-header):not(.confirm-head) {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-card.modal-sm {
@@ -3843,6 +3854,20 @@ select option:checked {
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
+  /* Si no cabe en el alto de la pantalla (p. ej. el celular en horizontal), se desplaza */
+  max-height: calc(100vh - 64px - 2rem);
+  max-height: calc(100dvh - 64px - 2rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  scrollbar-width: thin;
+  flex-shrink: 0;
+}
+
+.toolbox-pill > *,
+.toolbox-options > * {
+  flex-shrink: 0;
 }
 
 .toolbox-options[hidden] {
@@ -3996,9 +4021,38 @@ select option:checked {
     transform: none;
   }
 
+  /* Anclada abajo: el espacio disponible es desde el encabezado hasta 5.5rem del borde inferior */
+  .toolbox-pill,
+  .toolbox-options {
+    max-height: calc(100vh - 64px - 6.5rem);
+    max-height: calc(100dvh - 64px - 6.5rem);
+  }
+
   .tool-btn {
     width: 36px;
     height: 36px;
+  }
+}
+
+/* Pantallas bajas (celular en horizontal): botones más compactos y la barra desde arriba */
+@media (max-height: 520px) {
+  .toolbox {
+    top: 0.5rem;
+    bottom: auto;
+    transform: none;
+  }
+
+  .toolbox-pill,
+  .toolbox-options {
+    max-height: calc(100vh - 64px - 1rem);
+    max-height: calc(100dvh - 64px - 1rem);
+    gap: 2px;
+    padding: 4px;
+  }
+
+  .tool-btn {
+    width: 34px;
+    height: 34px;
   }
 }
 
@@ -4792,6 +4846,7 @@ select option:checked {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  overflow-y: auto;
 }
 
 .setup-text {
