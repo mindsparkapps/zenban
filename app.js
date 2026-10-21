@@ -6302,7 +6302,9 @@ function requestReconnect(reason) {
   renderReconnectState();
   const note = document.getElementById('reconnectNote');
   if (note && reason) note.textContent = reason;
-  accountMenu.hidden = false;
+  // Se abre después de que termine el toque que llevó hasta aquí (si no, ese mismo toque cuenta
+  // como "clic fuera del menú" y lo cierra al instante)
+  setTimeout(() => { accountMenu.hidden = false; }, 0);
   showToast(reason || 'La sesión de Google venció. Toca «Reconectar con Google» para seguir sincronizando.', 'info');
 }
 
@@ -6340,7 +6342,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '74';
+const APP_VERSION = '75';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
