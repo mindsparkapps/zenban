@@ -3307,6 +3307,12 @@ function imageDropTargetAt(clientX, clientY) {
       const frame = fel && getFrames().find(f => f.id === fel.dataset.frameId);
       if (frame) return { type: 'frame', frame, el: framePart };
     }
+    // Barra superior del frame (aunque no tenga título ni pestaña), como el encabezado de un tablero
+    if (n.classList.contains('canvas-frame') && !n.classList.contains('is-locked') && typeof getFrames === 'function'
+      && clientY - n.getBoundingClientRect().top <= 40) {
+      const frame = getFrames().find(f => f.id === n.dataset.frameId);
+      if (frame) return { type: 'frame', frame, el: n };
+    }
   }
   return null;
 }
@@ -4570,8 +4576,9 @@ function itemsInRect(x1, y1, x2, y2) {
   });
   // Frames: solo si quedan completos dentro del recuadro (así se puede seleccionar lo de adentro sin tomar el frame)
   if (typeof getFrames === 'function') {
-    getFrames().forEach(f => { if (f.x >= x1 && f.y >= y1 && f.x + f.w <= x2 && f.y + f.h <= y2) keys.push(`frame:${f.id}`); });
-    getConnectors().forEach(c => { if (keys.includes(`frame:${c.from}`) && keys.includes(`frame:${c.to}`)) keys.push(`conn:${c.id}`); });
+    // Un frame en "Trabajar dentro" no se toma, para poder seleccionar lo que tiene adentro
+    getFrames().forEach(f => { if (!f.locked && f.x >= x1 && f.y >= y1 && f.x + f.w <= x2 && f.y + f.h <= y2) keys.push(`frame:${f.id}`); });
+    getConnectors().forEach(c => { if (keys.includes(endpointKey(c.from)) && keys.includes(endpointKey(c.to))) keys.push(`conn:${c.id}`); });
   }
   return keys;
 }
@@ -5175,11 +5182,10 @@ function collectSelection() {
   data.strokes = deepClone(selectedStrokes());
   data.images = deepClone(selectedImages());
   data.texts = deepClone(selectedTexts());
-  // Frames y las flechas entre ellos (solo las que unen dos frames copiados)
+  // Frames y las flechas (solo las que unen dos objetos copiados)
   if (typeof getFrames === 'function') {
     data.frames = deepClone(selectedFrames());
-    const ids = new Set(data.frames.map(f => f.id));
-    data.connectors = deepClone(getConnectors().filter(c => ids.has(c.from) && ids.has(c.to)));
+    data.connectors = deepClone(getConnectors().filter(c => selection.has(endpointKey(c.from)) && selection.has(endpointKey(c.to))));
   }
   return data;
 }
@@ -5206,9 +5212,12 @@ async function pasteData(data, offset, offsetY = offset) {
   // Las copias forman su propio grupo (no se unen al grupo del original)
   const groupMap = {};
   const regroup = (o) => { if (o.group) o.group = groupMap[o.group] || (groupMap[o.group] = generateId('grp')); return o; };
+  // Clave original → clave de la copia (para que las flechas unan las copias)
+  const keyMap = {};
   for (const b of data.boards) {
     const nb = regroup(deepClone(b));
     nb.id = generateId('board');
+    keyMap[`board:${b.id}`] = `board:${nb.id}`;
     nb.x += offset;
     nb.y += offsetY;
     boards.push(nb);
@@ -5248,24 +5257,26 @@ async function pasteData(data, offset, offsetY = offset) {
     const ni = regroup({ ...deepClone(img), id: newId, x: img.x + offset, y: img.y + offsetY });
     getBgImages().push(ni);
     newKeys.push(`img:${newId}`);
+    keyMap[`img:${img.id}`] = `img:${newId}`;
   }
   (data.texts || []).forEach(t => {
     const nt = regroup({ ...deepClone(t), id: generateId('text'), x: t.x + offset, y: t.y + offsetY });
+    keyMap[`text:${t.id}`] = `text:${nt.id}`;
     getTexts().push(nt);
     newKeys.push(`text:${nt.id}`);
   });
   // Frames con ids nuevos y sus flechas apuntando a las copias
-  if (typeof getFrames === 'function' && (data.frames || []).length) {
-    const frameMap = {};
-    data.frames.forEach(f => {
+  if (typeof getFrames === 'function') {
+    (data.frames || []).forEach(f => {
       const nf = regroup({ ...deepClone(f), id: generateId('frame'), x: f.x + offset, y: f.y + offsetY });
-      frameMap[f.id] = nf.id;
+      keyMap[`frame:${f.id}`] = `frame:${nf.id}`;
       getFrames().push(nf);
       newKeys.push(`frame:${nf.id}`);
     });
     (data.connectors || []).forEach(c => {
-      if (!frameMap[c.from] || !frameMap[c.to]) return;
-      const nc = regroup({ ...deepClone(c), id: generateId('conn'), from: frameMap[c.from], to: frameMap[c.to] });
+      const from = keyMap[endpointKey(c.from)], to = keyMap[endpointKey(c.to)];
+      if (!from || !to) return;
+      const nc = regroup({ ...deepClone(c), id: generateId('conn'), from, to });
       getConnectors().push(nc);
       newKeys.push(`conn:${nc.id}`);
     });
@@ -5360,13 +5371,14 @@ function deleteSelection({ skipConfirm = false, confirmed = false } = {}) {
     if (!skipConfirm) ImageStore.del(id); // al cortar, la imagen sigue disponible para pegar
   });
   if (textIds.length) getActiveProject().texts = getTexts().filter(t => !textIds.includes(t.id));
-  // Frames (con las flechas que los unen) y conectores sueltos
+  // Frames y conectores: también se quitan las flechas que unían algún objeto borrado
   if (typeof getFrames === 'function') {
     const frameIds = selectedFrames().map(f => f.id);
     const connIds = selectedConnectors().map(c => c.id);
     if (frameIds.length) getActiveProject().frames = getFrames().filter(f => !frameIds.includes(f.id));
-    if (frameIds.length || connIds.length) {
-      getActiveProject().connectors = getConnectors().filter(c => !connIds.includes(c.id) && !frameIds.includes(c.from) && !frameIds.includes(c.to));
+    const gone = (ref) => selection.has(endpointKey(ref));
+    if (getConnectors().some(c => connIds.includes(c.id) || gone(c.from) || gone(c.to))) {
+      getActiveProject().connectors = getConnectors().filter(c => !connIds.includes(c.id) && !gone(c.from) && !gone(c.to));
     }
   }
   if (boardIds.length) {
@@ -6535,7 +6547,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '81';
+const APP_VERSION = '82';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -6647,6 +6659,7 @@ function openSettings() {
   settingZoomMin.value = value;
   document.getElementById('settingStarredPosition').value = starredPosition();
   if (typeof renderArchiveSetting === 'function') renderArchiveSetting();
+  document.getElementById('settingImageSources').value = appSettings.imageSources ?? DEFAULT_IMAGE_SOURCES;
   const backdropInput = document.getElementById('settingModalBackdrop');
   backdropInput.value = String(appSettings.modalBackdrop ?? 15);
   document.getElementById('settingModalBackdropValue').textContent = `${backdropInput.value}%`;
@@ -6793,6 +6806,9 @@ document.getElementById('settingModalBackdrop').addEventListener('input', (e) =>
 refreshAutoHide();
 
 document.getElementById('openSettingsBtn').addEventListener('click', openSettings);
+document.getElementById('resetImageSourcesBtn').addEventListener('click', () => {
+  document.getElementById('settingImageSources').value = DEFAULT_IMAGE_SOURCES;
+});
 // Recargar: útil en la app instalada del celular, que no tiene botón de recargar del navegador.
 // Los datos ya están guardados en el dispositivo, así que no se pierde nada.
 document.getElementById('reloadAppBtn').addEventListener('click', () => {
@@ -6810,6 +6826,7 @@ document.getElementById('settingsForm').addEventListener('submit', (e) => {
   saveData(SETTINGS_KEY, appSettings);
   localStorage.setItem(STARRED_POSITION_KEY, document.getElementById('settingStarredPosition').value);
   appSettings.modalBackdrop = Number(document.getElementById('settingModalBackdrop').value);
+  appSettings.imageSources = document.getElementById('settingImageSources').value.trim();
   saveData(SETTINGS_KEY, appSettings);
   applyModalBackdrop();
   renderProjectSwitcher();
@@ -7318,6 +7335,33 @@ async function libraryThumb(img, item) {
   }
 }
 
+// Fuentes externas de imágenes: una por línea, "Nombre | URL". {q} se reemplaza por lo que se busca.
+const DEFAULT_IMAGE_SOURCES = [
+  'SVG Repo | https://www.svgrepo.com/vectors/{q}/',
+  'Flaticon | https://www.flaticon.es/buscar?word={q}',
+  'Unsplash | https://unsplash.com/s/photos/{q}',
+  'Pexels | https://www.pexels.com/es-es/buscar/{q}/',
+  'Google Imágenes | https://www.google.com/search?tbm=isch&q={q}'
+].join('\n');
+
+function imageSources(text = appSettings.imageSources ?? DEFAULT_IMAGE_SOURCES) {
+  return String(text).split('\n').map(line => {
+    const i = line.indexOf('|');
+    const name = (i >= 0 ? line.slice(0, i) : '').trim();
+    const url = (i >= 0 ? line.slice(i + 1) : line).trim();
+    if (!/^https?:\/\//i.test(url)) return null;
+    return { name: name || url.replace(/^https?:\/\/(www\.)?/i, '').split(/[/?#]/)[0], url };
+  }).filter(Boolean);
+}
+
+// Sin texto que buscar se abre la página principal del sitio
+function openImageSource(src, q) {
+  if (!src) return;
+  let url = src.url;
+  if (url.includes('{q}')) url = q ? url.split('{q}').join(encodeURIComponent(q)) : new URL(url.split('{q}').join('x')).origin;
+  window.open(url, '_blank', 'noopener');
+}
+
 function openImageLibrary(point = null) {
   if (!point) {
     const rect = viewportArea.getBoundingClientRect();
@@ -7336,6 +7380,7 @@ function openImageLibrary(point = null) {
         </div>
         <div class="image-finder-body">
           <input type="search" class="image-finder-search" placeholder="Filtrar por espacio, proyecto, tablero o tarea…" autocomplete="off">
+          <div class="image-finder-sources"></div>
           <p class="image-finder-note"></p>
           <div class="image-finder-grid"></div>
         </div>
@@ -7360,6 +7405,15 @@ function openImageLibrary(point = null) {
   };
   search.value = '';
   search.oninput = paint;
+  // Fuentes externas (se configuran en ⚙️ Configuración): se abren en el navegador con el texto del filtro
+  const sources = imageSources();
+  const sourcesEl = m.querySelector('.image-finder-sources');
+  sourcesEl.innerHTML = sources.length ? `<span>Buscar en:</span>${sources.map((s, i) =>
+    `<button type="button" class="btn btn-ghost btn-sm" data-src="${i}" title="Abrir ${escapeHtml(s.name)} en el navegador (usa el texto del filtro)">${escapeHtml(s.name)} ↗</button>`).join('')}` : '';
+  sourcesEl.onclick = (e) => {
+    const b = e.target.closest('[data-src]');
+    if (b) openImageSource(sources[Number(b.dataset.src)], search.value.trim());
+  };
   grid.onclick = async (e) => {
     const b = e.target.closest('[data-i]');
     if (!b || b.classList.contains('is-missing')) return;

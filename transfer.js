@@ -185,10 +185,13 @@ function xferCloneTask(t, columnId, uploads) {
 function xferBuild(p) {
   const uploads = [];
   const colMap = {};
+  // Clave original → clave nueva (para que las flechas unan los objetos enviados)
+  const keyMap = {};
   const out = { boards: [], columns: [], tasks: [], images: [], texts: [], strokes: [], uploads };
   p.boards.forEach(b => {
     const nb = deepClone(b);
     nb.id = generateId('board');
+    keyMap[`board:${b.id}`] = `board:${nb.id}`;
     out.boards.push({ nb, oldId: b.id });
   });
   p.columns.forEach(c => {
@@ -205,14 +208,18 @@ function xferBuild(p) {
     const newId = generateId('img');
     uploads.push({ oldId: i.id, newId });
     out.images.push({ ...deepClone(i), id: newId });
+    keyMap[`img:${i.id}`] = `img:${newId}`;
   });
-  (p.texts || []).forEach(t => out.texts.push({ ...deepClone(t), id: generateId('text') }));
+  (p.texts || []).forEach(t => {
+    const id = generateId('text');
+    keyMap[`text:${t.id}`] = `text:${id}`;
+    out.texts.push({ ...deepClone(t), id });
+  });
   p.strokes.forEach(s => out.strokes.push({ ...deepClone(s), id: generateId('stroke') }));
-  // Frames (con ids nuevos) y las flechas entre ellos
-  const frameMap = {};
+  // Frames (con ids nuevos) y las flechas entre los objetos enviados
   out.frames = (p.frames || []).map(f => {
     const nf = { ...deepClone(f), id: generateId('frame') };
-    frameMap[f.id] = nf.id;
+    keyMap[`frame:${f.id}`] = `frame:${nf.id}`;
     // Su imagen de pestaña también viaja (con id nuevo)
     if (f.image && !isRemoteImage(f.image)) {
       const newId = generateId('img');
@@ -221,8 +228,9 @@ function xferBuild(p) {
     }
     return nf;
   });
-  out.connectors = (p.connectors || []).filter(c => frameMap[c.from] && frameMap[c.to])
-    .map(c => ({ ...deepClone(c), id: generateId('conn'), from: frameMap[c.from], to: frameMap[c.to] }));
+  const mapKey = (ref) => keyMap[endpointKey(ref)];
+  out.connectors = (p.connectors || []).filter(c => mapKey(c.from) && mapKey(c.to))
+    .map(c => ({ ...deepClone(c), id: generateId('conn'), from: mapKey(c.from), to: mapKey(c.to) }));
   return out;
 }
 

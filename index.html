@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=62">
+  <link rel="stylesheet" href="styles.css?v=63">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -192,11 +192,16 @@
             <span>Esquinas</span>
             <input type="range" id="ctxFrameRadius" min="0" max="80" step="2" value="16">
           </label>
+          <label class="ctx-range" title="Opacidad del frame (borde, relleno, título y pestaña)">
+            <span>Opacidad</span>
+            <input type="range" id="ctxFrameOpacity" min="10" max="100" step="5" value="100">
+          </label>
+          <button type="button" class="ctx-btn" id="ctxFrameLock" title="Trabajar con lo que está dentro (mover, agrupar, seleccionar) sin mover el frame"><span>✋</span><span>Trabajar dentro</span></button>
           <button type="button" class="ctx-btn" id="ctxFrameImage" title="Imagen de la pestaña para reconocerlo y moverlo"><span>🖼</span><span>Imagen</span></button>
           <button type="button" class="ctx-btn" id="ctxFrameImageRemove" title="Quitar la imagen de la pestaña" hidden><span>✕</span><span>Quitar imagen</span></button>
         </div>
 
-        <!-- Conector(es) entre frames -->
+        <!-- Conector(es) entre objetos -->
         <div class="ctx-panel" data-ctx="conn" hidden>
           <label class="ctx-color" title="Color de la flecha">
             <span>Color</span>
@@ -205,6 +210,10 @@
           <label class="ctx-range" title="Grosor de la flecha">
             <span>Grosor</span>
             <input type="range" id="ctxConnSize" min="1" max="12" step="1" value="3">
+          </label>
+          <label class="ctx-range" title="Opacidad de la flecha">
+            <span>Opacidad</span>
+            <input type="range" id="ctxConnOpacity" min="10" max="100" step="5" value="100">
           </label>
           <button type="button" class="ctx-btn" id="ctxConnFlip" title="Cambiar el sentido de la flecha"><span>⇄</span><span>Invertir</span></button>
           <button type="button" class="ctx-btn" id="ctxConnBoth" title="Flecha en los dos extremos"><span>↔</span><span>Doble</span></button>
@@ -918,6 +927,12 @@
             <button type="button" class="btn btn-ghost btn-sm" id="openArchiveBtn">📦 Ver tareas archivadas</button>
           </div>
           <div class="form-group">
+            <label for="settingImageSources">Fuentes de imágenes en la biblioteca</label>
+            <textarea id="settingImageSources" rows="5" wrap="off" spellcheck="false" placeholder="Nombre | https://sitio.com/buscar?q={q}"></textarea>
+            <p class="setup-text">Una por línea: <code>Nombre | URL</code>. <code>{q}</code> se cambia por lo que escribas en el filtro de la biblioteca. Se abren en el navegador; descarga o copia la imagen y pégala o arrástrala al lienzo.</p>
+            <button type="button" class="btn btn-ghost btn-sm" id="resetImageSourcesBtn">↺ Restaurar las de siempre</button>
+          </div>
+          <div class="form-group">
             <label for="settingStarredPosition">Proyectos con estrella ★</label>
             <select id="settingStarredPosition">
               <option value="top">Arriba de la lista</option>
@@ -955,13 +970,13 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=81"></script>
+  <script src="app.js?v=82"></script>
   <script src="share.js?v=7"></script>
-  <script src="transfer.js?v=6"></script>
+  <script src="transfer.js?v=7"></script>
   <script src="spaces.js?v=8"></script>
   <script src="capture.js?v=1"></script>
   <script src="archive.js?v=3"></script>
   <script src="translator.js?v=3"></script>
-  <script src="frames.js?v=1"></script>
+  <script src="frames.js?v=2"></script>
 </body>
 </html>

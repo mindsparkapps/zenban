@@ -3314,9 +3314,46 @@ select option:checked {
   outline-offset: calc(3px * var(--inv-zoom, 1));
 }
 
-.canvas-frame.is-connect-target {
+.canvas-frame.is-connect-target,
+.board-frame.is-connect-target,
+.bg-image.is-connect-target,
+.canvas-text.is-connect-target {
   outline: calc(3px * var(--inv-zoom, 1)) dashed #22c55e;
   outline-offset: calc(3px * var(--inv-zoom, 1));
+}
+
+/* "Trabajar dentro": el frame no toma clics (ni el título ni la pestaña); solo su etiqueta "Listo" */
+.canvas-frame.is-locked,
+.canvas-frame.is-locked * {
+  pointer-events: none !important;
+}
+
+.canvas-frame.is-locked {
+  border-style: dashed;
+}
+
+.canvas-frame.is-locked .frame-lock-badge {
+  pointer-events: auto !important;
+}
+
+.frame-lock-badge {
+  position: absolute;
+  right: calc(10px * var(--inv-zoom, 1));
+  top: calc(8px * var(--inv-zoom, 1));
+  padding: calc(3px * var(--inv-zoom, 1)) calc(9px * var(--inv-zoom, 1));
+  border: none;
+  border-radius: 999px;
+  background: var(--frame-color, #6366f1);
+  color: #fff;
+  font: inherit;
+  font-size: calc(12px * var(--inv-zoom, 1));
+  white-space: nowrap;
+  cursor: pointer !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.frame-lock-badge b {
+  text-decoration: underline;
 }
 
 /* Título del frame: arriba a la izquierda, con su color */
@@ -3685,6 +3722,26 @@ select option:checked {
 
 .image-finder-search {
   width: 100%;
+}
+
+.image-finder-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.image-finder-sources:empty {
+  display: none;
+}
+
+#settingImageSources {
+  width: 100%;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+  resize: vertical;
 }
 
 .image-finder-grid {
