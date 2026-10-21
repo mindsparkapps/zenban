@@ -1322,6 +1322,7 @@ body.theme-light .moon-icon { display: none; }
 .auto-link.gdoc-slides:not(.link-image) { background: rgba(244, 180, 0, 0.16); border-color: rgba(244, 180, 0, 0.45); color: #fcd34d; }
 
 .canvas-menu .menu-emoji {
+  flex: 0 0 16px;
   width: 16px;
   text-align: center;
   font-size: 0.95rem;
@@ -1604,6 +1605,166 @@ body.theme-light .moon-icon { display: none; }
   align-items: center;
   gap: 0.6em;
   padding: 0.35em 0.5em;
+}
+
+/* Fila de un video: casilla de "visto" + el video */
+.yt-pl-row {
+  display: flex;
+  align-items: center;
+}
+
+.yt-pl-row .yt-pl-item {
+  flex: 1;
+  min-width: 0;
+  padding-left: 0.2em;
+}
+
+.yt-pl-check {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2em;
+  align-self: stretch;
+  cursor: pointer;
+}
+
+.yt-pl-check input {
+  width: 1.15em;
+  height: 1.15em;
+  margin: 0;
+  accent-color: #22c55e;
+  cursor: pointer;
+}
+
+.yt-pl-row.is-done .yt-pl-item {
+  opacity: 0.55;
+}
+
+.yt-pl-row.is-done .yt-pl-text b {
+  text-decoration: line-through;
+}
+
+/* Barra de progreso (vistos / total) */
+.yt-progress {
+  display: block;
+  flex: 1;
+  height: 0.45em;
+  min-width: 3em;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.yt-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22c55e, #4ade80);
+  transition: width 0.25s ease;
+}
+
+.yt-pl-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-top: 0.25em;
+}
+
+.yt-pl-progress small {
+  flex-shrink: 0;
+  color: #86efac !important;
+  font-weight: 600;
+}
+
+/* Widget "Progreso de listas": un texto del lienzo que suma el avance de varias listas */
+.canvas-text.is-ytprogress {
+  padding: 0.8em 0.9em;
+  border-radius: 0.8em;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  box-shadow: var(--shadow-md);
+  color: #f8fafc;
+  white-space: normal;
+}
+
+.canvas-text.is-ytprogress.is-drop-target {
+  outline: calc(3px * var(--inv-zoom, 1)) dashed #22c55e;
+  outline-offset: calc(4px * var(--inv-zoom, 1));
+  background: rgba(20, 83, 45, 0.92);
+}
+
+.ytp-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8em;
+  margin-bottom: 0.4em;
+}
+
+.ytp-head b {
+  font-size: 1.05em;
+}
+
+.ytp-total {
+  font-weight: 700;
+  color: #86efac;
+  white-space: nowrap;
+}
+
+.ytp-widget > .yt-progress {
+  height: 0.7em;
+}
+
+.ytp-lists {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55em;
+  margin-top: 0.75em;
+  font-size: 0.8em;
+}
+
+.ytp-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.25em 0.6em;
+}
+
+.ytp-row .yt-progress {
+  grid-column: 1 / -1;
+}
+
+.ytp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ytp-count {
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.ytp-remove {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font: inherit;
+  font-size: 1.1em;
+  line-height: 1;
+  padding: 0 0.2em;
+  cursor: pointer;
+}
+
+.ytp-remove:hover {
+  color: #f87171;
+}
+
+.ytp-empty {
+  margin: 0.6em 0 0;
+  font-size: 0.8em;
+  color: #94a3b8;
 }
 
 .yt-pl-item:hover {
@@ -3568,6 +3729,52 @@ select option:checked {
   box-shadow: var(--shadow-md);
 }
 
+/* Imagen que todavía se está cargando o descargando: caja con ícono de carga */
+.bg-image.is-loading,
+.bg-image.is-missing {
+  background: rgba(148, 163, 184, 0.12);
+  outline: calc(2px * var(--inv-zoom, 1)) dashed rgba(148, 163, 184, 0.45);
+  outline-offset: -1px;
+}
+
+.bg-image.is-loading img,
+.bg-image.is-missing img {
+  visibility: hidden;
+}
+
+.bg-image.is-loading::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  border-radius: 50%;
+  border: 4px solid rgba(148, 163, 184, 0.35);
+  border-top-color: var(--accent-primary);
+  transform: scale(var(--inv-zoom, 1));
+  animation: bgImageSpin 0.8s linear infinite;
+  pointer-events: none;
+}
+
+.bg-image.is-missing::after {
+  content: '☁ Aún no está en este dispositivo';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--inv-zoom, 1));
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+@keyframes bgImageSpin {
+  from { transform: scale(var(--inv-zoom, 1)) rotate(0deg); }
+  to { transform: scale(var(--inv-zoom, 1)) rotate(360deg); }
+}
+
 .bg-image:hover {
   outline: calc(1.5px * var(--inv-zoom, 1)) dashed var(--border-medium);
   outline-offset: calc(2px * var(--inv-zoom, 1));
@@ -4998,6 +5205,65 @@ select option:checked {
   height: 1px;
   margin: 4px 6px;
   background: var(--border-subtle);
+}
+
+/* Submenús: al costado del menú (con mouse) o debajo de su título (pantallas angostas) */
+.canvas-menu-sub {
+  position: relative;
+}
+
+.canvas-menu-sub[hidden] {
+  display: none;
+}
+
+.canvas-menu .canvas-menu-sub-arrow {
+  flex: 0 0 auto;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--text-dim);
+  transition: transform 0.12s;
+}
+
+.canvas-menu-sub.is-open > .canvas-menu-sub-trigger {
+  background: var(--accent-primary-light);
+}
+
+.canvas-menu-sub-panel {
+  display: none;
+  position: absolute;
+  left: calc(100% + 4px);
+  top: -6px;
+  min-width: 230px;
+  padding: 5px;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xl);
+  z-index: 1;
+}
+
+.canvas-menu-sub.is-open > .canvas-menu-sub-panel {
+  display: flex;
+}
+
+.canvas-menu-sub.to-left > .canvas-menu-sub-panel {
+  left: auto;
+  right: calc(100% + 4px);
+}
+
+.canvas-menu-sub.is-inline > .canvas-menu-sub-panel {
+  position: static;
+  min-width: 0;
+  padding: 2px 0 4px 14px;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.canvas-menu-sub.is-inline.is-open .canvas-menu-sub-arrow {
+  transform: rotate(90deg);
 }
 
 /* ==========================================================================

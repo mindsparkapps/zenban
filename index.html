@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=65">
+  <link rel="stylesheet" href="styles.css?v=67">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -450,6 +450,15 @@
             </svg>
           </button>
 
+          <!-- Ir de objeto en objeto (por si al ajustar no se ve nada, p. ej. en el celular) -->
+          <button id="btnNextObject" class="hud-btn" title="Ir al siguiente objeto (Mayús+clic: al anterior)" aria-label="Ir al siguiente objeto">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="10" cy="12" r="6.5"></circle>
+              <circle cx="10" cy="12" r="2"></circle>
+              <polyline points="18.5 8 22.5 12 18.5 16"></polyline>
+            </svg>
+          </button>
+
           <!-- Agregar imagen de fondo -->
           <button id="btnAddBgImage" class="hud-btn" title="Agregar imagen de fondo (también puedes arrastrarla o pegarla con Ctrl+V)" aria-label="Agregar imagen de fondo">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -867,29 +876,50 @@
     <div class="canvas-menu" id="canvasContextMenu" role="menu" hidden>
       <button type="button" data-cmd="copy" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span>Copiar</span><kbd>Ctrl+C</kbd></button>
       <button type="button" data-cmd="cut" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg><span>Cortar</span><kbd>Ctrl+X</kbd></button>
+      <button type="button" data-cmd="paste" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1"></rect></svg><span>Pegar aquí</span><kbd>Ctrl+V</kbd></button>
       <button type="button" data-cmd="duplicate" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="13" height="13" rx="2"></rect><path d="M4 16V5a1 1 0 0 1 1-1h11"></path><line x1="14.5" y1="11.5" x2="14.5" y2="17.5"></line><line x1="11.5" y1="14.5" x2="17.5" y2="14.5"></line></svg><span>Duplicar</span><kbd>Ctrl+D</kbd></button>
       <button type="button" data-cmd="group" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg><span>Agrupar</span><kbd>Ctrl+G</kbd></button>
       <button type="button" data-cmd="ungroup" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5" stroke-dasharray="3 2"></rect><rect x="13" y="13" width="8" height="8" rx="1.5" stroke-dasharray="3 2"></rect></svg><span>Desagrupar</span><kbd>Ctrl+Shift+G</kbd></button>
-      <button type="button" data-cmd="copyStyle" role="menuitem"><span class="menu-emoji" aria-hidden="true">🖌️</span><span>Copiar estilo</span><kbd>Ctrl+Alt+C</kbd></button>
-      <button type="button" data-cmd="pasteStyle" role="menuitem"><span class="menu-emoji" aria-hidden="true">🎨</span><span>Pegar estilo</span><kbd>Ctrl+Alt+V</kbd></button>
-      <button type="button" data-cmd="defaultStyle" role="menuitem"><span class="menu-emoji" aria-hidden="true">⭐</span><span>Usar como estilo principal</span></button>
-      <button type="button" data-cmd="paste" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1"></rect></svg><span>Pegar aquí</span><kbd>Ctrl+V</kbd></button>
-      <button type="button" data-cmd="addText" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg><span>Agregar texto aquí</span><kbd>T</kbd></button>
-      <button type="button" data-cmd="photo" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg><span>Sacar foto aquí</span><kbd>C</kbd></button>
+      <div class="canvas-menu-sub" data-sub="style">
+        <button type="button" class="canvas-menu-sub-trigger" aria-haspopup="true" aria-expanded="false"><span class="menu-emoji" aria-hidden="true">🎨</span><span>Estilo</span><span class="canvas-menu-sub-arrow" aria-hidden="true">›</span></button>
+        <div class="canvas-menu-sub-panel" role="menu">
+          <button type="button" data-cmd="copyStyle" role="menuitem"><span class="menu-emoji" aria-hidden="true">🖌️</span><span>Copiar estilo</span><kbd>Ctrl+Alt+C</kbd></button>
+          <button type="button" data-cmd="pasteStyle" role="menuitem"><span class="menu-emoji" aria-hidden="true">🎨</span><span>Pegar estilo</span><kbd>Ctrl+Alt+V</kbd></button>
+          <button type="button" data-cmd="defaultStyle" role="menuitem"><span class="menu-emoji" aria-hidden="true">⭐</span><span>Usar como estilo principal</span></button>
+        </div>
+      </div>
+      <div class="canvas-menu-sub" data-sub="add">
+        <button type="button" class="canvas-menu-sub-trigger" aria-haspopup="true" aria-expanded="false"><span class="menu-emoji" aria-hidden="true">➕</span><span>Agregar aquí</span><span class="canvas-menu-sub-arrow" aria-hidden="true">›</span></button>
+        <div class="canvas-menu-sub-panel" role="menu">
+          <button type="button" data-cmd="addText" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg><span>Agregar texto aquí</span><kbd>T</kbd></button>
+          <button type="button" data-cmd="sticky" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v10l-6 6H4z"></path><path d="M14 20v-6h6"></path></svg><span>Nota adhesiva aquí</span><kbd>S</kbd></button>
+          <button type="button" data-cmd="frame" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"></rect><line x1="3" y1="9" x2="21" y2="9"></line></svg><span>Frame aquí</span><kbd>F</kbd></button>
+          <button type="button" data-cmd="photo" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg><span>Sacar foto aquí</span><kbd>C</kbd></button>
+          <button type="button" data-cmd="addPdf" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg><span>Agregar PDF aquí…</span></button>
+          <button type="button" data-cmd="findImage" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>Biblioteca de imágenes…</span></button>
+          <button type="button" data-cmd="internalLink" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 10 20 15 15 20"></polyline><path d="M4 4v7a4 4 0 0 0 4 4h12"></path></svg><span>Link a otro proyecto aquí</span></button>
+          <button type="button" data-cmd="ytProgress" role="menuitem"><span class="menu-emoji" aria-hidden="true">📊</span><span>Progreso de listas de YouTube aquí</span></button>
+        </div>
+      </div>
+      <div class="canvas-menu-sub" data-sub="google">
+        <button type="button" class="canvas-menu-sub-trigger" aria-haspopup="true" aria-expanded="false"><span class="menu-emoji" aria-hidden="true">📄</span><span>Google Docs aquí</span><span class="canvas-menu-sub-arrow" aria-hidden="true">›</span></button>
+        <div class="canvas-menu-sub-panel" role="menu">
+          <button type="button" data-cmd="newGoogleDoc" role="menuitem"><span class="menu-emoji" aria-hidden="true">📝</span><span>Nuevo Google Doc aquí</span></button>
+          <button type="button" data-cmd="newGoogleSheet" role="menuitem"><span class="menu-emoji" aria-hidden="true">📊</span><span>Nueva Hoja de cálculo aquí</span></button>
+          <button type="button" data-cmd="newGoogleSlides" role="menuitem"><span class="menu-emoji" aria-hidden="true">📽️</span><span>Nueva Presentación aquí</span></button>
+        </div>
+      </div>
+      <div class="canvas-menu-sub" data-sub="archive">
+        <button type="button" class="canvas-menu-sub-trigger" aria-haspopup="true" aria-expanded="false"><span class="menu-emoji" aria-hidden="true">📦</span><span>Archivar</span><span class="canvas-menu-sub-arrow" aria-hidden="true">›</span></button>
+        <div class="canvas-menu-sub-panel" role="menu">
+          <button type="button" data-cmd="archiveTask" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><line x1="10" y1="12" x2="14" y2="12"></line></svg><span>Archivar esta tarea</span></button>
+          <button type="button" data-cmd="archiveDone" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><polyline points="9 14 11 16 15 12"></polyline></svg><span>Archivar completadas de la columna</span></button>
+          <button type="button" data-cmd="archiveAll" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path></svg><span>Archivar todas las tareas de la columna</span></button>
+        </div>
+      </div>
       <button type="button" data-cmd="translate" role="menuitem"><span class="menu-emoji" aria-hidden="true">🌐</span><span>Traductor…</span></button>
-      <button type="button" data-cmd="addPdf" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg><span>Agregar PDF aquí…</span></button>
-      <button type="button" data-cmd="newGoogleDoc" role="menuitem"><span class="menu-emoji" aria-hidden="true">📝</span><span>Nuevo Google Doc aquí</span></button>
-      <button type="button" data-cmd="newGoogleSheet" role="menuitem"><span class="menu-emoji" aria-hidden="true">📊</span><span>Nueva Hoja de cálculo aquí</span></button>
-      <button type="button" data-cmd="newGoogleSlides" role="menuitem"><span class="menu-emoji" aria-hidden="true">📽️</span><span>Nueva Presentación aquí</span></button>
-      <button type="button" data-cmd="internalLink" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 10 20 15 15 20"></polyline><path d="M4 4v7a4 4 0 0 0 4 4h12"></path></svg><span>Link a otro proyecto aquí</span></button>
       <button type="button" data-cmd="copyInternalLink" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg><span>Copiar link interno a esto</span></button>
       <button type="button" data-cmd="canvasColor" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="1.5"></circle><circle cx="17.5" cy="10.5" r="1.5"></circle><circle cx="8.5" cy="7.5" r="1.5"></circle><circle cx="6.5" cy="12.5" r="1.5"></circle><path d="M12 2a10 10 0 0 0 0 20c.9 0 1.6-.7 1.6-1.6 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6H16a6 6 0 0 0 6-6c0-4.9-4.5-8.6-10-8.6z"></path></svg><span>Color de fondo del lienzo…</span></button>
-      <button type="button" data-cmd="archiveTask" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><line x1="10" y1="12" x2="14" y2="12"></line></svg><span>Archivar esta tarea</span></button>
-      <button type="button" data-cmd="archiveDone" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><polyline points="9 14 11 16 15 12"></polyline></svg><span>Archivar completadas de la columna</span></button>
-      <button type="button" data-cmd="archiveAll" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path></svg><span>Archivar todas las tareas de la columna</span></button>
-      <button type="button" data-cmd="frame" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"></rect><line x1="3" y1="9" x2="21" y2="9"></line></svg><span>Frame aquí</span><kbd>F</kbd></button>
-      <button type="button" data-cmd="sticky" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v10l-6 6H4z"></path><path d="M14 20v-6h6"></path></svg><span>Nota adhesiva aquí</span><kbd>S</kbd></button>
-      <button type="button" data-cmd="findImage" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>Biblioteca de imágenes…</span></button>
       <div class="canvas-menu-sep"></div>
       <button type="button" data-cmd="undo" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg><span>Deshacer</span><kbd>Ctrl+Z</kbd></button>
     </div>
@@ -1003,7 +1033,7 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=84"></script>
+  <script src="app.js?v=85"></script>
   <script src="share.js?v=7"></script>
   <script src="transfer.js?v=7"></script>
   <script src="spaces.js?v=8"></script>
@@ -1011,6 +1041,6 @@
   <script src="archive.js?v=3"></script>
   <script src="translator.js?v=3"></script>
   <script src="frames.js?v=4"></script>
-  <script src="objstyle.js?v=1"></script>
+  <script src="objstyle.js?v=2"></script>
 </body>
 </html>

@@ -174,6 +174,7 @@ openCanvasMenu = function () {
   canvasMenu.querySelector('[data-cmd="copyStyle"]').disabled = !single;
   canvasMenu.querySelector('[data-cmd="pasteStyle"]').disabled = !copiedStyle || !selection.size;
   canvasMenu.querySelector('[data-cmd="defaultStyle"]').hidden = !selectionStyleType();
+  syncCanvasSubmenus();
 };
 // Atajos: Ctrl+Alt+C copia el estilo y Ctrl+Alt+V lo pega
 window.addEventListener('keydown', (e) => {

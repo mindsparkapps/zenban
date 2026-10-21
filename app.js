@@ -451,6 +451,7 @@ btnZoomReset.addEventListener('click', () => {
 
 // Fit Board into Viewport
 btnZoomFit.addEventListener('click', fitBoardToScreen);
+document.getElementById('btnNextObject').addEventListener('click', (e) => goToNextObject(e.shiftKey ? -1 : 1));
 
 function fitBoardToScreen() {
   const vpRect = viewportArea.getBoundingClientRect();
@@ -470,6 +471,40 @@ function fitBoardToScreen() {
 
   applyTransform(true);
   showToast(`Tablero ajustado (${Math.round(zoom * 100)}%)`, 'info');
+}
+
+// ----- Ir de objeto en objeto: recorre tableros, frames, textos, notas e imágenes (de arriba abajo,
+//       de izquierda a derecha), los centra y los selecciona. Útil si al ajustar no se ve nada. -----
+let objectTourIndex = -1;
+function canvasObjectsForTour() {
+  const list = [];
+  boards.forEach(b => {
+    const el = getBoardEl(b.id);
+    if (el) list.push({ key: `board:${b.id}`, name: `Tablero: ${b.title || 'sin título'}`, x: b.x, y: b.y, w: el.offsetWidth, h: el.offsetHeight });
+  });
+  if (typeof getFrames === 'function') getFrames().forEach(f => list.push({ key: `frame:${f.id}`, name: f.title ? `Frame: ${f.title}` : 'Frame', x: f.x, y: f.y, w: f.w, h: f.h }));
+  getTexts().forEach(t => {
+    const el = getTextEl(t.id);
+    const first = String(t.text || '').split('\n')[0].slice(0, 40);
+    if (el) list.push({ key: `text:${t.id}`, name: `${t.sticky ? 'Nota' : 'Texto'}${first ? `: ${first}` : ''}`, x: t.x, y: t.y, w: el.offsetWidth, h: el.offsetHeight });
+  });
+  getBgImages().forEach(i => list.push({ key: `img:${i.id}`, name: 'Imagen', x: i.x, y: i.y, w: i.w, h: i.h }));
+  // Por filas (de a 200 px) y dentro de cada fila de izquierda a derecha
+  return list.sort((a, b) => Math.floor(a.y / 200) - Math.floor(b.y / 200) || a.x - b.x);
+}
+
+function goToNextObject(step = 1) {
+  const list = canvasObjectsForTour();
+  if (!list.length) { showToast('Este proyecto todavía no tiene objetos en el lienzo', 'info'); return; }
+  // Si hay algo seleccionado, se sigue desde ahí
+  const selKey = selection.size === 1 ? [...selection][0] : null;
+  const current = selKey ? list.findIndex(o => o.key === selKey) : -1;
+  const from = current >= 0 ? current : objectTourIndex;
+  objectTourIndex = ((from + step) % list.length + list.length) % list.length;
+  const o = list[objectTourIndex];
+  fitRectToScreen(o.x, o.y, o.w, o.h);
+  setSelection([o.key]);
+  showToast(`${objectTourIndex + 1} de ${list.length} · ${o.name}`, 'info');
 }
 
 // Acerca la vista hasta que un objeto (imagen, texto o tablero) llene la pantalla, centrado
@@ -3079,22 +3114,7 @@ function renderBgImages() {
     // de un zoom alto a uno bajo, el celular las mostraba por trozos mientras las volvía a descomprimir
     imgEl.decoding = 'sync';
     imgEl.style.opacity = typeof data.opacity === 'number' ? data.opacity : 1;
-    // En el celular el lienzo usa una versión de tamaño moderado (ver getImageVariantUrl)
-    const cached = IS_TOUCH_SCREEN ? cachedImageVariant(data.id, CANVAS_IMAGE_MAX_TOUCH) : bgImageUrls.get(data.id);
-    const setSrc = (url) => {
-      if (!url) return;
-      imgEl.src = url;
-      // Descomprimida completa una vez: el navegador la achica al instante para cualquier zoom
-      // en vez de descomprimirla de nuevo a cada tamaño
-      imgEl.decode().catch(() => {});
-    };
-    if (cached) {
-      setSrc(cached); // sin esperar, para que no parpadee al redibujar
-    } else {
-      (IS_TOUCH_SCREEN ? getImageVariantUrl(data.id, CANVAS_IMAGE_MAX_TOUCH) : getImageUrl(data.id))
-        .then(setSrc)
-        .catch(() => {});
-    }
+    loadBgImageInto(el, data.id);
 
     el.querySelector('.bg-image-toolbar').addEventListener('pointerdown', (e) => e.stopPropagation());
     el.querySelector('.bg-image-toolbar').addEventListener('click', (e) => {
@@ -3163,6 +3183,39 @@ function renderBgImages() {
     bgImageLayer.appendChild(el);
   });
   applySelectionVisuals();
+}
+
+// Pone la imagen en su caja del lienzo. Mientras no está lista se ve un ícono de carga
+// (antes la caja quedaba vacía y parecía que la imagen se había borrado).
+function loadBgImageInto(el, id) {
+  const imgEl = el.querySelector('img');
+  if (!imgEl) return;
+  // En el celular el lienzo usa una versión de tamaño moderado (ver getImageVariantUrl)
+  const cached = IS_TOUCH_SCREEN ? cachedImageVariant(id, CANVAS_IMAGE_MAX_TOUCH) : bgImageUrls.get(id);
+  const setSrc = (url) => {
+    if (!url) {
+      // No está en este dispositivo: con sesión se está descargando (sigue el ícono de carga);
+      // sin sesión se avisa que llega al sincronizar
+      const waiting = !!(syncEnabled() && SYNC.token);
+      el.classList.toggle('is-loading', waiting);
+      el.classList.toggle('is-missing', !waiting);
+      return;
+    }
+    imgEl.onload = () => el.classList.remove('is-loading', 'is-missing');
+    imgEl.src = url;
+    // Descomprimida completa una vez: el navegador la achica al instante para cualquier zoom
+    // en vez de descomprimirla de nuevo a cada tamaño
+    imgEl.decode().then(() => el.classList.remove('is-loading', 'is-missing')).catch(() => {});
+  };
+  if (cached) {
+    setSrc(cached); // sin esperar, para que no parpadee al redibujar
+    if (imgEl.complete) return;
+  }
+  el.classList.add('is-loading');
+  if (cached) return;
+  (IS_TOUCH_SCREEN ? getImageVariantUrl(id, CANVAS_IMAGE_MAX_TOUCH) : getImageUrl(id))
+    .then(setSrc)
+    .catch(() => {});
 }
 
 // ----- Imágenes de tareas -----
@@ -4369,7 +4422,10 @@ function startGroupDrag(e) {
   const txts = getTexts().filter(t => moveKeys.has(`text:${t.id}`)).map(t => ({ t, el: getTextEl(t.id), x: t.x, y: t.y }));
   const frms = typeof getFrames === 'function' ? getFrames().filter(f => moveKeys.has(`frame:${f.id}`)).map(f => ({ f, el: getFrameEl(f.id), x: f.x, y: f.y })) : [];
   const singleImg = selection.size === 1 && imgs.length === 1 ? imgs[0] : null;
-  let moved = false, dx = 0, dy = 0, targetCard = null, imageTarget = null;
+  // Un texto con listas de YouTube soltado sobre un widget de progreso suma sus listas
+  const singleListText = selection.size === 1 && txts.length === 1 && !Array.isArray(txts[0].t.ytLists)
+    && youtubeRefs(txts[0].t.text).lists.length ? txts[0] : null;
+  let moved = false, dx = 0, dy = 0, targetCard = null, imageTarget = null, progressTarget = null;
 
   selectGestureActive = true;
   viewportArea.setPointerCapture(e.pointerId);
@@ -4412,6 +4468,12 @@ function startGroupDrag(e) {
       highlightDropCard(targetCard);
       if (singleImg.el) singleImg.el.classList.toggle('is-over-card', !!(targetCard || imageTarget));
     }
+    if (singleListText) {
+      const w = document.elementsFromPoint(ev.clientX, ev.clientY).find(n => n.classList && n.classList.contains('is-ytprogress'));
+      if (progressTarget && progressTarget !== w) progressTarget.classList.remove('is-drop-target');
+      progressTarget = w || null;
+      if (progressTarget) progressTarget.classList.add('is-drop-target');
+    }
   };
 
   const onUp = (ev) => {
@@ -4424,7 +4486,17 @@ function startGroupDrag(e) {
     brds.forEach(o => o.el && o.el.classList.remove('is-moving'));
     highlightDropCard(null);
     highlightImageDropTarget(null);
+    if (progressTarget) progressTarget.classList.remove('is-drop-target');
     if (!moved) return;
+
+    // Texto con listas de YouTube soltado sobre un widget de progreso: vuelve a su lugar y sus listas se suman
+    if (singleListText && progressTarget) {
+      singleListText.t.x = singleListText.x;
+      singleListText.t.y = singleListText.y;
+      const widget = getTexts().find(t => t.id === progressTarget.dataset.textId);
+      if (widget) addListsToYtWidget(widget, singleListText.t);
+      return;
+    }
 
     // Imagen del lienzo soltada sobre un link o un tablero: pasa a ser la imagen de ese link o tablero
     if (singleImg && imageTarget) {
@@ -4789,7 +4861,10 @@ function renderTexts() {
     el.className = 'canvas-text';
     el.dataset.textId = t.id;
     applyTextStyle(el, t);
-    el.innerHTML = linkify(t.text, t.linkNames) + youtubePreviews(t.text);
+    // Widget "Progreso de listas" (t.ytLists) o texto normal
+    const isWidget = Array.isArray(t.ytLists);
+    el.classList.toggle('is-ytprogress', isWidget);
+    el.innerHTML = isWidget ? ytProgressWidgetHtml(t) : linkify(t.text, t.linkNames) + youtubePreviews(t.text);
     const handle = document.createElement('div');
     handle.className = 'canvas-text-handle';
     handle.title = 'Arrastra para cambiar el ancho de la caja';
@@ -5636,6 +5711,7 @@ function openCanvasMenu(clientX, clientY, target) {
   canvasMenu.querySelector('[data-cmd="group"]').disabled = selection.size < 2;
   canvasMenu.querySelector('[data-cmd="group"]').title = selection.size < 2 ? 'Selecciona dos o más objetos para agruparlos' : '';
   canvasMenu.querySelector('[data-cmd="ungroup"]').hidden = selectionGroups().size === 0;
+  syncCanvasSubmenus();
 
   canvasMenu.hidden = false;
   const w = canvasMenu.offsetWidth;
@@ -5646,7 +5722,72 @@ function openCanvasMenu(clientX, clientY, target) {
 
 function closeCanvasMenu() {
   canvasMenu.hidden = true;
+  closeCanvasSubmenus();
 }
+
+// ----- Submenús (Estilo, Agregar aquí, Google Docs, Archivar): con mouse se abren al pasar por encima,
+//       al costado; al tocarlos se abren y cierran. Si no hay lugar al costado, se abren debajo. -----
+function closeCanvasSubmenus(except = null) {
+  canvasMenu.querySelectorAll('.canvas-menu-sub.is-open').forEach(sub => {
+    if (sub === except) return;
+    sub.classList.remove('is-open');
+    sub.querySelector('.canvas-menu-sub-trigger').setAttribute('aria-expanded', 'false');
+  });
+}
+
+function openCanvasSubmenu(sub) {
+  closeCanvasSubmenus(sub);
+  const panel = sub.querySelector('.canvas-menu-sub-panel');
+  sub.classList.remove('to-left', 'is-inline');
+  panel.style.top = '';
+  sub.classList.add('is-open');
+  sub.querySelector('.canvas-menu-sub-trigger').setAttribute('aria-expanded', 'true');
+  const menuRect = canvasMenu.getBoundingClientRect();
+  const w = panel.offsetWidth;
+  if (menuRect.right + w + 8 > window.innerWidth) {
+    if (menuRect.left - w - 8 >= 0) sub.classList.add('to-left');
+    else sub.classList.add('is-inline');
+  }
+  if (!sub.classList.contains('is-inline')) {
+    // Que no se salga por abajo
+    const r = panel.getBoundingClientRect();
+    if (r.bottom > window.innerHeight - 8) panel.style.top = `${-6 - (r.bottom - window.innerHeight + 8)}px`;
+  }
+}
+
+// Oculta un submenú si no tiene opciones visibles y lo desactiva si todas están desactivadas
+function syncCanvasSubmenus() {
+  canvasMenu.querySelectorAll('.canvas-menu-sub').forEach(sub => {
+    const items = [...sub.querySelectorAll('.canvas-menu-sub-panel [data-cmd]')].filter(b => !b.hidden);
+    sub.hidden = !items.length;
+    sub.querySelector('.canvas-menu-sub-trigger').disabled = items.every(b => b.disabled);
+  });
+  closeCanvasSubmenus();
+}
+
+canvasMenu.querySelectorAll('.canvas-menu-sub').forEach(sub => {
+  const trigger = sub.querySelector('.canvas-menu-sub-trigger');
+  let closeTimer = null;
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (trigger.disabled) return;
+    if (sub.classList.contains('is-open')) closeCanvasSubmenus(); else openCanvasSubmenu(sub);
+  });
+  sub.addEventListener('pointerenter', (e) => {
+    if (e.pointerType !== 'mouse' || trigger.disabled) return;
+    clearTimeout(closeTimer);
+    openCanvasSubmenu(sub);
+  });
+  sub.addEventListener('pointerleave', (e) => {
+    if (e.pointerType !== 'mouse' || sub.classList.contains('is-inline')) return;
+    closeTimer = setTimeout(() => { if (!sub.matches(':hover')) { sub.classList.remove('is-open'); trigger.setAttribute('aria-expanded', 'false'); } }, 250);
+  });
+});
+// Al pasar por una opción del menú principal se cierra el submenú abierto
+canvasMenu.addEventListener('pointerover', (e) => {
+  const btn = e.target.closest('button');
+  if (e.pointerType === 'mouse' && btn && !btn.closest('.canvas-menu-sub')) closeCanvasSubmenus();
+});
 
 // En el celular, doble toque sobre una imagen, un texto o un tablero acerca la vista a ese objeto;
 // en un espacio vacío abre el menú contextual (equivale al clic derecho)
@@ -5705,6 +5846,7 @@ canvasMenu.addEventListener('click', async (e) => {
   if (cmd === 'group') groupSelection();
   if (cmd === 'ungroup') ungroupSelection();
   if (cmd === 'sticky') addStickyNote(menuCanvasPoint);
+  if (cmd === 'ytProgress') addYtProgressWidget(menuCanvasPoint);
   if (cmd === 'findImage') openImageLibrary(menuCanvasPoint);
   if (cmd === 'internalLink') {
     const point = menuCanvasPoint;
@@ -6447,9 +6589,9 @@ async function syncNow() {
   }
 }
 
-function referencedImageIds() {
+function referencedImageIds(list = projects) {
   const ids = new Set();
-  projects.forEach(p => {
+  list.forEach(p => {
     (p.bgImages || []).forEach(i => ids.add(i.id));
     (p.tasks || []).forEach(t => (t.images || []).forEach(i => ids.add(i.id)));
     // Imágenes de las pestañas de los tableros y de los links que se muestran como imagen
@@ -6468,26 +6610,54 @@ function referencedImageIds() {
   return ids;
 }
 
-// Sube las imágenes nuevas y descarga las que falten en este dispositivo
+// Sube las imágenes nuevas y descarga las que falten en este dispositivo.
+// Primero las del proyecto abierto, varias a la vez, y cada una se muestra apenas llega
+// (antes se bajaban de a una, de todos los proyectos, y se veían todas juntas al final).
+const IMAGE_DOWNLOADS_AT_ONCE = 4;
 async function syncImages() {
   const ids = referencedImageIds();
   if (ids.size === 0) return;
   if (!SYNC.imageFiles) SYNC.imageFiles = await listDriveImages();
+  const localKeys = new Set(await ImageStore.keys().catch(() => []));
+  const activeIds = referencedImageIds([getActiveProject()]);
+  const ordered = [...ids].sort((a, b) => Number(activeIds.has(b)) - Number(activeIds.has(a)));
+  const toDownload = ordered.filter(id => !localKeys.has(id) && SYNC.imageFiles.has(id));
   let downloaded = 0;
-  for (const id of ids) {
-    const local = await ImageStore.get(id).catch(() => null);
-    if (local && !SYNC.imageFiles.has(id)) {
-      SYNC.imageFiles.set(id, await driveUpload(id, local));
-    } else if (!local && SYNC.imageFiles.has(id)) {
-      const r = await driveFetch(`${DRIVE_API}/files/${SYNC.imageFiles.get(id)}?alt=media&supportsAllDrives=true`);
-      await ImageStore.put(id, await r.blob());
-      downloaded++;
+  const worker = async () => {
+    while (toDownload.length) {
+      const id = toDownload.shift();
+      try {
+        const r = await driveFetch(`${DRIVE_API}/files/${SYNC.imageFiles.get(id)}?alt=media&supportsAllDrives=true`);
+        await ImageStore.put(id, await r.blob());
+        downloaded++;
+        imageArrived(id);
+      } catch (e) {
+        console.warn('Imagen no descargada', id, e);
+      }
     }
+  };
+  await Promise.all(Array.from({ length: Math.min(IMAGE_DOWNLOADS_AT_ONCE, toDownload.length) }, worker));
+  for (const id of ordered) {
+    if (!localKeys.has(id) || SYNC.imageFiles.has(id)) continue;
+    const local = await ImageStore.get(id).catch(() => null);
+    if (local) SYNC.imageFiles.set(id, await driveUpload(id, local));
   }
-  if (downloaded) {
-    renderBgImages();
-    renderBoard();
-  }
+  // Las que no están ni aquí ni en Drive (aún no las sube el otro dispositivo) dejan de mostrar la carga
+  bgImageLayer.querySelectorAll('.bg-image.is-loading').forEach(el => {
+    const id = el.dataset.imageId;
+    if (!localKeys.has(id) && !SYNC.imageFiles.has(id)) { el.classList.remove('is-loading'); el.classList.add('is-missing'); }
+  });
+  // Las de las tareas (tarjetas) se redibujan una vez al final
+  if (downloaded) renderBoard();
+}
+
+// Una imagen recién descargada: se pone donde ya se estaba esperando, sin redibujar todo
+function imageArrived(id) {
+  const el = bgImageLayer.querySelector(`.bg-image[data-image-id="${id}"]`);
+  if (el) loadBgImageInto(el, id);
+  document.querySelectorAll(`img[data-board-img="${id}"], img[data-link-img="${id}"]`).forEach(img => img.removeAttribute('src'));
+  hydrateBoardImages();
+  hydrateLinkImages();
 }
 
 // ----- Eventos -----
@@ -6553,7 +6723,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '84';
+const APP_VERSION = '85';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -7724,6 +7894,129 @@ function loadPlaylist(id) {
   return p;
 }
 
+// ----- Videos vistos de cada lista (casillas) y su progreso. Se guardan en el proyecto:
+//       project.ytProgress = [{ id: idDeLaLista, done: [idsDeVideos] }] (se sincroniza como lo demás) -----
+function ytProgressEntries() {
+  const p = getActiveProject();
+  if (!Array.isArray(p.ytProgress)) p.ytProgress = [];
+  return p.ytProgress;
+}
+
+function ytDoneSet(listId) {
+  const e = ytProgressEntries().find(x => x.id === listId);
+  return new Set(e ? e.done : []);
+}
+
+function setYtVideoDone(listId, videoId, done) {
+  const list = ytProgressEntries();
+  let e = list.find(x => x.id === listId);
+  if (!e) { e = { id: listId, done: [] }; list.push(e); }
+  e.done = e.done.filter(v => v !== videoId);
+  if (done) e.done.push(videoId);
+  persist();
+  refreshYtProgress();
+}
+
+// Vistos y total de una lista (total: los videos que tiene en YouTube, aunque se muestren menos)
+function ytListProgress(listId) {
+  const data = cachedPlaylist(listId);
+  const done = ytDoneSet(listId);
+  if (!data) return { done: done.size, total: 0, title: null };
+  const total = Math.max(data.count || 0, data.videos.length);
+  // Solo cuentan los videos que siguen en la lista (si se sacó uno ya marcado, no suma)
+  const shown = new Set(data.videos.map(v => v.id));
+  const doneNow = [...done].filter(v => shown.has(v) || data.videos.length < total).length;
+  return { done: Math.min(doneNow, total), total, title: data.title };
+}
+
+function ytProgressBarHtml(done, total, cls = '') {
+  const pct = total ? Math.round(done / total * 100) : 0;
+  return `<span class="yt-progress ${cls}" title="${done} de ${total} vistos (${pct}%)"><i style="width:${pct}%"></i></span>`;
+}
+
+function ytListProgressHtml(listId) {
+  const { done, total } = ytListProgress(listId);
+  return `<span class="yt-pl-progress" data-progress-list="${listId}">${ytProgressBarHtml(done, total)}<small>${done}/${total} vistos</small></span>`;
+}
+
+// ----- Widget "Progreso de listas": suma los vistos de varias listas. Se configura arrastrando encima
+//       un texto (o nota) que tenga listas de YouTube; cada lista se puede quitar con su ×. -----
+const ytFailedLists = new Set(); // listas que no se pudieron leer (privadas o borradas) en esta sesión
+function ytProgressWidgetHtml(t) {
+  const lists = t.ytLists || [];
+  let done = 0, total = 0;
+  const rows = lists.map(id => {
+    const p = ytListProgress(id);
+    if (!p.title && !playlistLoading.has(id) && !ytFailedLists.has(id)) {
+      loadPlaylist(id).then(refreshYtProgressWidgets).catch(() => { ytFailedLists.add(id); refreshYtProgressWidgets(); });
+    }
+    done += p.done;
+    total += p.total;
+    const name = p.title || (ytFailedLists.has(id) ? 'No se pudo leer (¿privada?)' : 'Cargando lista…');
+    return `<div class="ytp-row"><span class="ytp-name" title="${escapeHtml(p.title || id)}">${escapeHtml(name)}</span>` +
+      `<span class="ytp-count">${p.done}/${p.total}</span>` +
+      `<button type="button" class="ytp-remove" data-ytp-remove="${id}" title="Quitar esta lista del progreso">×</button>` +
+      `${ytProgressBarHtml(p.done, p.total)}</div>`;
+  }).join('');
+  const pct = total ? Math.round(done / total * 100) : 0;
+  return `<div class="ytp-widget"><div class="ytp-head"><b>${escapeHtml(t.text || 'Progreso de listas')}</b>` +
+    `<span class="ytp-total">${pct}% · ${done}/${total}</span></div>${ytProgressBarHtml(done, total)}` +
+    (lists.length ? `<div class="ytp-lists">${rows}</div>`
+      : '<p class="ytp-empty">Arrastra encima un texto o nota con listas de YouTube para sumar su progreso.</p>') + '</div>';
+}
+
+function refreshYtProgressWidgets() {
+  getTexts().forEach(t => {
+    if (!Array.isArray(t.ytLists) || t.id === editingTextId) return;
+    const el = getTextEl(t.id);
+    const w = el && el.querySelector('.ytp-widget');
+    if (w) w.outerHTML = ytProgressWidgetHtml(t);
+  });
+  if (typeof renderConnectors === 'function') renderConnectors();
+}
+
+function addYtProgressWidget(at) {
+  const t = addText('Progreso de listas', at, { ytLists: [], fixedWidth: true, w: Math.round(380 / zoom), size: Math.max(4, Math.round(16 / zoom)) });
+  showToast('Arrastra encima los textos o notas que tengan listas de YouTube para sumar su progreso', 'info');
+  return t;
+}
+
+// Suma al widget las listas de un texto soltado encima
+function addListsToYtWidget(widget, source) {
+  const lists = youtubeRefs(source.text).lists.filter(id => !widget.ytLists.includes(id));
+  if (!lists.length) { showToast('Esas listas ya están en el progreso', 'info'); return; }
+  widget.ytLists = [...widget.ytLists, ...lists];
+  persist();
+  renderTexts();
+  showToast(lists.length === 1 ? 'Lista agregada al progreso' : `${lists.length} listas agregadas al progreso`, 'success');
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest && e.target.closest('[data-ytp-remove]');
+  if (!btn) return;
+  e.stopPropagation();
+  const el = btn.closest('.canvas-text');
+  const t = el && getTexts().find(x => x.id === el.dataset.textId);
+  if (!t) return;
+  t.ytLists = t.ytLists.filter(id => id !== btn.dataset.ytpRemove);
+  persist();
+  refreshYtProgressWidgets();
+});
+
+// Actualiza las barras y los widgets de progreso sin redibujar todo
+function refreshYtProgress() {
+  document.querySelectorAll('[data-progress-list]').forEach(el => { el.outerHTML = ytListProgressHtml(el.dataset.progressList); });
+  if (typeof refreshYtProgressWidgets === 'function') refreshYtProgressWidgets();
+}
+
+document.addEventListener('change', (e) => {
+  const box = e.target.closest && e.target.closest('[data-yt-check]');
+  if (!box) return;
+  setYtVideoDone(box.dataset.list, box.dataset.video, box.checked);
+  const row = box.closest('.yt-pl-row');
+  if (row) row.classList.toggle('is-done', box.checked);
+});
+
 function playlistHtml(id, mode) {
   const data = cachedPlaylist(id);
   const listUrl = `https://www.youtube.com/playlist?list=${id}`;
@@ -7735,13 +8028,17 @@ function playlistHtml(id, mode) {
   const more = data.count > data.videos.length ? data.count : data.videos.length;
   const head = `<a class="yt-playlist-head" href="${listUrl}" target="_blank" rel="noopener noreferrer" title="Ver la lista en YouTube">` +
     `<span class="yt-playlist-cover">${first ? `<img src="https://i.ytimg.com/vi/${first.id}/mqdefault.jpg" alt="" loading="lazy" decoding="async" draggable="false">` : ''}<span class="yt-playlist-count">▶ ${more} videos</span></span>` +
-    `<span class="yt-playlist-info"><b>${escapeHtml(data.title)}</b><small>${escapeHtml(data.author || 'YouTube')} · ${more} videos</small></span></a>`;
+    `<span class="yt-playlist-info"><b>${escapeHtml(data.title)}</b><small>${escapeHtml(data.author || 'YouTube')} · ${more} videos</small>${ytListProgressHtml(id)}</span></a>`;
   if (mode === 'compact') return `<div class="yt-playlist is-compact" data-list="${id}" data-ready="1">${head}</div>`;
+  const done = ytDoneSet(id);
+  // Cada video con su casilla de "visto" (la casilla queda fuera del link para no abrir YouTube al marcarla)
   const items = data.videos.map((v, i) =>
+    `<div class="yt-pl-row${done.has(v.id) ? ' is-done' : ''}">` +
+    `<label class="yt-pl-check" title="Marcar como visto"><input type="checkbox" data-yt-check data-list="${id}" data-video="${v.id}"${done.has(v.id) ? ' checked' : ''}></label>` +
     `<a class="yt-pl-item" href="https://www.youtube.com/watch?v=${v.id}&amp;list=${id}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(v.title)}">` +
     `<span class="yt-pl-index">${i + 1}</span>` +
     `<span class="yt-pl-thumb"><img src="https://i.ytimg.com/vi/${v.id}/mqdefault.jpg" alt="" loading="lazy" decoding="async" draggable="false">${v.duration ? `<span class="yt-pl-duration">${escapeHtml(v.duration)}</span>` : ''}</span>` +
-    `<span class="yt-pl-text"><b>${escapeHtml(v.title)}</b><small>${escapeHtml(v.channel || '')}</small></span></a>`).join('');
+    `<span class="yt-pl-text"><b>${escapeHtml(v.title)}</b><small>${escapeHtml(v.channel || '')}</small></span></a></div>`).join('');
   const rest = data.count > data.videos.length
     ? `<a class="yt-pl-more" href="${listUrl}" target="_blank" rel="noopener noreferrer">Ver los ${data.count} videos en YouTube</a>` : '';
   return `<div class="yt-playlist" data-list="${id}" data-ready="1">${head}<div class="yt-pl-items">${items}</div>${rest}</div>`;
