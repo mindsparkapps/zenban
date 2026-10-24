@@ -340,6 +340,8 @@ connectHandle.hidden = true;
 zoomCanvas.appendChild(connectHandle);
 
 function updateConnectHandle() {
+  // Durante un arrastre se esconde (medir el objeto en cada cuadro trababa el celular); al soltar vuelve
+  if (selectGestureActive) { connectHandle.hidden = true; ytListHandle.hidden = true; return; }
   if (typeof updateYtListHandle === 'function' && typeof ytListHandle !== 'undefined') updateYtListHandle();
   const key = selection.size === 1 ? [...selection][0] : '';
   const r = currentTool === 'select' && /^(frame|text|img|board):/.test(key) ? objectRectByKey(key) : null;

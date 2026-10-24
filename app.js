@@ -511,26 +511,44 @@ btnZoomReset.addEventListener('click', () => {
 btnZoomFit.addEventListener('click', fitBoardToScreen);
 document.getElementById('btnNextObject').addEventListener('click', (e) => goToNextObject(e.shiftKey ? -1 : 1));
 
+// Parte del lienzo que de verdad se ve: sin lo que queda bajo la barra del navegador (celular) ni lo que
+// tapan la barra de contexto (arriba), la barra del zoom (abajo) y la de herramientas (izquierda)
+function visibleCanvasRect() {
+  const r = viewportArea.getBoundingClientRect();
+  const screenH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  let top = r.top, bottom = Math.min(r.bottom, screenH), left = r.left, right = Math.min(r.right, window.innerWidth);
+  const shown = (el) => el && !el.hidden && getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().height > 0;
+  const ctx = document.getElementById('contextBar') || document.querySelector('.context-bar');
+  if (shown(ctx) && getComputedStyle(ctx).position === 'fixed') top = Math.max(top, ctx.getBoundingClientRect().bottom);
+  const hud = document.querySelector('#zoomHud .hud-pill');
+  if (shown(hud)) { const hr = hud.getBoundingClientRect(); if (hr.top > (top + bottom) / 2) bottom = Math.min(bottom, hr.top - 4); }
+  const tools = document.querySelector('.toolbox-pill');
+  if (shown(tools)) { const tr = tools.getBoundingClientRect(); if (tr.left < r.left + 80 && tr.height > (bottom - top) * 0.4) left = Math.max(left, tr.right + 4); }
+  return { width: Math.max(80, right - left), height: Math.max(80, bottom - top), offX: left - r.left, offY: top - r.top };
+}
+
 function fitBoardToScreen() {
-  const vpRect = viewportArea.getBoundingClientRect();
+  const vis = visibleCanvasRect();
   const bounds = getContentBounds();
   const boardWidth = Math.max(1, bounds.maxX - bounds.minX);
   const boardHeight = Math.max(1, bounds.maxY - bounds.minY);
 
   // En el celular la pantalla es chica: se deja menos margen
-  const padding = vpRect.width < 600 ? 14 : 40;
-  const scaleX = (vpRect.width - padding * 2) / boardWidth;
-  const scaleY = (vpRect.height - padding * 2) / boardHeight;
+  const padding = vis.width < 600 ? 10 : 40;
+  const scaleX = (vis.width - padding * 2) / boardWidth;
+  const scaleY = (vis.height - padding * 2) / boardHeight;
   let targetZoom = Math.min(scaleX, scaleY, 1.2);
   // Para que se vea TODO se puede alejar más que el zoom mínimo de Configuración (en el celular no alcanzaba)
-  targetZoom = Math.max(targetZoom, 0.03);
+  targetZoom = Math.max(targetZoom, 0.02);
 
   zoom = targetZoom;
-  panX = (vpRect.width - boardWidth * zoom) / 2 - bounds.minX * zoom;
-  panY = (vpRect.height - boardHeight * zoom) / 2 - bounds.minY * zoom;
+  // Centrado en la parte visible
+  panX = vis.offX + (vis.width - boardWidth * zoom) / 2 - bounds.minX * zoom;
+  panY = vis.offY + (vis.height - boardHeight * zoom) / 2 - bounds.minY * zoom;
 
   applyTransform(true);
-  showToast(`Tablero ajustado (${Math.round(zoom * 100)}%)`, 'info');
+  const pct = zoom * 100;
+  showToast(`Tablero ajustado (${pct < 10 ? pct.toFixed(1).replace('.', ',') : Math.round(pct)}%)`, 'info');
 }
 
 // ----- Ir de objeto en objeto: recorre tableros, frames, textos, notas e imágenes (de arriba abajo,
@@ -569,14 +587,15 @@ function goToNextObject(step = 1) {
 
 // Acerca la vista hasta que un objeto (imagen, texto o tablero) llene la pantalla, centrado
 function fitRectToScreen(x, y, w, h) {
-  const vpRect = viewportArea.getBoundingClientRect();
-  const padding = 24;
-  const scaleX = (vpRect.width - padding * 2) / Math.max(1, w);
-  const scaleY = (vpRect.height - padding * 2) / Math.max(1, h);
+  // Solo la parte del lienzo que se ve (sin barras ni lo que tapa el navegador en el celular)
+  const vis = visibleCanvasRect();
+  const padding = vis.width < 600 ? 12 : 24;
+  const scaleX = (vis.width - padding * 2) / Math.max(1, w);
+  const scaleY = (vis.height - padding * 2) / Math.max(1, h);
   zoom = Math.min(Math.max(Math.min(scaleX, scaleY), ZOOM_CONFIG.MIN), ZOOM_CONFIG.MAX);
   // Si ni con el zoom mínimo cabe (p. ej. un tablero ancho en el celular), se muestra desde su esquina
-  panX = w * zoom > vpRect.width - padding * 2 ? padding - x * zoom : (vpRect.width - w * zoom) / 2 - x * zoom;
-  panY = h * zoom > vpRect.height - padding * 2 ? padding - y * zoom : (vpRect.height - h * zoom) / 2 - y * zoom;
+  panX = vis.offX + (w * zoom > vis.width - padding * 2 ? padding - x * zoom : (vis.width - w * zoom) / 2 - x * zoom);
+  panY = vis.offY + (h * zoom > vis.height - padding * 2 ? padding - y * zoom : (vis.height - h * zoom) / 2 - y * zoom);
   applyTransform(true);
 }
 
@@ -4482,6 +4501,9 @@ function startGroupDrag(e) {
   const txts = getTexts().filter(t => moveKeys.has(`text:${t.id}`)).map(t => ({ t, el: getTextEl(t.id), x: t.x, y: t.y }));
   const frms = typeof getFrames === 'function' ? getFrames().filter(f => moveKeys.has(`frame:${f.id}`)).map(f => ({ f, el: getFrameEl(f.id), x: f.x, y: f.y })) : [];
   const singleImg = selection.size === 1 && imgs.length === 1 ? imgs[0] : null;
+  // Solo se redibujan las flechas en cada cuadro si alguna toca lo que se mueve (redibujarlas siempre
+  // costaba ~40 veces más por cuadro y en el celular el arrastre se trababa)
+  const movesConnectors = typeof getConnectors === 'function' && getConnectors().some(c => moveKeys.has(endpointKey(c.from)) || moveKeys.has(endpointKey(c.to)));
   let moved = false, dx = 0, dy = 0, targetCard = null, imageTarget = null;
 
   selectGestureActive = true;
@@ -4515,8 +4537,9 @@ function startGroupDrag(e) {
       o.f.y = Math.round(o.y + dy);
       if (o.el) { o.el.style.left = `${o.f.x}px`; o.el.style.top = `${o.f.y}px`; }
     });
-    // Las flechas los siguen (unen frames, tableros, imágenes, textos y notas), y también la manija de conexión
-    if (typeof renderConnectors === 'function') renderConnectors();
+    // Las flechas los siguen (unen frames, tableros, imágenes, textos y notas); la manija de conexión
+    // se esconde mientras tanto y vuelve a su lugar al soltar
+    if (movesConnectors) renderConnectors();
     if (singleImg) {
       // Sobre un link o un tablero gana ese destino; si no, una tarea
       imageTarget = imageDropTargetAt(ev.clientX, ev.clientY);
@@ -4537,6 +4560,8 @@ function startGroupDrag(e) {
     brds.forEach(o => o.el && o.el.classList.remove('is-moving'));
     highlightDropCard(null);
     highlightImageDropTarget(null);
+    // La manija de conexión vuelve junto al objeto (se escondió durante el arrastre)
+    if (typeof updateConnectHandle === 'function') updateConnectHandle();
     if (!moved) return;
 
     // Imagen del lienzo soltada sobre un link o un tablero: pasa a ser la imagen de ese link o tablero
@@ -6851,7 +6876,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '89';
+const APP_VERSION = '90';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

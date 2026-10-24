@@ -110,6 +110,7 @@ h1, h2, h3, h4, .brand-title {
   flex-direction: column;
   width: 100vw;
   height: 100vh;
+  height: 100dvh; /* en el celular: el alto que de verdad se ve (sin la barra del navegador) */
   position: relative;
   overflow: hidden;
 }
@@ -495,6 +496,7 @@ body.theme-light .moon-icon { display: none; }
   touch-action: none; /* los gestos del dedo los maneja la app (las columnas siguen desplazándose) */
   width: 100%;
   height: calc(100vh - 64px);
+  height: calc(100dvh - 64px);
   position: relative;
   overflow: hidden;
   background-color: var(--bg-viewport);
@@ -2870,6 +2872,7 @@ body.theme-light .moon-icon { display: none; }
 
   .viewport-area {
     height: calc(100vh - 56px);
+    height: calc(100dvh - 56px);
   }
 
   .kanban-board {
