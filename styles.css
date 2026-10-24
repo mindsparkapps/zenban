@@ -4040,8 +4040,9 @@ select option:checked {
   display: block;
 }
 
+/* Atrás, adelante y eliminar están en la barra superior: sobre la imagen no se muestran (tapaban la imagen) */
 .bg-image.is-solo .bg-image-toolbar {
-  display: flex;
+  display: none;
 }
 
 /* ----- Textos libres del lienzo ----- */

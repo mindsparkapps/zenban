@@ -466,7 +466,8 @@ function scheduleInvZoom() {
 
 // Zoom towards a specific screen coordinate (cursor or pinch midpoint)
 function zoomAtPoint(clientX, clientY, newZoom) {
-  const clampedZoom = Math.min(Math.max(newZoom, ZOOM_CONFIG.MIN), ZOOM_CONFIG.MAX);
+  // Si "Ajustar a pantalla" alejó más que el mínimo, desde ahí se puede acercar sin saltos
+  const clampedZoom = Math.min(Math.max(newZoom, Math.min(ZOOM_CONFIG.MIN, zoom)), ZOOM_CONFIG.MAX);
   if (clampedZoom === zoom) return;
 
   const rect = viewportArea.getBoundingClientRect();
@@ -516,15 +517,17 @@ function fitBoardToScreen() {
   const boardWidth = Math.max(1, bounds.maxX - bounds.minX);
   const boardHeight = Math.max(1, bounds.maxY - bounds.minY);
 
-  const padding = 40;
+  // En el celular la pantalla es chica: se deja menos margen
+  const padding = vpRect.width < 600 ? 14 : 40;
   const scaleX = (vpRect.width - padding * 2) / boardWidth;
   const scaleY = (vpRect.height - padding * 2) / boardHeight;
   let targetZoom = Math.min(scaleX, scaleY, 1.2);
-  targetZoom = Math.max(targetZoom, ZOOM_CONFIG.MIN);
+  // Para que se vea TODO se puede alejar más que el zoom mínimo de Configuración (en el celular no alcanzaba)
+  targetZoom = Math.max(targetZoom, 0.03);
 
   zoom = targetZoom;
-  panX = Math.max(20, (vpRect.width - boardWidth * zoom) / 2) - bounds.minX * zoom;
-  panY = Math.max(20, (vpRect.height - boardHeight * zoom) / 4) - bounds.minY * zoom;
+  panX = (vpRect.width - boardWidth * zoom) / 2 - bounds.minX * zoom;
+  panY = (vpRect.height - boardHeight * zoom) / 2 - bounds.minY * zoom;
 
   applyTransform(true);
   showToast(`Tablero ajustado (${Math.round(zoom * 100)}%)`, 'info');
@@ -6848,7 +6851,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '88';
+const APP_VERSION = '89';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -7122,10 +7125,44 @@ document.getElementById('resetImageSourcesBtn').addEventListener('click', () => 
 });
 // Recargar: útil en la app instalada del celular, que no tiene botón de recargar del navegador.
 // Los datos ya están guardados en el dispositivo, así que no se pierde nada.
-document.getElementById('reloadAppBtn').addEventListener('click', () => {
+document.getElementById('reloadAppBtn').addEventListener('click', async () => {
   brandVersion.hidden = true;
   if (editingTextId) finishTextEdit();
+  // Antes de recargar se termina de guardar: lo pendiente de los plugins y la subida a Drive
+  await saveEverythingNow('Guardando antes de recargar…');
   location.reload();
+});
+
+// Guarda todo lo pendiente y espera a que termine: estado de los plugins (en el dispositivo) y, si hay
+// sesión de Google, la subida a Drive (hasta 15 s; si no hay conexión, lo de este dispositivo ya quedó guardado)
+async function saveEverythingNow(label) {
+  if (typeof flushPluginSave === 'function') flushPluginSave();
+  // Da un momento a que lleguen los últimos cambios de los plugins abiertos
+  await new Promise(r => setTimeout(r, 120));
+  if (typeof flushPluginSave === 'function') flushPluginSave();
+  if (!syncEnabled() || !(SYNC.token || restoreSyncToken()) || !navigator.onLine) return;
+  if (!isDirty() && !SYNC.busy) return;
+  showBusy(label || 'Guardando…');
+  try {
+    if (SYNC.busy) await waitSyncIdle(15000);
+    if (isDirty()) { await syncNow(); await waitSyncIdle(15000); }
+  } catch (e) {
+    console.warn('Guardar antes de salir', e);
+  } finally {
+    hideBusy();
+  }
+}
+
+// Cerrar o recargar con cambios que todavía no llegan a Drive: el navegador pregunta antes de salir,
+// y mientras tanto se sube lo pendiente (al elegir "quedarse", termina de guardarse)
+window.addEventListener('beforeunload', (e) => {
+  if (typeof flushPluginSave === 'function') flushPluginSave();
+  const pendingUpload = syncEnabled() && SYNC.token && Date.now() < SYNC.tokenExp && navigator.onLine && (isDirty() || SYNC.busy);
+  if (!pendingUpload) return;
+  if (!SYNC.busy) syncNow();
+  e.preventDefault();
+  e.returnValue = 'Se están guardando tus cambios en Drive. Espera unos segundos antes de salir.';
+  return e.returnValue;
 });
 document.getElementById('closeSettingsBtn').addEventListener('click', closeSettings);
 document.getElementById('cancelSettingsBtn').addEventListener('click', closeSettings);

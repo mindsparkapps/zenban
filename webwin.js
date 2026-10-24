@@ -64,7 +64,7 @@ function webWindowHtml(t) {
     `<button type="button" data-web-act="open" title="Abrir en el navegador">↗</button>` +
     `<button type="button" data-web-act="max" title="Maximizar (para salir: ✕ o Esc)">⛶</button></div>` +
     `<div class="webwin-body" style="height:${h}px"><div class="webwin-slot"></div>` +
-    `<div class="webwin-shield"><span>Toca para usar la página</span></div></div>` +
+    `<div class="webwin-shield"><span>${window.matchMedia && matchMedia('(pointer: coarse)').matches ? 'Toca para abrir la página' : 'Toca para usar la página'}</span></div></div>` +
     `<div class="webwin-resize" title="Arrastra para cambiar el tamaño"></div></div>`;
 }
 
@@ -187,6 +187,17 @@ textLayer.addEventListener('click', (e) => {
   if (act === 'reload') { const f = webFrames.get(id); if (f) f.src = f.dataset.src; }
   if (act === 'open') window.open(t.web.url, '_blank', 'noopener');
   if (act === 'max') maximizeWebWindow(id);
+});
+
+// En el celular el lienzo se queda con los gestos del dedo (para moverse y hacer zoom) y la página dentro de
+// la ventana no se podría desplazar: al tocarla se abre maximizada, donde sí se desplaza
+const IS_COARSE_POINTER = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+textLayer.addEventListener('click', (e) => {
+  if (!IS_COARSE_POINTER) return;
+  const shield = e.target.closest('.webwin-shield');
+  if (!shield) return;
+  const win = shield.closest('.webwin');
+  if (win) maximizeWebWindow(win.dataset.web);
 });
 
 textLayer.addEventListener('pointerdown', (e) => {
@@ -446,7 +457,8 @@ canvasMenu.addEventListener('click', async (e) => {
     .webwin-shield { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 0.8em; cursor: pointer; }
     .webwin-shield span { opacity: 0; transition: opacity 0.15s; background: rgba(15, 23, 42, 0.8); color: #fff; padding: 0.3em 0.8em; border-radius: 999px; font-size: 0.85em; }
     .webwin-shield:hover span { opacity: 1; }
-    .canvas-text.is-solo .webwin-shield { display: none; }
+    @media (pointer: fine) { .canvas-text.is-solo .webwin-shield { display: none; } }
+    @media (pointer: coarse) { .webwin-shield span { opacity: 1; } }
     .canvas-text.is-webwin.is-resizing .webwin-frame { pointer-events: none; }
     .webwin-resize { position: absolute; right: -9px; bottom: -9px; width: 18px; height: 18px; border-radius: 50%; background: var(--accent-primary); border: 2px solid #fff; cursor: nwse-resize; display: none; transform: scale(var(--inv-zoom, 1)); touch-action: none; }
     .canvas-text.is-solo .webwin-resize { display: block; }
