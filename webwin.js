@@ -11,6 +11,9 @@
 
 const WEB_DEFAULT_SIZE = { w: 640, h: 420 };
 const webFrames = new Map(); // id del texto -> iframe (se conserva entre redibujos)
+// Estado que el plugin de cada ventana tiene cargado (texto JSON): si el guardado cambia por otro lado
+// (sincronización con otro dispositivo, deshacer…), se le vuelve a mandar para que no lo pise con uno viejo
+const pluginStateSent = new Map();
 let webMaximizedId = null;
 
 // Lugar fuera del lienzo donde esperan las páginas mientras se redibujan los textos
@@ -103,7 +106,7 @@ function placeWebFrames() {
     moveKeepingState(slot, webFrameFor(t));
   });
   // Ventanas borradas (o de otro proyecto): se cierran sus páginas
-  webFrames.forEach((f, id) => { if (!alive.has(id) && id !== webMaximizedId) { f.remove(); webFrames.delete(id); } });
+  webFrames.forEach((f, id) => { if (!alive.has(id) && id !== webMaximizedId) { f.remove(); webFrames.delete(id); pluginStateSent.delete(id); } });
 }
 
 const baseRenderTextsWeb = renderTexts;
@@ -111,6 +114,8 @@ renderTexts = function () {
   parkWebFrames();
   baseRenderTextsWeb.apply(this, arguments);
   placeWebFrames();
+  // Si el estado guardado de un plugin cambió por otro lado (Drive, deshacer), se le manda el nuevo
+  if (typeof resyncPluginStates === 'function') resyncPluginStates();
 };
 
 // Doble clic en una ventana web no la abre para escribir: cambia su dirección
@@ -271,10 +276,15 @@ function textIdForSource(source) {
   return null;
 }
 
+const stateJson = (s) => JSON.stringify(s ?? null);
+
+// Se le manda el estado a cualquier página que use el SDK (avisa con zenban:ready), aunque la ventana
+// se haya abierto como "Ventana web" con la dirección del plugin y no desde el menú de plugins
 function sendPluginInit(id) {
   const t = getTexts().find(x => x.id === id);
   const f = webFrames.get(id);
-  if (!t || !f || !f.contentWindow || !t.web.plugin) return;
+  if (!t || !t.web || !f || !f.contentWindow || !pluginStateSent.has(id) && !t.web.plugin && !f.dataset.sdk) return;
+  pluginStateSent.set(id, stateJson(t.web.state));
   f.contentWindow.postMessage({
     type: 'zenban:init', id, state: t.web.state ?? null,
     theme: document.documentElement.dataset.theme || 'dark',
@@ -282,18 +292,43 @@ function sendPluginInit(id) {
   }, '*');
 }
 
+// Guardado del estado de los plugins: se agrupan los cambios seguidos, pero nunca se pierden al cerrar
 let pluginSaveTimer = null;
+function flushPluginSave() {
+  if (!pluginSaveTimer) return;
+  clearTimeout(pluginSaveTimer);
+  pluginSaveTimer = null;
+  persist();
+}
+window.addEventListener('pagehide', flushPluginSave);
+window.addEventListener('beforeunload', flushPluginSave);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushPluginSave(); });
+
+// Después de redibujar (p. ej. al llegar cambios de Drive): los plugins con un estado distinto al que
+// tienen cargado lo reciben de nuevo
+function resyncPluginStates() {
+  getTexts().forEach(t => {
+    if (!t.web || !pluginStateSent.has(t.id)) return;
+    if (pluginStateSent.get(t.id) !== stateJson(t.web.state)) sendPluginInit(t.id);
+  });
+}
+
 window.addEventListener('message', (e) => {
   const msg = e.data;
   if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string' || !msg.type.startsWith('zenban:')) return;
   const id = textIdForSource(e.source);
   const t = id && getTexts().find(x => x.id === id);
   if (!t || !t.web) return;
-  if (msg.type === 'zenban:ready') sendPluginInit(id);
+  if (msg.type === 'zenban:ready') {
+    const f = webFrames.get(id);
+    if (f) f.dataset.sdk = '1';
+    sendPluginInit(id);
+  }
   if (msg.type === 'zenban:setState') {
     t.web.state = msg.state ?? null;
+    pluginStateSent.set(id, stateJson(t.web.state));
     clearTimeout(pluginSaveTimer);
-    pluginSaveTimer = setTimeout(() => persist(), 600);
+    pluginSaveTimer = setTimeout(() => { pluginSaveTimer = null; persist(); }, 300);
   }
   if (msg.type === 'zenban:setTitle' && typeof msg.title === 'string') {
     t.web.title = msg.title.slice(0, 80);
