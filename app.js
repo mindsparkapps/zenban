@@ -5773,8 +5773,16 @@ ctxImgName.addEventListener('input', () => {
   if (selectedImages().length === 1 && name) ctxTitle.textContent = name;
 });
 ctxImgName.addEventListener('change', () => {
-  // Sin nombre vuelve a recibir un número
-  if (!ctxImgName.value.trim()) { selectedImages().forEach(i => { delete i.name; }); ensureImageNames(); updateContextBar(); }
+  const name = ctxImgName.value.trim();
+  const refs = new Set(selectedImages().map(bgImageRef));
+  // El nombre queda guardado por archivo (sigue en la Biblioteca aunque la imagen salga del lienzo).
+  // Sin nombre se olvida y vuelve a recibir un número.
+  refs.forEach(ref => setSavedImageName(ref, name));
+  if (!name) {
+    projects.forEach(p => (p.bgImages || []).forEach(i => { if (refs.has(bgImageRef(i))) delete i.name; }));
+    ensureImageNames();
+    updateContextBar();
+  }
   persist();
 });
 ctxImgName.addEventListener('keydown', (e) => { if (e.key === 'Enter') ctxImgName.blur(); });
@@ -6882,6 +6890,8 @@ function referencedImageIds(list = projects) {
     (p.tasks || []).forEach(t => (t.images || []).forEach(i => ids.add(i.id)));
     // Pestañas de ventanas web y plugins
     (p.texts || []).forEach(t => { if (t.web && t.web.image && !isRemoteImage(t.web.image)) ids.add(t.web.image); });
+    // Imágenes renombradas de la Biblioteca (se conservan aunque ya no se usen en ningún lugar)
+    (Array.isArray(p.imageNames) ? p.imageNames : []).forEach(e => { if (e && e.id && e.name && !isRemoteImage(e.id)) ids.add(e.id); });
     // Imágenes de las pestañas de los tableros y de los links que se muestran como imagen
     (p.boards || []).forEach(b => { if (b.image && !isRemoteImage(b.image)) ids.add(b.image); });
     (p.frames || []).forEach(f => { if (f.image && !isRemoteImage(f.image)) ids.add(f.image); });
@@ -7013,7 +7023,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '97';
+const APP_VERSION = '98';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -7788,9 +7798,11 @@ function focusInternalTarget(ref) {
 //       elegir una inserta una copia donde se abrió el menú (o al centro de la vista) -----
 function imagesOfProjects(list, spaceLabel, space) {
   const out = [];
-  const add = (ref, p, where, name = '') => out.push({ ref, project: p, where, spaceLabel, space, name });
+  const add = (ref, p, where, name = '', saved = false) => out.push({ ref, project: p, where, spaceLabel, space, name, saved });
   list.forEach(p => {
     (p.bgImages || []).forEach(i => add(bgImageRef(i), p, 'Lienzo', i.name || ''));
+    // Imágenes renombradas: siguen en la Biblioteca con su nombre aunque ya no se usen en ningún lugar
+    (Array.isArray(p.imageNames) ? p.imageNames : []).forEach(e => { if (e && e.id && e.name) add(e.id, p, 'Biblioteca', e.name, true); });
     (p.texts || []).forEach(t => { if (t.web && t.web.image) add(t.web.image, p, `Ventana: ${t.web.title || t.text || ''}`); });
     (p.tasks || []).forEach(t => (t.images || []).forEach(i => add(i.id, p, `Tarea: ${t.title}`)));
     (p.boards || []).forEach(b => { if (b.image) add(b.image, p, `Tablero: ${b.title}`); });
@@ -7812,17 +7824,35 @@ function libraryItems() {
       if (!e.error) items = items.concat(imagesOfProjects(e.projects || [], spaceTitle(e.space), e.space));
     });
   }
-  // La misma imagen usada en varios lugares se muestra una vez (con el nombre que tenga en alguno)
+  // La misma imagen usada en varios lugares se muestra una vez. Manda el nombre puesto a mano; si no, el
+  // que tenga en algún lugar del lienzo
   const byRef = new Map();
   items.forEach(it => {
     const prev = byRef.get(it.ref);
     if (!prev) byRef.set(it.ref, it);
-    else if (!prev.name && it.name) prev.name = it.name;
+    else if (it.saved || (!prev.name && it.name)) prev.name = it.name;
   });
   return [...byRef.values()];
 }
 
-// ----- Nombres de las imágenes del lienzo ("Imagen 1", "Imagen 2"…; se cambian en la barra de Imagen) -----
+// ----- Nombres de las imágenes ("Imagen 1", "Imagen 2"…; se cambian en la barra de Imagen) -----
+// Un nombre puesto a mano se guarda aparte, por archivo, en project.imageNames = [{ id: archivo, name }]:
+// queda aunque la imagen ya no esté en el lienzo (pasó a una tarea, se borró…) y la imagen sigue en la
+// Biblioteca. Es una lista con ids, así que se combina bien entre dispositivos.
+function imageNameEntries(list = projects) {
+  return list.flatMap(p => Array.isArray(p.imageNames) ? p.imageNames : []).filter(e => e && e.id && e.name);
+}
+
+function setSavedImageName(ref, name) {
+  if (!ref) return;
+  // Se quita de todos los proyectos y, si tiene nombre, queda en el abierto
+  projects.forEach(p => { if (Array.isArray(p.imageNames)) p.imageNames = p.imageNames.filter(x => x && x.id !== ref); });
+  if (!name) return;
+  const p = getActiveProject();
+  if (!Array.isArray(p.imageNames)) p.imageNames = [];
+  p.imageNames.push({ id: ref, name });
+}
+
 function imageNumberFrom(name) {
   const m = String(name || '').match(/^Imagen (\d+)$/);
   return m ? Number(m[1]) : 0;
@@ -7831,23 +7861,28 @@ function imageNumberFrom(name) {
 function nextImageName(list = projects) {
   let max = 0;
   list.forEach(p => (p.bgImages || []).forEach(i => { max = Math.max(max, imageNumberFrom(i.name)); }));
+  imageNameEntries(list).forEach(e => { max = Math.max(max, imageNumberFrom(e.name)); });
   return `Imagen ${max + 1}`;
 }
 
 // Las imágenes del lienzo que todavía no tienen nombre reciben "Imagen N" (la misma imagen usada en varios
-// lugares comparte el número)
+// lugares comparte el número); las que tienen un nombre guardado a mano usan ese
 function ensureImageNames() {
   let max = 0;
   const byRef = new Map();
+  imageNameEntries().forEach(e => {
+    max = Math.max(max, imageNumberFrom(e.name));
+    if (!byRef.has(e.id)) byRef.set(e.id, e.name);
+  });
   projects.forEach(p => (p.bgImages || []).forEach(i => {
     max = Math.max(max, imageNumberFrom(i.name));
     if (i.name && !byRef.has(bgImageRef(i))) byRef.set(bgImageRef(i), i.name);
   }));
   let changed = false;
   projects.forEach(p => (p.bgImages || []).forEach(i => {
-    if (i.name) return;
     const ref = bgImageRef(i);
-    if (!byRef.has(ref)) byRef.set(ref, `Imagen ${++max}`);
+    if (i.name && byRef.get(ref) === i.name) return;
+    if (!byRef.has(ref)) byRef.set(ref, i.name || `Imagen ${++max}`);
     i.name = byRef.get(ref);
     changed = true;
   }));
@@ -7966,7 +8001,8 @@ async function addBgImageShared(ref, blob, point) {
   const width = Math.min(600, w);
   const height = Math.round(width * (h / w));
   // La misma imagen conserva su nombre en todos los lugares donde se usa
-  const named = projects.flatMap(p => p.bgImages || []).find(i => bgImageRef(i) === ref && i.name);
+  const saved = imageNameEntries().find(e => e.id === ref);
+  const named = saved || projects.flatMap(p => p.bgImages || []).find(i => bgImageRef(i) === ref && i.name);
   const img = { id: generateId('img'), src: ref, name: named ? named.name : nextImageName(), x: Math.round(point.x - width / 2), y: Math.round(point.y - height / 2), w: width, h: height, ...(typeof defaultStyleFor === 'function' ? defaultStyleFor('img') : {}) };
   getBgImages().push(img);
   persist();
