@@ -5866,12 +5866,9 @@ select option:checked {
     box-shadow: none;
   }
 
-  /* Las tarjetas que no se ven (otros tableros o escondidas en el scroll de una columna) no se pintan.
-     El navegador recuerda el tamaño de cada una para que el scroll de la columna no salte. */
-  .kanban-card {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 120px;
-  }
+  /* (Antes las tarjetas fuera de la vista no se pintaban con content-visibility: auto. Medido en un
+     celular real con 94 tareas: al mover el lienzo se volvían a pintar de golpe al entrar en la vista y
+     el lienzo se trababa hasta 217 ms; sin eso, el peor cuadro baja a ~50 ms.) */
 }
 
 /* ==========================================================================

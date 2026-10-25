@@ -109,8 +109,25 @@ function placeWebFrames() {
   webFrames.forEach((f, id) => { if (!alive.has(id) && id !== webMaximizedId) { f.remove(); webFrames.delete(id); pluginStateSent.delete(id); } });
 }
 
+// Ventanas que quedaron gigantes (creadas muy alejado, antes del límite de tamaño) se achican a un
+// tamaño normal, manteniendo su proporción y la esquina donde estaban
+const WEB_MAX_W = 2400, WEB_SHRINK_W = 960;
+function shrinkGiantWebWindows() {
+  let changed = false;
+  getTexts().forEach(t => {
+    if (!t.web || !(t.w > WEB_MAX_W)) return;
+    const k = WEB_SHRINK_W / t.w;
+    t.w = WEB_SHRINK_W;
+    if (t.web.h) t.web.h = Math.max(120, Math.round(t.web.h * k));
+    if (t.size) t.size = Math.max(7, Math.round(t.size * k));
+    changed = true;
+  });
+  if (changed) persist();
+}
+
 const baseRenderTextsWeb = renderTexts;
 renderTexts = function () {
+  shrinkGiantWebWindows();
   parkWebFrames();
   baseRenderTextsWeb.apply(this, arguments);
   placeWebFrames();
@@ -129,10 +146,13 @@ editText = function (id) {
 // ----- Crear -----
 function addWebWindow(at, url, plugin = null) {
   const size = plugin ? { w: plugin.width || WEB_DEFAULT_SIZE.w, h: plugin.height || WEB_DEFAULT_SIZE.h } : WEB_DEFAULT_SIZE;
-  const web = { url, h: Math.round(size.h / zoom) };
+  // Se ajusta al zoom para que se vea de un tamaño cómodo, pero con límite: muy alejado (todo el
+  // proyecto a la vista) salía una ventana gigante que tapaba los tableros y arruinaba "ajustar a pantalla"
+  const scale = 1 / Math.min(2, Math.max(0.5, zoom));
+  const web = { url, h: Math.round(size.h * scale) };
   if (plugin) web.plugin = { id: plugin.id, name: plugin.name, icon: plugin.icon };
   const t = addText(plugin ? plugin.name : webHost(url), at, {
-    web, fixedWidth: true, w: Math.round(size.w / zoom), size: Math.max(4, Math.round(14 / zoom))
+    web, fixedWidth: true, w: Math.round(size.w * scale), size: Math.max(7, Math.round(14 * scale))
   });
   showToast(plugin ? `${plugin.name} agregado. Selecciónalo para usarlo; ⛶ lo maximiza.` : 'Ventana agregada. Selecciónala para usar la página; ⛶ la maximiza. Si no carga, ↗ la abre en el navegador.', 'success');
   return t;
