@@ -3853,6 +3853,37 @@ select option:checked {
   display: block;
 }
 
+/* Manija de la esquina superior derecha: agranda o achica el frame con todo lo de adentro, en proporción */
+.frame-scale-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 26px;
+  height: 26px;
+  transform: translate(50%, -50%) scale(var(--inv-zoom, 1));
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent-primary);
+  border: 2px solid var(--accent-primary);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  cursor: nesw-resize;
+  display: none;
+  touch-action: none;
+  user-select: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.canvas-frame.is-solo .frame-scale-handle {
+  display: block;
+}
+
+@media (pointer: coarse) {
+  .frame-scale-handle { width: 34px; height: 34px; line-height: 30px; font-size: 18px; }
+}
+
 .connector-layer {
   position: absolute;
   top: 0;

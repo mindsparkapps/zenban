@@ -169,6 +169,15 @@ async function readSharedInbox() {
   return { files, text };
 }
 
+// Con una foto, WhatsApp y otras apps mandan además un título automático ("Foto de nd", "Image", el
+// nombre del archivo…) que terminaba como un texto suelto en el lienzo. Se quitan esas líneas y queda solo
+// lo que escribió la persona (un comentario o un link).
+function sharedCaption(text) {
+  const auto = /^(foto|fotos|imagen|imagenes|imágenes|image|images|photo|photos|picture|img|captura|screenshot|video)(\s+(de|of|from)\b.*)?$/i;
+  const fileName = /^[\w\-. ()]+\.(jpe?g|png|webp|gif|heic|heif|bmp)$/i;
+  return String(text || '').split('\n').map(l => l.trim()).filter(l => l && !auto.test(l) && !fileName.test(l)).join('\n');
+}
+
 function chooseProjectDialog(count, onPick) {
   let m = document.getElementById('shareInModal');
   if (!m) {
@@ -221,7 +230,8 @@ async function receiveSharedItems() {
       await addBgImageFromFile(file, null, null, { at: point, focus: true, message: 'Imagen compartida agregada' });
       point = { x: point.x + 40, y: point.y + 40 };
     }
-    if (inbox.text && inbox.text.trim()) addText(inbox.text.trim(), { x: point.x, y: point.y + 40 });
+    const text = inbox.files.length ? sharedCaption(inbox.text) : (inbox.text || '').trim();
+    if (text) addText(text, { x: point.x, y: point.y + 40 });
   });
 }
 

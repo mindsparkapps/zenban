@@ -191,6 +191,14 @@ async function saveBackupToDisk() {
   try { files = await collectBackupFiles(); } finally { hideBusy(); }
   const name = `ZenBan respaldo ${backupStamp()}`;
   if (window.showDirectoryPicker) {
+    // La ventana de elegir carpeta y el aviso "¿Permitir que edite archivos?" son del navegador (no se les
+    // puede dar el estilo de ZenBan): antes se explica con una ventana propia qué va a aparecer
+    const ok = await askConfirm({
+      title: 'Guardar respaldo en tu equipo',
+      message: `Se guardan tus datos y ${files.length} archivo(s) en una carpeta nueva «${name}».\nElige dónde crearla. Después el navegador te pregunta si ZenBan puede guardar archivos en esa carpeta: acepta para que se guarde el respaldo.`,
+      confirmText: 'Elegir carpeta', icon: '💾'
+    });
+    if (!ok) return;
     let root;
     try { root = await window.showDirectoryPicker({ id: 'zenban-respaldos', mode: 'readwrite' }); } catch (e) { return; } // canceló
     showBusy('Guardando el respaldo en el disco…');

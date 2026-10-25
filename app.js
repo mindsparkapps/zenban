@@ -3496,6 +3496,13 @@ function imageDropTargetAt(clientX, clientY) {
       // La pestaña se marca a sí misma; el título marca la barra superior (línea segmentada)
       if (frame) return { type: 'frame', frame, el: framePart.classList.contains('frame-title') ? (fel.querySelector('.frame-drop-bar') || framePart) : framePart };
     }
+    // Barra superior o pestaña de una ventana web / plugin: la imagen pasa a ser su pestaña
+    const webPart = n.closest('.webwin-bar, .webwin-image-tab');
+    if (webPart) {
+      const tel = webPart.closest('.canvas-text');
+      const text = tel && getTexts().find(t => t.id === tel.dataset.textId);
+      if (text && text.web) return { type: 'webwin', text, el: webPart };
+    }
     // Barra superior del frame (aunque no tenga título ni pestaña), como el encabezado de un tablero
     if (n.classList.contains('canvas-frame') && !n.classList.contains('is-locked') && typeof getFrames === 'function'
       && clientY - n.getBoundingClientRect().top <= 40) {
@@ -3523,6 +3530,9 @@ function applyImageToTarget(target, ref) {
   } else if (target.type === 'frame') {
     target.frame.image = ref;
     showToast('Imagen puesta en la pestaña del frame', 'success');
+  } else if (target.type === 'webwin') {
+    target.text.web.image = ref;
+    showToast('Imagen puesta en la pestaña de la ventana: tómala de ahí para moverla', 'success');
   } else {
     target.board.image = ref;
     showToast(`Imagen puesta en el tablero "${target.board.title}"`, 'success');
@@ -5173,7 +5183,7 @@ viewportArea.addEventListener('pointerdown', (e) => {
   if (currentTool !== 'select' || isSpacePressed || isPanModeActive || e.button !== 0) return;
   if (e.pointerType === 'touch' && !e.isPrimary) return; // segundo dedo: es para mover el lienzo
   const t = e.target;
-  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle, .frame-handle, .connect-handle, .ytlist-handle')) return;
+  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle, .frame-handle, .frame-scale-handle, .connect-handle, .ytlist-handle, .webwin-resize')) return;
   // Un link dentro de un texto del lienzo también sirve para tomar y mover ese texto (un clic corto lo abre)
   if (t.closest('button, input, select, textarea, a, label') && !t.closest('.canvas-text a')) return;
 
@@ -6932,7 +6942,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '93';
+const APP_VERSION = '94';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

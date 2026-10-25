@@ -58,7 +58,9 @@ function webWindowHtml(t) {
     : `<img src="https://www.google.com/s2/favicons?sz=32&domain=${encodeURIComponent(webHost(w.url))}" alt="" referrerpolicy="no-referrer">`;
   const title = w.title || (plugin && plugin.name) || webHost(w.url);
   const h = Math.max(120, w.h || WEB_DEFAULT_SIZE.h / zoom);
-  return `<div class="webwin" data-web="${t.id}">` +
+  // Pestaña con imagen (como la de los tableros): para reconocerla de lejos y moverla tomándola de ahí
+  const tab = w.image ? `<div class="board-image-tab webwin-image-tab" style="--board-w:${Math.round(t.w || WEB_DEFAULT_SIZE.w)}px" title="Arrastra para mover"><img data-board-img="${escapeHtml(w.image)}" alt="" draggable="false"></div>` : '';
+  return tab + `<div class="webwin" data-web="${t.id}">` +
     `<div class="webwin-bar"><span class="webwin-icon">${icon}</span><span class="webwin-title" title="${escapeHtml(w.url || '')}">${escapeHtml(title)}</span>` +
     `<button type="button" data-web-act="reload" title="Recargar">⟳</button>` +
     `<button type="button" data-web-act="open" title="Abrir en el navegador">↗</button>` +
@@ -131,6 +133,7 @@ renderTexts = function () {
   parkWebFrames();
   baseRenderTextsWeb.apply(this, arguments);
   placeWebFrames();
+  if (typeof hydrateBoardImages === 'function') hydrateBoardImages(textLayer);
   // Si el estado guardado de un plugin cambió por otro lado (Drive, deshacer), se le manda el nuevo
   if (typeof resyncPluginStates === 'function') resyncPluginStates();
 };
@@ -252,6 +255,44 @@ textLayer.addEventListener('pointerdown', (e) => {
   handle.addEventListener('pointerup', onUp);
   handle.addEventListener('pointercancel', onUp);
 }, true);
+
+// ----- Imagen de la pestaña (barra superior: 🖼 Imagen / ✕ Quitar imagen, o soltar una imagen en su barra) -----
+const selectedWebTexts = () => getTexts().filter(t => t.web && selection.has(`text:${t.id}`));
+const baseUpdateContextBarWeb = updateContextBar;
+updateContextBar = function () {
+  baseUpdateContextBarWeb.apply(this, arguments);
+  const webs = selectedWebTexts();
+  const onlyWeb = webs.length > 0 && webs.length === selectedTexts().length;
+  document.getElementById('ctxWebImage').hidden = !onlyWeb;
+  document.getElementById('ctxWebImageRemove').hidden = !(onlyWeb && webs.some(t => t.web.image));
+  // Editar, color y links no aplican a una ventana web
+  ['ctxTextEdit', 'ctxTextLinks', 'ctxTextInternal'].forEach(id => { const b = document.getElementById(id); if (b) b.hidden = onlyWeb; });
+  const color = document.getElementById('ctxTextColor');
+  if (color && color.closest('label')) color.closest('label').style.display = onlyWeb ? 'none' : '';
+  if (onlyWeb) ctxTitle.textContent = webs.length === 1 ? (webs[0].web.plugin ? webs[0].web.plugin.name : 'Ventana web') : `${webs.length} ventanas`;
+};
+const webImageInput = document.createElement('input');
+webImageInput.type = 'file';
+webImageInput.accept = 'image/*';
+webImageInput.hidden = true;
+document.body.appendChild(webImageInput);
+document.getElementById('ctxWebImage').addEventListener('click', () => webImageInput.click());
+webImageInput.addEventListener('change', async () => {
+  const file = webImageInput.files && webImageInput.files[0];
+  webImageInput.value = '';
+  if (!file) return;
+  const { id } = await storeImageFile(file);
+  selectedWebTexts().forEach(t => { t.web.image = id; });
+  persist();
+  renderTexts();
+  updateContextBar();
+});
+document.getElementById('ctxWebImageRemove').addEventListener('click', () => {
+  selectedWebTexts().forEach(t => { delete t.web.image; });
+  persist();
+  renderTexts();
+  updateContextBar();
+});
 
 // ----- Maximizar -----
 const webMax = document.createElement('div');
@@ -464,6 +505,8 @@ canvasMenu.addEventListener('click', async (e) => {
   const style = document.createElement('style');
   style.textContent = `
     .webwin-parking { position: fixed; left: -10000px; top: 0; width: 800px; height: 600px; visibility: hidden; pointer-events: none; }
+    .canvas-text.is-webwin { --board-color: var(--accent-primary); }
+    .webwin-bar.is-image-drop { outline: 2px dashed var(--accent-primary); outline-offset: -2px; background: color-mix(in srgb, var(--accent-primary) 18%, transparent); }
     .canvas-text.is-webwin { padding: 0; background: var(--bg-surface); border: 1px solid var(--border-medium); border-radius: 10px; box-shadow: var(--shadow-lg); white-space: normal; overflow: visible; color: var(--text-main); }
     .webwin { display: flex; flex-direction: column; position: relative; }
     .webwin-bar { display: flex; align-items: center; gap: 0.4em; padding: 0.35em 0.5em; border-bottom: 1px solid var(--border-subtle); cursor: grab; user-select: none; }

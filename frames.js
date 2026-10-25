@@ -110,8 +110,10 @@ function renderFrames() {
       ${f.image && !hides.tab ? `<div class="board-image-tab frame-image-tab" title="Arrastra para mover el frame"><img data-board-img="${escapeHtml(f.image)}" alt="" draggable="false"></div>` : ''}
       ${f.title && !hides.title ? `<div class="frame-title">${escapeHtml(f.title)}</div>` : ''}
       ${f.locked ? '<button type="button" class="frame-lock-badge" title="Volver a mover el frame">✋ Trabajando dentro · <b>Listo</b></button>' : ''}
-      <div class="frame-handle" title="Arrastra para agrandar o achicar"></div>`;
+      <div class="frame-handle" title="Arrastra para agrandar o achicar el frame (lo de adentro no cambia)"></div>
+      <div class="frame-scale-handle" title="Arrastra para agrandar o achicar el frame con todo lo de adentro">⤢</div>`;
     el.querySelector('.frame-handle').addEventListener('pointerdown', (e) => startFrameResize(e, f, el));
+    el.querySelector('.frame-scale-handle').addEventListener('pointerdown', (e) => startFrameScale(e, f, el));
     const badge = el.querySelector('.frame-lock-badge');
     if (badge) {
       badge.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -279,6 +281,76 @@ function startFrameResize(e, f, el) {
     el.removeEventListener('pointerup', onUp);
     el.removeEventListener('pointercancel', onUp);
     persist();
+  };
+  el.addEventListener('pointermove', onMove);
+  el.addEventListener('pointerup', onUp);
+  el.addEventListener('pointercancel', onUp);
+}
+
+// ----- Agrandar con todo lo de adentro (manija ⤢ de arriba a la derecha) -----
+// Se escala en proporción desde la esquina superior izquierda del frame: textos (letra, ancho y ventanas
+// web), notas, imágenes, dibujos y frames de adentro. Mientras se arrastra se ve con una transformación
+// (sin redibujar nada) y al soltar se guardan los nuevos tamaños.
+function startFrameScale(e, f, el) {
+  if (isPanModeActive || isSpacePressed || e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  setSelection([`frame:${f.id}`]);
+  const startX = e.clientX;
+  const fx = f.x, fy = f.y;
+  const keys = objectsInsideFrame(f);
+  const has = (k) => keys.includes(k);
+  const texts = getTexts().filter(t => has(`text:${t.id}`)).map(t => ({ o: t, el: getTextEl(t.id) }));
+  const imgs = getBgImages().filter(i => has(`img:${i.id}`)).map(i => ({ o: i, el: bgImageLayer.querySelector(`.bg-image[data-image-id="${i.id}"]`) }));
+  const frames = getFrames().filter(o => has(`frame:${o.id}`)).map(o => ({ o, el: getFrameEl(o.id) }));
+  const strokes = getDrawings().filter(s => has(`stroke:${s.id}`)).map(s => ({ o: s, el: drawLayer.querySelector(`[data-stroke-id="${s.id}"]`) }));
+  const boxes = [...texts, ...imgs, ...frames];
+  const w0 = f.w, h0 = f.h, r0 = f.radius || 0;
+  let k = 1;
+  const preview = () => {
+    boxes.forEach(b => {
+      if (!b.el) return;
+      b.el.style.transformOrigin = '0 0';
+      b.el.style.transform = `translate(${fx + (b.o.x - fx) * k - b.o.x}px, ${fy + (b.o.y - fy) * k - b.o.y}px) scale(${k})`;
+    });
+    strokes.forEach(s => s.el && s.el.setAttribute('transform', `translate(${fx * (1 - k)} ${fy * (1 - k)}) scale(${k})`));
+    f.w = Math.round(w0 * k);
+    f.h = Math.round(h0 * k);
+    f.radius = Math.round(r0 * k);
+    applyFrameStyle(el, f);
+  };
+  el.setPointerCapture(e.pointerId);
+  el.classList.add('is-scaling');
+  const onMove = (ev) => {
+    k = Math.min(10, Math.max(0.1, (w0 + (ev.clientX - startX) / zoom) / w0));
+    preview();
+  };
+  const onUp = () => {
+    el.removeEventListener('pointermove', onMove);
+    el.removeEventListener('pointerup', onUp);
+    el.removeEventListener('pointercancel', onUp);
+    el.classList.remove('is-scaling');
+    boxes.forEach(b => { if (b.el) { b.el.style.transform = ''; b.el.style.transformOrigin = ''; } });
+    strokes.forEach(s => s.el && s.el.removeAttribute('transform'));
+    if (k === 1) return;
+    const pos = (o) => { o.x = Math.round(fx + (o.x - fx) * k); o.y = Math.round(fy + (o.y - fy) * k); };
+    texts.forEach(({ o: t }) => {
+      pos(t);
+      t.size = +Math.max(2, t.size * k).toFixed(1);
+      if (t.w) t.w = Math.round(t.w * k);
+      if (t.web && t.web.h) t.web.h = Math.round(t.web.h * k);
+    });
+    imgs.forEach(({ o: i }) => { pos(i); i.w = Math.round(i.w * k); i.h = Math.round(i.h * k); });
+    frames.forEach(({ o }) => { pos(o); o.w = Math.round(o.w * k); o.h = Math.round(o.h * k); o.radius = Math.round((o.radius || 0) * k); });
+    strokes.forEach(({ o: s }) => {
+      s.points = s.points.map(([x, y]) => [+(fx + (x - fx) * k).toFixed(1), +(fy + (y - fy) * k).toFixed(1)]);
+      s.size = +(s.size * k).toFixed(2);
+    });
+    persist();
+    if (imgs.length) renderBgImages();
+    if (strokes.length) renderDrawings();
+    renderTexts(); // también redibuja los frames y las flechas
+    setSelection([`frame:${f.id}`]);
   };
   el.addEventListener('pointermove', onMove);
   el.addEventListener('pointerup', onUp);
