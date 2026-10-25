@@ -433,6 +433,64 @@ function applyTransform(animate = false) {
   if (zoomPercentLabel.textContent !== label) zoomPercentLabel.textContent = label;
 }
 
+// Viaje suave de la vista (ajustar a pantalla, ir a un objeto). Con una transición CSS se mezclaban el
+// desplazamiento y la escala en línea recta: el contenido se iba hacia un lado y entraba "recortado" al
+// final. Aquí el zoom cambia de forma pareja (en escala logarítmica) y el punto que se ve al centro viaja
+// derecho hacia el nuevo centro, cuadro a cuadro.
+let viewAnimFrame = null, viewFadeTimer = null;
+const IS_COARSE_VIEW = matchMedia('(pointer: coarse)').matches;
+function animateViewTo(toZoom, toPanX, toPanY, ms = 420) {
+  cancelAnimationFrame(viewAnimFrame);
+  const r = viewportArea.getBoundingClientRect();
+  const cx = r.width / 2, cy = r.height / 2;
+  const z0 = zoom, z1 = toZoom;
+  // Punto del lienzo que está al centro de la pantalla, al empezar y al terminar
+  const w0x = (cx - panX) / z0, w0y = (cy - panY) / z0;
+  const w1x = (cx - toPanX) / z1, w1y = (cy - toPanY) / z1;
+  if (ms <= 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    zoom = z1; panX = toPanX; panY = toPanY; applyTransform(); return;
+  }
+  // En el celular el viaje con zoom se veía mal (grabado en un celular real): al alejarse solo alcanzaba
+  // a dibujar parte de los tableros (se veían cortados) y al terminar la pantalla destellaba en blanco
+  // mientras redibujaba todo. Ahí el lienzo se desvanece, salta escondido, se redibuja y vuelve a aparecer.
+  // (Dura menos de medio segundo y no se corta al tocar: así nunca queda el lienzo escondido)
+  if (IS_COARSE_VIEW) {
+    clearTimeout(viewFadeTimer);
+    zoomCanvas.style.transition = 'opacity 0.12s ease-in';
+    zoomCanvas.style.opacity = '0';
+    viewFadeTimer = setTimeout(() => {
+      zoom = z1; panX = toPanX; panY = toPanY;
+      applyTransform();
+      clearTimeout(canvasIdleTimer);
+      settleCanvas();
+      // Dos cuadros para que alcance a dibujarse antes de mostrarlo
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        zoomCanvas.style.transition = 'opacity 0.2s ease-out';
+        zoomCanvas.style.opacity = '';
+      }));
+    }, 130);
+    return;
+  }
+  const lz0 = Math.log(z0), lz1 = Math.log(z1);
+  const start = performance.now();
+  const ease = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / ms);
+    const k = ease(t);
+    zoom = t < 1 ? Math.exp(lz0 + (lz1 - lz0) * k) : z1;
+    const wx = w0x + (w1x - w0x) * k, wy = w0y + (w1y - w0y) * k;
+    panX = t < 1 ? cx - wx * zoom : toPanX;
+    panY = t < 1 ? cy - wy * zoom : toPanY;
+    applyTransform();
+    viewAnimFrame = t < 1 ? requestAnimationFrame(step) : null;
+  };
+  viewAnimFrame = requestAnimationFrame(step);
+}
+// Si se toca, se arrastra o se usa la rueda durante el viaje, se detiene donde va (manda el usuario)
+['pointerdown', 'touchstart', 'wheel'].forEach(ev => viewportArea.addEventListener(ev, () => {
+  if (viewAnimFrame) { cancelAnimationFrame(viewAnimFrame); viewAnimFrame = null; }
+}, { capture: true, passive: true }));
+
 // Mientras el lienzo se mueve se pinta como una capa aparte (will-change) para que vaya fluido;
 // al detenerse se quita, y el navegador lo vuelve a pintar a la resolución justa para el zoom actual
 let canvasIdleTimer = null;
@@ -541,13 +599,11 @@ function fitBoardToScreen() {
   // Para que se vea TODO se puede alejar más que el zoom mínimo de Configuración (en el celular no alcanzaba)
   targetZoom = Math.max(targetZoom, 0.02);
 
-  zoom = targetZoom;
   // Centrado en la parte visible
-  panX = vis.offX + (vis.width - boardWidth * zoom) / 2 - bounds.minX * zoom;
-  panY = vis.offY + (vis.height - boardHeight * zoom) / 2 - bounds.minY * zoom;
-
-  applyTransform(true);
-  const pct = zoom * 100;
+  animateViewTo(targetZoom,
+    vis.offX + (vis.width - boardWidth * targetZoom) / 2 - bounds.minX * targetZoom,
+    vis.offY + (vis.height - boardHeight * targetZoom) / 2 - bounds.minY * targetZoom);
+  const pct = targetZoom * 100;
   showToast(`Tablero ajustado (${pct < 10 ? pct.toFixed(1).replace('.', ',') : Math.round(pct)}%)`, 'info');
 }
 
@@ -592,11 +648,11 @@ function fitRectToScreen(x, y, w, h) {
   const padding = vis.width < 600 ? 12 : 24;
   const scaleX = (vis.width - padding * 2) / Math.max(1, w);
   const scaleY = (vis.height - padding * 2) / Math.max(1, h);
-  zoom = Math.min(Math.max(Math.min(scaleX, scaleY), ZOOM_CONFIG.MIN), ZOOM_CONFIG.MAX);
+  const z = Math.min(Math.max(Math.min(scaleX, scaleY), ZOOM_CONFIG.MIN), ZOOM_CONFIG.MAX);
   // Si ni con el zoom mínimo cabe (p. ej. un tablero ancho en el celular), se muestra desde su esquina
-  panX = vis.offX + (w * zoom > vis.width - padding * 2 ? padding - x * zoom : (vis.width - w * zoom) / 2 - x * zoom);
-  panY = vis.offY + (h * zoom > vis.height - padding * 2 ? padding - y * zoom : (vis.height - h * zoom) / 2 - y * zoom);
-  applyTransform(true);
+  animateViewTo(z,
+    vis.offX + (w * z > vis.width - padding * 2 ? padding - x * z : (vis.width - w * z) / 2 - x * z),
+    vis.offY + (h * z > vis.height - padding * 2 ? padding - y * z : (vis.height - h * z) / 2 - y * z));
 }
 
 // Rectángulo (coordenadas del lienzo) del objeto bajo un elemento, si es imagen, texto o tablero
@@ -6876,7 +6932,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '92';
+const APP_VERSION = '93';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
