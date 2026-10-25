@@ -297,47 +297,58 @@ function startFrameScale(e, f, el) {
   e.stopPropagation();
   setSelection([`frame:${f.id}`]);
   const startX = e.clientX;
-  const fx = f.x, fy = f.y;
-  const keys = objectsInsideFrame(f);
-  const has = (k) => keys.includes(k);
-  const texts = getTexts().filter(t => has(`text:${t.id}`)).map(t => ({ o: t, el: getTextEl(t.id) }));
-  const imgs = getBgImages().filter(i => has(`img:${i.id}`)).map(i => ({ o: i, el: bgImageLayer.querySelector(`.bg-image[data-image-id="${i.id}"]`) }));
-  const frames = getFrames().filter(o => has(`frame:${o.id}`)).map(o => ({ o, el: getFrameEl(o.id) }));
-  const strokes = getDrawings().filter(s => has(`stroke:${s.id}`)).map(s => ({ o: s, el: drawLayer.querySelector(`[data-stroke-id="${s.id}"]`) }));
-  const boxes = [...texts, ...imgs, ...frames];
-  // Los tableros no cambian de tamaño: solo se reubican en proporción
-  const brds = boards.filter(b => has(`board:${b.id}`)).map(b => ({ o: b, el: getBoardEl(b.id) }));
+  const scaler = createScaler(objectsInsideFrame(f), f.x, f.y);
   const w0 = f.w, h0 = f.h, r0 = f.radius || 0;
   let k = 1;
-  const preview = () => {
-    brds.forEach(b => b.el && (b.el.style.transform = `translate(${(b.o.x - fx) * (k - 1)}px, ${(b.o.y - fy) * (k - 1)}px)`));
-    boxes.forEach(b => {
-      if (!b.el) return;
-      b.el.style.transformOrigin = '0 0';
-      b.el.style.transform = `translate(${fx + (b.o.x - fx) * k - b.o.x}px, ${fy + (b.o.y - fy) * k - b.o.y}px) scale(${k})`;
-    });
-    strokes.forEach(s => s.el && s.el.setAttribute('transform', `translate(${fx * (1 - k)} ${fy * (1 - k)}) scale(${k})`));
-    f.w = Math.round(w0 * k);
-    f.h = Math.round(h0 * k);
-    f.radius = Math.round(r0 * k);
-    applyFrameStyle(el, f);
-  };
   el.setPointerCapture(e.pointerId);
   el.classList.add('is-scaling');
   const onMove = (ev) => {
     k = Math.min(10, Math.max(0.1, (w0 + (ev.clientX - startX) / zoom) / w0));
-    preview();
+    scaler.preview(k);
+    f.w = Math.round(w0 * k);
+    f.h = Math.round(h0 * k);
+    f.radius = Math.round(r0 * k);
+    applyFrameStyle(el, f);
   };
   const onUp = () => {
     el.removeEventListener('pointermove', onMove);
     el.removeEventListener('pointerup', onUp);
     el.removeEventListener('pointercancel', onUp);
     el.classList.remove('is-scaling');
+    scaler.commit(k);
+    if (k !== 1) setSelection([`frame:${f.id}`]);
+  };
+  el.addEventListener('pointermove', onMove);
+  el.addEventListener('pointerup', onUp);
+  el.addEventListener('pointercancel', onUp);
+}
+
+// Escala en proporción desde (ox, oy) los objetos de keys: textos (letra, ancho y ventanas web), notas,
+// imágenes, dibujos y frames. Los tableros no cambian de tamaño: solo se reubican en proporción.
+// preview(k) lo muestra con una transformación (sin redibujar nada) y commit(k) guarda los nuevos tamaños.
+function createScaler(keys, ox, oy) {
+  const has = (k) => keys.includes(k);
+  const texts = getTexts().filter(t => has(`text:${t.id}`)).map(t => ({ o: t, el: getTextEl(t.id) }));
+  const imgs = getBgImages().filter(i => has(`img:${i.id}`)).map(i => ({ o: i, el: bgImageLayer.querySelector(`.bg-image[data-image-id="${i.id}"]`) }));
+  const frames = getFrames().filter(o => has(`frame:${o.id}`)).map(o => ({ o, el: getFrameEl(o.id) }));
+  const strokes = getDrawings().filter(s => has(`stroke:${s.id}`)).map(s => ({ o: s, el: drawLayer.querySelector(`[data-stroke-id="${s.id}"]`) }));
+  const boxes = [...texts, ...imgs, ...frames];
+  const brds = boards.filter(b => has(`board:${b.id}`)).map(b => ({ o: b, el: getBoardEl(b.id) }));
+  const preview = (k) => {
+    brds.forEach(b => b.el && (b.el.style.transform = `translate(${(b.o.x - ox) * (k - 1)}px, ${(b.o.y - oy) * (k - 1)}px)`));
+    boxes.forEach(b => {
+      if (!b.el) return;
+      b.el.style.transformOrigin = '0 0';
+      b.el.style.transform = `translate(${ox + (b.o.x - ox) * k - b.o.x}px, ${oy + (b.o.y - oy) * k - b.o.y}px) scale(${k})`;
+    });
+    strokes.forEach(s => s.el && s.el.setAttribute('transform', `translate(${ox * (1 - k)} ${oy * (1 - k)}) scale(${k})`));
+  };
+  const commit = (k) => {
     boxes.forEach(b => { if (b.el) { b.el.style.transform = ''; b.el.style.transformOrigin = ''; } });
     strokes.forEach(s => s.el && s.el.removeAttribute('transform'));
     brds.forEach(b => b.el && (b.el.style.transform = ''));
     if (k === 1) return;
-    const pos = (o) => { o.x = Math.round(fx + (o.x - fx) * k); o.y = Math.round(fy + (o.y - fy) * k); };
+    const pos = (o) => { o.x = Math.round(ox + (o.x - ox) * k); o.y = Math.round(oy + (o.y - oy) * k); };
     texts.forEach(({ o: t }) => {
       pos(t);
       t.size = +Math.max(2, t.size * k).toFixed(1);
@@ -347,7 +358,7 @@ function startFrameScale(e, f, el) {
     imgs.forEach(({ o: i }) => { pos(i); i.w = Math.round(i.w * k); i.h = Math.round(i.h * k); });
     frames.forEach(({ o }) => { pos(o); o.w = Math.round(o.w * k); o.h = Math.round(o.h * k); o.radius = Math.round((o.radius || 0) * k); });
     strokes.forEach(({ o: s }) => {
-      s.points = s.points.map(([x, y]) => [+(fx + (x - fx) * k).toFixed(1), +(fy + (y - fy) * k).toFixed(1)]);
+      s.points = s.points.map(([x, y]) => [+(ox + (x - ox) * k).toFixed(1), +(oy + (y - oy) * k).toFixed(1)]);
       s.size = +(s.size * k).toFixed(2);
     });
     brds.forEach(({ o: b, el: bel }) => { pos(b); if (bel) { bel.style.left = `${b.x}px`; bel.style.top = `${b.y}px`; } });
@@ -355,12 +366,92 @@ function startFrameScale(e, f, el) {
     if (imgs.length) renderBgImages();
     if (strokes.length) renderDrawings();
     renderTexts(); // también redibuja los frames y las flechas
-    setSelection([`frame:${f.id}`]);
   };
-  el.addEventListener('pointermove', onMove);
-  el.addEventListener('pointerup', onUp);
-  el.addEventListener('pointercancel', onUp);
+  return { preview, commit };
 }
+
+// ----- Agrandar varios objetos a la vez (selección múltiple o grupo) -----
+// Un recuadro punteado rodea lo seleccionado y su manija ⤢ (abajo a la derecha) lo escala todo en
+// proporción desde la esquina superior izquierda, igual que la manija ⤢ de los frames.
+const selScaleBox = document.createElement('div');
+selScaleBox.className = 'sel-scale-box';
+selScaleBox.hidden = true;
+const selScaleHandle = document.createElement('div');
+selScaleHandle.className = 'sel-scale-handle';
+selScaleHandle.title = 'Arrastra para agrandar o achicar todo lo seleccionado';
+selScaleHandle.textContent = '⤢';
+selScaleHandle.hidden = true;
+zoomCanvas.appendChild(selScaleBox);
+zoomCanvas.appendChild(selScaleHandle);
+
+// Lo que se escala con la selección: lo seleccionado y lo que está dentro de los frames seleccionados
+function selectionScaleKeys() {
+  const keys = new Set([...selection].filter(k => !k.startsWith('conn:')));
+  getFrames().filter(f => selection.has(`frame:${f.id}`)).forEach(f => objectsInsideFrame(f).forEach(k => keys.add(k)));
+  return [...keys];
+}
+
+function selectionRect(keys) {
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  const add = (x, y, w, h) => { x1 = Math.min(x1, x); y1 = Math.min(y1, y); x2 = Math.max(x2, x + w); y2 = Math.max(y2, y + h); };
+  keys.forEach(k => {
+    if (k.startsWith('stroke:')) {
+      const s = getDrawings().find(d => d.id === k.slice(7));
+      if (s) s.points.forEach(([x, y]) => add(x - s.size / 2, y - s.size / 2, s.size, s.size));
+      return;
+    }
+    const r = objectRectByKey(k);
+    if (r) add(r.x, r.y, r.w, r.h);
+  });
+  return x1 === Infinity ? null : { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+
+function placeSelScale(r) {
+  selScaleBox.style.left = `${r.x}px`;
+  selScaleBox.style.top = `${r.y}px`;
+  selScaleBox.style.width = `${r.w}px`;
+  selScaleBox.style.height = `${r.h}px`;
+  selScaleHandle.style.left = `${r.x + r.w}px`;
+  selScaleHandle.style.top = `${r.y + r.h}px`;
+}
+
+function updateSelScaleHandle() {
+  const r = currentTool === 'select' && selection.size > 1 ? selectionRect(selectionScaleKeys()) : null;
+  selScaleBox.hidden = selScaleHandle.hidden = !r || r.w < 1 || r.h < 1;
+  if (!selScaleHandle.hidden) placeSelScale(r);
+}
+
+selScaleHandle.addEventListener('pointerdown', (e) => {
+  if (isPanModeActive || isSpacePressed || e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const keys = selectionScaleKeys();
+  const r = selectionRect(keys);
+  if (!r) return;
+  const kept = [...selection];
+  const scaler = createScaler(keys, r.x, r.y);
+  const startX = e.clientX, startY = e.clientY;
+  const d2 = r.w * r.w + r.h * r.h;
+  let k = 1;
+  selScaleHandle.setPointerCapture(e.pointerId);
+  const onMove = (ev) => {
+    // El arrastre se proyecta sobre la diagonal del recuadro: sirve tirar hacia la derecha, abajo o en diagonal
+    const dx = (ev.clientX - startX) / zoom, dy = (ev.clientY - startY) / zoom;
+    k = Math.min(10, Math.max(0.1, 1 + (dx * r.w + dy * r.h) / d2));
+    scaler.preview(k);
+    placeSelScale({ x: r.x, y: r.y, w: r.w * k, h: r.h * k });
+  };
+  const onUp = () => {
+    selScaleHandle.removeEventListener('pointermove', onMove);
+    selScaleHandle.removeEventListener('pointerup', onUp);
+    selScaleHandle.removeEventListener('pointercancel', onUp);
+    scaler.commit(k);
+    setSelection(kept);
+  };
+  selScaleHandle.addEventListener('pointermove', onMove);
+  selScaleHandle.addEventListener('pointerup', onUp);
+  selScaleHandle.addEventListener('pointercancel', onUp);
+});
 
 // Lo que está completamente dentro de un frame (se mueve con él)
 function objectsInsideFrame(f) {
@@ -429,10 +520,11 @@ function updateConnectHandle() {
   // manijas junto al objeto se dejan así; si no (p. ej. seleccionando con un recuadro), se esconden.
   // Al soltar vuelven a su lugar exacto.
   if (selectGestureActive) {
-    if (!handlesFollowDrag) { connectHandle.hidden = true; ytListHandle.hidden = true; }
+    if (!handlesFollowDrag) { connectHandle.hidden = true; ytListHandle.hidden = true; selScaleBox.hidden = selScaleHandle.hidden = true; }
     return;
   }
   if (typeof updateYtListHandle === 'function' && typeof ytListHandle !== 'undefined') updateYtListHandle();
+  updateSelScaleHandle();
   const key = selection.size === 1 ? [...selection][0] : '';
   const r = currentTool === 'select' && /^(frame|text|img|board):/.test(key) ? objectRectByKey(key) : null;
   connectHandle.hidden = !r;

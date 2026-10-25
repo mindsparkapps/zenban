@@ -3889,6 +3889,46 @@ select option:checked {
   .frame-scale-handle { width: 34px; height: 34px; line-height: 30px; font-size: 18px; }
 }
 
+/* Selección múltiple o grupo: recuadro punteado y manija ⤢ (abajo a la derecha) para escalar todo junto */
+.sel-scale-box {
+  position: absolute;
+  z-index: 59;
+  box-sizing: border-box;
+  border: calc(1.5px * var(--inv-zoom, 1)) dashed var(--accent-primary);
+  border-radius: calc(6px * var(--inv-zoom, 1));
+  pointer-events: none;
+}
+
+.sel-scale-handle {
+  position: absolute;
+  z-index: 60;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  transform: scale(var(--inv-zoom, 1));
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent-primary);
+  border: 2px solid var(--accent-primary);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  cursor: nwse-resize;
+  touch-action: none;
+  user-select: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.sel-scale-box[hidden],
+.sel-scale-handle[hidden] {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .sel-scale-handle { width: 34px; height: 34px; margin: -17px 0 0 -17px; line-height: 30px; font-size: 18px; }
+}
+
 .connector-layer {
   position: absolute;
   top: 0;
