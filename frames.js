@@ -167,7 +167,7 @@ function objectRectByKey(key) {
   if (type === 'board') {
     const b = boards.find(x => x.id === id);
     const el = b && getBoardEl(b.id);
-    return b ? { x: b.x, y: b.y, w: el ? el.offsetWidth : 600, h: el ? el.offsetHeight : 300 } : null;
+    return b ? { x: b.x, y: b.y, w: (el ? el.offsetWidth : 600) * boardScale(b), h: (el ? el.offsetHeight : 300) * boardScale(b) } : null;
   }
   return null;
 }
@@ -324,7 +324,7 @@ function startFrameScale(e, f, el) {
 }
 
 // Escala en proporción desde (ox, oy) los objetos de keys: textos (letra, ancho y ventanas web), notas,
-// imágenes, dibujos y frames. Los tableros no cambian de tamaño: solo se reubican en proporción.
+// imágenes, dibujos, frames y tableros (enteros, con sus columnas y tareas: board.scale).
 // preview(k) lo muestra con una transformación (sin redibujar nada) y commit(k) guarda los nuevos tamaños.
 function createScaler(keys, ox, oy) {
   const has = (k) => keys.includes(k);
@@ -335,7 +335,11 @@ function createScaler(keys, ox, oy) {
   const boxes = [...texts, ...imgs, ...frames];
   const brds = boards.filter(b => has(`board:${b.id}`)).map(b => ({ o: b, el: getBoardEl(b.id) }));
   const preview = (k) => {
-    brds.forEach(b => b.el && (b.el.style.transform = `translate(${(b.o.x - ox) * (k - 1)}px, ${(b.o.y - oy) * (k - 1)}px)`));
+    brds.forEach(b => {
+      if (!b.el) return;
+      b.el.style.transformOrigin = '0 0';
+      b.el.style.transform = `translate(${(b.o.x - ox) * (k - 1)}px, ${(b.o.y - oy) * (k - 1)}px) scale(${boardScale(b.o) * k})`;
+    });
     boxes.forEach(b => {
       if (!b.el) return;
       b.el.style.transformOrigin = '0 0';
@@ -346,7 +350,7 @@ function createScaler(keys, ox, oy) {
   const commit = (k) => {
     boxes.forEach(b => { if (b.el) { b.el.style.transform = ''; b.el.style.transformOrigin = ''; } });
     strokes.forEach(s => s.el && s.el.removeAttribute('transform'));
-    brds.forEach(b => b.el && (b.el.style.transform = ''));
+    brds.forEach(b => b.el && applyBoardScale(b.el, b.o));
     if (k === 1) return;
     const pos = (o) => { o.x = Math.round(ox + (o.x - ox) * k); o.y = Math.round(oy + (o.y - oy) * k); };
     texts.forEach(({ o: t }) => {
@@ -361,7 +365,12 @@ function createScaler(keys, ox, oy) {
       s.points = s.points.map(([x, y]) => [+(ox + (x - ox) * k).toFixed(1), +(oy + (y - oy) * k).toFixed(1)]);
       s.size = +(s.size * k).toFixed(2);
     });
-    brds.forEach(({ o: b, el: bel }) => { pos(b); if (bel) { bel.style.left = `${b.x}px`; bel.style.top = `${b.y}px`; } });
+    brds.forEach(({ o: b, el: bel }) => {
+      pos(b);
+      b.scale = +Math.min(10, Math.max(0.1, boardScale(b) * k)).toFixed(3);
+      if (b.scale === 1) delete b.scale;
+      if (bel) { bel.style.left = `${b.x}px`; bel.style.top = `${b.y}px`; applyBoardScale(bel, b); }
+    });
     persist();
     if (imgs.length) renderBgImages();
     if (strokes.length) renderDrawings();
@@ -469,7 +478,7 @@ function objectsInsideFrame(f) {
   boards.forEach(b => {
     const el = getBoardEl(b.id);
     if (!el) return;
-    const cx = b.x + el.offsetWidth / 2, cy = b.y + el.offsetHeight / 2;
+    const cx = b.x + el.offsetWidth * boardScale(b) / 2, cy = b.y + el.offsetHeight * boardScale(b) / 2;
     if (cx >= f.x && cx <= f.x + f.w && cy >= f.y && cy <= f.y + f.h) keys.push(`board:${b.id}`);
   });
   return keys;

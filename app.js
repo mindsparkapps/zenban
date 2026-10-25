@@ -629,7 +629,7 @@ function canvasObjectsForTour() {
   const list = [];
   boards.forEach(b => {
     const el = getBoardEl(b.id);
-    if (el) list.push({ key: `board:${b.id}`, name: `Tablero: ${b.title || 'sin título'}`, x: b.x, y: b.y, w: el.offsetWidth, h: el.offsetHeight });
+    if (el) list.push({ key: `board:${b.id}`, name: `Tablero: ${b.title || 'sin título'}`, x: b.x, y: b.y, w: el.offsetWidth * boardScale(b), h: el.offsetHeight * boardScale(b) });
   });
   if (typeof getFrames === 'function') getFrames().forEach(f => list.push({ key: `frame:${f.id}`, name: f.title ? `Frame: ${f.title}` : 'Frame', x: f.x, y: f.y, w: f.w, h: f.h }));
   getTexts().forEach(t => {
@@ -1406,6 +1406,18 @@ function renderBoard() {
   });
 }
 
+// Un tablero se puede agrandar o achicar entero, con sus columnas y tareas (board.scale, al escalar varios
+// objetos a la vez). Se dibuja con una transformación, así que sus medidas en el lienzo son offsetWidth * escala.
+function boardScale(b) {
+  return b && b.scale > 0 ? b.scale : 1;
+}
+
+function applyBoardScale(el, b) {
+  const s = boardScale(b);
+  el.style.transformOrigin = s === 1 ? '' : '0 0';
+  el.style.transform = s === 1 ? '' : `scale(${s})`;
+}
+
 function renderBoardContent() {
   kanbanBoard.innerHTML = '';
   refreshTagFilterOptions();
@@ -1425,6 +1437,7 @@ function renderBoardContent() {
     frame.dataset.boardId = board.id;
     frame.style.left = `${board.x}px`;
     frame.style.top = `${board.y}px`;
+    applyBoardScale(frame, board);
     frame.style.setProperty('--board-color', board.color || '#6366f1');
     // Ancho aproximado del tablero (limita el tamaño de su pestaña de imagen al alejar la vista)
     frame.style.setProperty('--board-w', `${Math.max(360, boardCols.length * 354 + 48 + 260)}px`);
@@ -4468,7 +4481,7 @@ function getContentBounds() {
   };
   boards.forEach(b => {
     const el = getBoardEl(b.id);
-    extend(b.x, b.y, el ? el.offsetWidth : 600, el ? el.offsetHeight : 300);
+    extend(b.x, b.y, (el ? el.offsetWidth : 600) * boardScale(b), (el ? el.offsetHeight : 300) * boardScale(b));
     // La pestaña con la imagen del tablero sobresale hacia arriba
     const tab = el && el.querySelector('.board-image-tab');
     if (tab) extend(b.x, b.y - tab.offsetHeight, tab.offsetWidth, tab.offsetHeight);
@@ -4821,7 +4834,7 @@ function itemsInRect(x1, y1, x2, y2) {
   const overlaps = (x, y, w, h) => x < x2 && x + w > x1 && y < y2 && y + h > y1;
   boards.forEach(b => {
     const el = getBoardEl(b.id);
-    if (el && overlaps(b.x, b.y, el.offsetWidth, el.offsetHeight)) keys.push(`board:${b.id}`);
+    if (el && overlaps(b.x, b.y, el.offsetWidth * boardScale(b), el.offsetHeight * boardScale(b))) keys.push(`board:${b.id}`);
   });
   getBgImages().forEach(i => { if (overlaps(i.x, i.y, i.w, i.h)) keys.push(`img:${i.id}`); });
   getTexts().forEach(t => {
@@ -4874,6 +4887,8 @@ function startMarquee(e, additive) {
     selectGestureActive = false;
     cancelSelectGesture = null;
     box.remove();
+    // Las manijas se escondieron durante el recuadro: vuelven junto a lo seleccionado
+    if (typeof updateConnectHandle === 'function') updateConnectHandle();
     if (selection.size > 1) showToast(`${selection.size} elementos seleccionados`, 'info');
   };
   viewportArea.addEventListener('pointermove', onMove);
@@ -7024,7 +7039,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '99';
+const APP_VERSION = '100';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -7771,7 +7786,7 @@ function focusInternalTarget(ref) {
   if (ref.kind === 'b') {
     const b = boards.find(x => x.id === ref.id);
     const el = b && getBoardEl(b.id);
-    if (b && el) { fitRectToScreen(b.x, b.y, el.offsetWidth, el.offsetHeight); setSelection([`board:${b.id}`]); return; }
+    if (b && el) { fitRectToScreen(b.x, b.y, el.offsetWidth * boardScale(b), el.offsetHeight * boardScale(b)); setSelection([`board:${b.id}`]); return; }
   } else if (ref.kind === 't') {
     const t = getTexts().find(x => x.id === ref.id);
     const el = t && getTextEl(t.id);
@@ -7784,7 +7799,7 @@ function focusInternalTarget(ref) {
     const col = task && columns.find(c => c.id === task.columnId);
     const b = col && boards.find(x => x.id === col.boardId);
     const el = b && getBoardEl(b.id);
-    if (b && el) fitRectToScreen(b.x, b.y, el.offsetWidth, el.offsetHeight);
+    if (b && el) fitRectToScreen(b.x, b.y, el.offsetWidth * boardScale(b), el.offsetHeight * boardScale(b));
     const card = task && kanbanBoard.querySelector(`.kanban-card[data-task-id="${task.id}"]`);
     if (card) {
       card.scrollIntoView({ block: 'nearest' });
