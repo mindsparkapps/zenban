@@ -373,10 +373,13 @@ function objectsInsideFrame(f) {
   getBgImages().forEach(i => { if (inside(i.x, i.y, i.w, i.h)) keys.push(`img:${i.id}`); });
   getDrawings().forEach(s => { if (s.points.length && s.points.every(([x, y]) => inside(x, y, 0, 0))) keys.push(`stroke:${s.id}`); });
   getFrames().forEach(o => { if (o.id !== f.id && inside(o.x, o.y, o.w, o.h)) keys.push(`frame:${o.id}`); });
-  // Tableros con todo su contorno dentro del frame (su pestaña de imagen no cuenta)
+  // Tableros: basta con que su centro esté dentro del frame. Exigir el contorno completo dejaba fuera a
+  // tableros con columnas largas o un borde que asomaba, y no se movían con el frame.
   boards.forEach(b => {
     const el = getBoardEl(b.id);
-    if (el && inside(b.x, b.y, el.offsetWidth, el.offsetHeight)) keys.push(`board:${b.id}`);
+    if (!el) return;
+    const cx = b.x + el.offsetWidth / 2, cy = b.y + el.offsetHeight / 2;
+    if (cx >= f.x && cx <= f.x + f.w && cy >= f.y && cy <= f.y + f.h) keys.push(`board:${b.id}`);
   });
   return keys;
 }

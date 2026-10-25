@@ -6995,7 +6995,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '95';
+const APP_VERSION = '96';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -7863,6 +7863,37 @@ function openImageSource(src, q) {
   window.open(url, '_blank', 'noopener');
 }
 
+// Huella del contenido de cada imagen guardada en este dispositivo (tipo, tamaño y SHA-256): dos archivos
+// con la misma huella son la misma imagen
+const imageFingerprints = new Map(); // ref -> huella (o null si no está aquí)
+async function imageFingerprint(ref) {
+  if (imageFingerprints.has(ref)) return imageFingerprints.get(ref);
+  let fp = null;
+  if (!isRemoteImage(ref)) {
+    const blob = await ImageStore.get(ref).catch(() => null);
+    if (blob) {
+      try {
+        const hash = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+        fp = `${blob.type}:${blob.size}:${Array.from(new Uint8Array(hash).slice(0, 12), b => b.toString(16).padStart(2, '0')).join('')}`;
+      } catch (e) {}
+    }
+  }
+  imageFingerprints.set(ref, fp);
+  return fp;
+}
+
+async function dedupeLibraryByContent(items) {
+  const seen = new Set();
+  const out = [];
+  for (const it of items) {
+    const fp = await imageFingerprint(it.ref);
+    if (fp && seen.has(fp)) continue;
+    if (fp) seen.add(fp);
+    out.push(it);
+  }
+  return out;
+}
+
 // Pone en el lienzo una imagen que usa un archivo ya guardado (src): no se duplica el archivo
 async function addBgImageShared(ref, blob, point) {
   let w = 0, h = 0;
@@ -7911,6 +7942,12 @@ function openImageLibrary(point = null) {
   const search = m.querySelector('.image-finder-search');
   const note = m.querySelector('.image-finder-note');
   let items = libraryItems();
+  // Copias de la misma imagen guardadas por separado (antes cada inserción desde la Biblioteca creaba
+  // una): se comparan por contenido y se muestra una sola
+  const dedupe = async () => {
+    const unique = await dedupeLibraryByContent(items);
+    if (unique.length !== items.length) { items = unique; paint(); }
+  };
   const paint = () => {
     const q = search.value.trim().toLowerCase();
     const list = items.filter(it => !q || `${it.spaceLabel} ${it.project.name} ${it.where}`.toLowerCase().includes(q));
@@ -7955,9 +7992,10 @@ function openImageLibrary(point = null) {
   const signed = syncEnabled() && SYNC.token && Date.now() < SYNC.tokenExp;
   note.textContent = signed ? 'Buscando también en tus otros espacios…' : 'Inicia sesión con Google para ver también las imágenes de tus otros espacios.';
   if (signed && typeof loadOtherSpaces === 'function') {
-    loadOtherSpaces().then(() => { items = libraryItems(); note.textContent = ''; paint(); }).catch(() => { note.textContent = 'No se pudieron leer tus otros espacios.'; });
+    loadOtherSpaces().then(() => { items = libraryItems(); note.textContent = ''; paint(); dedupe(); }).catch(() => { note.textContent = 'No se pudieron leer tus otros espacios.'; });
   }
   paint();
+  dedupe();
   m.style.display = 'flex';
   if (!window.matchMedia('(pointer: coarse)').matches) setTimeout(() => search.focus(), 50);
 }
