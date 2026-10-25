@@ -206,8 +206,11 @@ function xferBuild(p) {
   p.tasks.forEach(t => { if (colMap[t.columnId]) out.tasks.push(xferCloneTask(t, colMap[t.columnId], uploads)); });
   p.images.forEach(i => {
     const newId = generateId('img');
-    uploads.push({ oldId: i.id, newId });
-    out.images.push({ ...deepClone(i), id: newId });
+    // Una imagen que usa un archivo compartido (src, de la Biblioteca) se lleva una copia de ese archivo
+    uploads.push({ oldId: i.src || i.id, newId });
+    const ni = { ...deepClone(i), id: newId };
+    delete ni.src;
+    out.images.push(ni);
     keyMap[`img:${i.id}`] = `img:${newId}`;
   });
   (p.texts || []).forEach(t => {

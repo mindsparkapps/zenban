@@ -305,9 +305,12 @@ function startFrameScale(e, f, el) {
   const frames = getFrames().filter(o => has(`frame:${o.id}`)).map(o => ({ o, el: getFrameEl(o.id) }));
   const strokes = getDrawings().filter(s => has(`stroke:${s.id}`)).map(s => ({ o: s, el: drawLayer.querySelector(`[data-stroke-id="${s.id}"]`) }));
   const boxes = [...texts, ...imgs, ...frames];
+  // Los tableros no cambian de tamaño: solo se reubican en proporción
+  const brds = boards.filter(b => has(`board:${b.id}`)).map(b => ({ o: b, el: getBoardEl(b.id) }));
   const w0 = f.w, h0 = f.h, r0 = f.radius || 0;
   let k = 1;
   const preview = () => {
+    brds.forEach(b => b.el && (b.el.style.transform = `translate(${(b.o.x - fx) * (k - 1)}px, ${(b.o.y - fy) * (k - 1)}px)`));
     boxes.forEach(b => {
       if (!b.el) return;
       b.el.style.transformOrigin = '0 0';
@@ -332,6 +335,7 @@ function startFrameScale(e, f, el) {
     el.classList.remove('is-scaling');
     boxes.forEach(b => { if (b.el) { b.el.style.transform = ''; b.el.style.transformOrigin = ''; } });
     strokes.forEach(s => s.el && s.el.removeAttribute('transform'));
+    brds.forEach(b => b.el && (b.el.style.transform = ''));
     if (k === 1) return;
     const pos = (o) => { o.x = Math.round(fx + (o.x - fx) * k); o.y = Math.round(fy + (o.y - fy) * k); };
     texts.forEach(({ o: t }) => {
@@ -346,6 +350,7 @@ function startFrameScale(e, f, el) {
       s.points = s.points.map(([x, y]) => [+(fx + (x - fx) * k).toFixed(1), +(fy + (y - fy) * k).toFixed(1)]);
       s.size = +(s.size * k).toFixed(2);
     });
+    brds.forEach(({ o: b, el: bel }) => { pos(b); if (bel) { bel.style.left = `${b.x}px`; bel.style.top = `${b.y}px`; } });
     persist();
     if (imgs.length) renderBgImages();
     if (strokes.length) renderDrawings();
@@ -368,6 +373,11 @@ function objectsInsideFrame(f) {
   getBgImages().forEach(i => { if (inside(i.x, i.y, i.w, i.h)) keys.push(`img:${i.id}`); });
   getDrawings().forEach(s => { if (s.points.length && s.points.every(([x, y]) => inside(x, y, 0, 0))) keys.push(`stroke:${s.id}`); });
   getFrames().forEach(o => { if (o.id !== f.id && inside(o.x, o.y, o.w, o.h)) keys.push(`frame:${o.id}`); });
+  // Tableros con todo su contorno dentro del frame (su pestaña de imagen no cuenta)
+  boards.forEach(b => {
+    const el = getBoardEl(b.id);
+    if (el && inside(b.x, b.y, el.offsetWidth, el.offsetHeight)) keys.push(`board:${b.id}`);
+  });
   return keys;
 }
 
@@ -412,8 +422,13 @@ connectHandle.hidden = true;
 zoomCanvas.appendChild(connectHandle);
 
 function updateConnectHandle() {
-  // Durante un arrastre se esconde (medir el objeto en cada cuadro trababa el celular); al soltar vuelve
-  if (selectGestureActive) { connectHandle.hidden = true; ytListHandle.hidden = true; return; }
+  // Durante un arrastre no se mide el objeto en cada cuadro (trababa el celular): si el arrastre mueve las
+  // manijas junto al objeto se dejan así; si no (p. ej. seleccionando con un recuadro), se esconden.
+  // Al soltar vuelven a su lugar exacto.
+  if (selectGestureActive) {
+    if (!handlesFollowDrag) { connectHandle.hidden = true; ytListHandle.hidden = true; }
+    return;
+  }
   if (typeof updateYtListHandle === 'function' && typeof ytListHandle !== 'undefined') updateYtListHandle();
   const key = selection.size === 1 ? [...selection][0] : '';
   const r = currentTool === 'select' && /^(frame|text|img|board):/.test(key) ? objectRectByKey(key) : null;

@@ -569,6 +569,21 @@ btnZoomReset.addEventListener('click', () => {
 btnZoomFit.addEventListener('click', fitBoardToScreen);
 document.getElementById('btnNextObject').addEventListener('click', (e) => goToNextObject(e.shiftKey ? -1 : 1));
 
+// Alto real de la pantalla (--app-h en styles.css). En algunos inicios de Chrome en Android (abrir desde el
+// ícono, volver a la app o compartir algo a ZenBan) 100dvh quedaba más alto que lo visible y la barra de
+// zoom quedaba fuera, hasta girar el celular. Se mide al cargar, al volver y en cada cambio de tamaño.
+function syncAppHeight() {
+  const h = Math.round(window.innerHeight);
+  if (h > 0) document.documentElement.style.setProperty('--app-h', `${h}px`);
+  // Si el documento quedó desplazado (no debería), se vuelve arriba: si no, las barras quedan corridas
+  if (window.scrollY || document.scrollingElement.scrollTop) window.scrollTo(0, 0);
+}
+syncAppHeight();
+['resize', 'orientationchange', 'pageshow', 'load'].forEach(ev => window.addEventListener(ev, () => requestAnimationFrame(syncAppHeight)));
+if (window.visualViewport) visualViewport.addEventListener('resize', () => requestAnimationFrame(syncAppHeight));
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(syncAppHeight, 150); });
+setTimeout(syncAppHeight, 600);
+
 // Parte del lienzo que de verdad se ve: sin lo que queda bajo la barra del navegador (celular) ni lo que
 // tapan la barra de contexto (arriba), la barra del zoom (abajo) y la de herramientas (izquierda)
 function visibleCanvasRect() {
@@ -3052,7 +3067,9 @@ deleteProjectBtn.addEventListener('click', async () => {
   });
   if (!ok) return;
 
-  (project.bgImages || []).forEach(img => ImageStore.del(img.id));
+  // Los archivos de sus imágenes del lienzo se borran si ningún otro proyecto los usa
+  const others = projects.filter(p => p.id !== project.id);
+  (project.bgImages || []).forEach(img => releaseImageFile(bgImageRef(img), others));
   (project.tasks || []).forEach(deleteTaskImages);
   recordDeletedProject(id);
   projects = projects.filter(p => p.id !== id);
@@ -3123,6 +3140,22 @@ function getBgImages() {
   return project.bgImages;
 }
 
+// Archivo de una imagen del lienzo. Normalmente es su propio id; una insertada desde la Biblioteca usa el
+// archivo ya guardado (src) en vez de una copia, así la misma imagen sirve en varios lugares y aparece una
+// sola vez en la Biblioteca.
+function bgImageRef(img) {
+  return (img && img.src) || (img && img.id);
+}
+
+// Borra el archivo de una imagen solo si ya nada lo usa (otra imagen del lienzo, una tarea, una pestaña…)
+function releaseImageFile(ref, list = projects) {
+  if (!ref || isRemoteImage(ref) || referencedImageIds(list).has(ref)) return;
+  ImageStore.del(ref);
+  const url = bgImageUrls.get(ref);
+  if (url) URL.revokeObjectURL(url);
+  bgImageUrls.delete(ref);
+}
+
 // Reduce imágenes muy grandes para no llenar el almacenamiento
 function prepareImageBlob(file) {
   return new Promise((resolve, reject) => {
@@ -3190,11 +3223,9 @@ async function addBgImageFromFile(file, clientX = null, clientY = null, opts = {
 
 function deleteBgImage(id) {
   const project = getActiveProject();
+  const ref = bgImageRef(getBgImages().find(img => img.id === id));
   project.bgImages = getBgImages().filter(img => img.id !== id);
-  ImageStore.del(id);
-  const url = bgImageUrls.get(id);
-  if (url) URL.revokeObjectURL(url);
-  bgImageUrls.delete(id);
+  releaseImageFile(ref);
   selection.delete(`img:${id}`);
   persist();
   renderBgImages();
@@ -3224,6 +3255,7 @@ function renderBgImages() {
     const el = document.createElement('div');
     el.className = 'bg-image';
     el.dataset.imageId = data.id;
+    el.dataset.imageRef = bgImageRef(data);
     el.style.left = `${data.x}px`;
     el.style.top = `${data.y}px`;
     el.style.width = `${data.w}px`;
@@ -3249,7 +3281,7 @@ function renderBgImages() {
     // de un zoom alto a uno bajo, el celular las mostraba por trozos mientras las volvía a descomprimir
     imgEl.decoding = 'sync';
     imgEl.style.opacity = typeof data.opacity === 'number' ? data.opacity : 1;
-    loadBgImageInto(el, data.id);
+    loadBgImageInto(el, bgImageRef(data));
 
     el.querySelector('.bg-image-toolbar').addEventListener('pointerdown', (e) => e.stopPropagation());
     el.querySelector('.bg-image-toolbar').addEventListener('click', (e) => {
@@ -3603,7 +3635,18 @@ function transferBgImageToTask(imageId, taskId) {
   if (!task || !img) return;
   project.bgImages = getBgImages().filter(i => i.id !== imageId);
   task.images = task.images || [];
-  task.images.push({ id: img.id, w: img.w, h: img.h });
+  // Una imagen que comparte su archivo con otras (de la Biblioteca) pasa a la tarea con su propia copia:
+  // borrar la tarea no debe borrar la imagen de los demás lugares
+  if (img.src) {
+    copyImageBlob(img.src).then(newId => {
+      if (!newId) return;
+      task.images.push({ id: newId, w: img.w, h: img.h });
+      persist();
+      renderBoard();
+    });
+  } else {
+    task.images.push({ id: img.id, w: img.w, h: img.h });
+  }
   selection.delete(`img:${imageId}`);
   persist();
   renderBgImages();
@@ -4444,6 +4487,7 @@ function getContentBounds() {
 // ----- Selección -----
 let selection = new Set();
 let selectGestureActive = false;
+let handlesFollowDrag = false; // durante un arrastre las manijas se mueven junto al objeto (startGroupDrag)
 
 function applySelectionVisuals() {
   if (typeof applyFrameSelection === 'function') applyFrameSelection();
@@ -4571,8 +4615,13 @@ function startGroupDrag(e) {
   // costaba ~40 veces más por cuadro y en el celular el arrastre se trababa)
   const movesConnectors = typeof getConnectors === 'function' && getConnectors().some(c => moveKeys.has(endpointKey(c.from)) || moveKeys.has(endpointKey(c.to)));
   let moved = false, dx = 0, dy = 0, targetCard = null, imageTarget = null;
+  // Las manijas (conector y progreso de listas) acompañan al objeto: se corren lo mismo que él, sin
+  // volver a medirlo en cada cuadro (eso trababa el celular)
+  const handles = [typeof connectHandle !== 'undefined' && connectHandle, typeof ytListHandle !== 'undefined' && ytListHandle]
+    .filter(h => h && !h.hidden).map(h => ({ h, x: parseFloat(h.style.left) || 0, y: parseFloat(h.style.top) || 0 }));
 
   selectGestureActive = true;
+  handlesFollowDrag = handles.length > 0;
   viewportArea.setPointerCapture(e.pointerId);
 
   const onMove = (ev) => {
@@ -4603,8 +4652,8 @@ function startGroupDrag(e) {
       o.f.y = Math.round(o.y + dy);
       if (o.el) { o.el.style.left = `${o.f.x}px`; o.el.style.top = `${o.f.y}px`; }
     });
-    // Las flechas los siguen (unen frames, tableros, imágenes, textos y notas); la manija de conexión
-    // se esconde mientras tanto y vuelve a su lugar al soltar
+    handles.forEach(o => { o.h.style.left = `${o.x + dx}px`; o.h.style.top = `${o.y + dy}px`; });
+    // Las flechas los siguen (unen frames, tableros, imágenes, textos y notas)
     if (movesConnectors) renderConnectors();
     if (singleImg) {
       // Sobre un link o un tablero gana ese destino; si no, una tarea
@@ -4622,6 +4671,7 @@ function startGroupDrag(e) {
     viewportArea.removeEventListener('pointerup', onUp);
     viewportArea.removeEventListener('pointercancel', onUp);
     selectGestureActive = false;
+    handlesFollowDrag = false;
     cancelSelectGesture = null;
     brds.forEach(o => o.el && o.el.classList.remove('is-moving'));
     highlightDropCard(null);
@@ -4637,7 +4687,7 @@ function startGroupDrag(e) {
       getActiveProject().bgImages = getBgImages().filter(i => i.id !== singleImg.i.id);
       selection.delete(`img:${singleImg.i.id}`);
       renderBgImages();
-      applyImageToTarget(imageTarget, singleImg.i.id);
+      applyImageToTarget(imageTarget, bgImageRef(singleImg.i));
       return;
     }
     if (singleImg && targetCard) {
@@ -5466,9 +5516,10 @@ async function pasteData(data, offset, offsetY = offset) {
     newKeys.push(`stroke:${ns.id}`);
   });
   for (const img of data.images) {
-    const newId = await copyImageBlob(img.id);
+    const newId = await copyImageBlob(bgImageRef(img));
     if (!newId) continue;
     const ni = regroup({ ...deepClone(img), id: newId, x: img.x + offset, y: img.y + offsetY });
+    delete ni.src; // la copia tiene su propio archivo
     getBgImages().push(ni);
     newKeys.push(`img:${newId}`);
     keyMap[`img:${img.id}`] = `img:${newId}`;
@@ -5581,8 +5632,9 @@ function deleteSelection({ skipConfirm = false, confirmed = false } = {}) {
   }
   imageIds.forEach(id => {
     const project = getActiveProject();
+    const ref = bgImageRef(getBgImages().find(img => img.id === id));
     project.bgImages = getBgImages().filter(img => img.id !== id);
-    if (!skipConfirm) ImageStore.del(id); // al cortar, la imagen sigue disponible para pegar
+    if (!skipConfirm) releaseImageFile(ref); // al cortar, la imagen sigue disponible para pegar
   });
   if (textIds.length) getActiveProject().texts = getTexts().filter(t => !textIds.includes(t.id));
   // Frames y conectores: también se quitan las flechas que unían algún objeto borrado
@@ -5697,7 +5749,7 @@ document.getElementById('ctxImgFront').addEventListener('click', () => {
 });
 document.getElementById('ctxImgView').addEventListener('click', () => {
   const first = selectedImages()[0];
-  if (first) openLightbox(first.id);
+  if (first) openLightbox(bgImageRef(first));
 });
 ctxImgOpacity.addEventListener('input', () => {
   const value = Number(ctxImgOpacity.value) / 100;
@@ -6808,8 +6860,10 @@ async function syncNow() {
 function referencedImageIds(list = projects) {
   const ids = new Set();
   list.forEach(p => {
-    (p.bgImages || []).forEach(i => ids.add(i.id));
+    (p.bgImages || []).forEach(i => ids.add(bgImageRef(i)));
     (p.tasks || []).forEach(t => (t.images || []).forEach(i => ids.add(i.id)));
+    // Pestañas de ventanas web y plugins
+    (p.texts || []).forEach(t => { if (t.web && t.web.image && !isRemoteImage(t.web.image)) ids.add(t.web.image); });
     // Imágenes de las pestañas de los tableros y de los links que se muestran como imagen
     (p.boards || []).forEach(b => { if (b.image && !isRemoteImage(b.image)) ids.add(b.image); });
     (p.frames || []).forEach(f => { if (f.image && !isRemoteImage(f.image)) ids.add(f.image); });
@@ -6860,7 +6914,7 @@ async function syncImages() {
   }
   // Las que no están ni aquí ni en Drive (aún no las sube el otro dispositivo) dejan de mostrar la carga
   bgImageLayer.querySelectorAll('.bg-image.is-loading').forEach(el => {
-    const id = el.dataset.imageId;
+    const id = el.dataset.imageRef || el.dataset.imageId;
     if (!localKeys.has(id) && !SYNC.imageFiles.has(id)) { el.classList.remove('is-loading'); el.classList.add('is-missing'); }
   });
   // Las de las tareas (tarjetas) se redibujan una vez al final
@@ -6869,8 +6923,7 @@ async function syncImages() {
 
 // Una imagen recién descargada: se pone donde ya se estaba esperando, sin redibujar todo
 function imageArrived(id) {
-  const el = bgImageLayer.querySelector(`.bg-image[data-image-id="${id}"]`);
-  if (el) loadBgImageInto(el, id);
+  bgImageLayer.querySelectorAll(`.bg-image[data-image-ref="${id}"]`).forEach(el => loadBgImageInto(el, id));
   document.querySelectorAll(`img[data-board-img="${id}"], img[data-link-img="${id}"]`).forEach(img => img.removeAttribute('src'));
   hydrateBoardImages();
   hydrateLinkImages();
@@ -6942,7 +6995,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '94';
+const APP_VERSION = '95';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -7086,7 +7139,7 @@ async function projectDiagnostics() {
   let missing = 0;
   const big = [];
   for (const img of [...bg, ...taskImgs]) {
-    const blob = await ImageStore.get(img.id).catch(() => null);
+    const blob = await ImageStore.get(img.src || img.id).catch(() => null);
     if (!blob) { missing++; continue; }
     stored += blob.size;
     try {
@@ -7719,7 +7772,8 @@ function imagesOfProjects(list, spaceLabel, space) {
   const out = [];
   const add = (ref, p, where) => out.push({ ref, project: p, where, spaceLabel, space });
   list.forEach(p => {
-    (p.bgImages || []).forEach(i => add(i.id, p, 'Lienzo'));
+    (p.bgImages || []).forEach(i => add(bgImageRef(i), p, 'Lienzo'));
+    (p.texts || []).forEach(t => { if (t.web && t.web.image) add(t.web.image, p, `Ventana: ${t.web.title || t.text || ''}`); });
     (p.tasks || []).forEach(t => (t.images || []).forEach(i => add(i.id, p, `Tarea: ${t.title}`)));
     (p.boards || []).forEach(b => { if (b.image) add(b.image, p, `Tablero: ${b.title}`); });
     (p.frames || []).forEach(f => { if (f.image) add(f.image, p, `Frame${f.title ? `: ${f.title}` : ''}`); });
@@ -7809,6 +7863,24 @@ function openImageSource(src, q) {
   window.open(url, '_blank', 'noopener');
 }
 
+// Pone en el lienzo una imagen que usa un archivo ya guardado (src): no se duplica el archivo
+async function addBgImageShared(ref, blob, point) {
+  let w = 0, h = 0;
+  try { const bmp = await createImageBitmap(blob); w = bmp.width; h = bmp.height; bmp.close(); } catch (e) {}
+  if (!w || !h) {
+    const same = projects.flatMap(p => p.bgImages || []).find(i => bgImageRef(i) === ref);
+    w = same ? same.w : 600; h = same ? same.h : 400;
+  }
+  const width = Math.min(600, w);
+  const height = Math.round(width * (h / w));
+  const img = { id: generateId('img'), src: ref, x: Math.round(point.x - width / 2), y: Math.round(point.y - height / 2), w: width, h: height, ...(typeof defaultStyleFor === 'function' ? defaultStyleFor('img') : {}) };
+  getBgImages().push(img);
+  persist();
+  selection = new Set([`img:${img.id}`]);
+  renderBgImages();
+  showToast('Imagen insertada desde la biblioteca (es la misma imagen, no una copia)', 'success');
+}
+
 function openImageLibrary(point = null) {
   if (!point) {
     const rect = viewportArea.getBoundingClientRect();
@@ -7870,7 +7942,10 @@ function openImageLibrary(point = null) {
       const blob = await libraryBlob(it);
       if (!blob) throw new Error('sin imagen');
       m.style.display = 'none';
-      await addBgImageFromFile(new File([blob], 'imagen', { type: blob.type || 'image/png' }), null, null, { at: point, message: 'Imagen insertada desde la biblioteca' });
+      // De este espacio: se usa la misma imagen (sin copia). De otro espacio se trae una copia, porque
+      // sus archivos están en la carpeta de Drive de ese espacio.
+      if (!it.space && !isRemoteImage(it.ref)) await addBgImageShared(it.ref, blob, point);
+      else await addBgImageFromFile(new File([blob], 'imagen', { type: blob.type || 'image/png' }), null, null, { at: point, message: 'Imagen insertada desde la biblioteca' });
     } catch (err) {
       b.classList.remove('is-loading');
       showToast('No se pudo traer esa imagen. Revisa tu conexión e inténtalo de nuevo.', 'warning');

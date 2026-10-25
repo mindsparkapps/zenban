@@ -111,6 +111,9 @@ h1, h2, h3, h4, .brand-title {
   width: 100vw;
   height: 100vh;
   height: 100dvh; /* en el celular: el alto que de verdad se ve (sin la barra del navegador) */
+  /* --app-h lo mide app.js (syncAppHeight): en algunos inicios de Chrome en Android 100dvh quedaba más alto
+     que la pantalla y la barra de zoom quedaba fuera hasta girar el celular */
+  height: var(--app-h, 100dvh);
   position: relative;
   overflow: hidden;
 }
@@ -497,6 +500,7 @@ body.theme-light .moon-icon { display: none; }
   width: 100%;
   height: calc(100vh - 64px);
   height: calc(100dvh - 64px);
+  height: calc(var(--app-h, 100dvh) - 64px);
   position: relative;
   overflow: hidden;
   background-color: var(--bg-viewport);
@@ -2873,6 +2877,7 @@ body.theme-light .moon-icon { display: none; }
   .viewport-area {
     height: calc(100vh - 56px);
     height: calc(100dvh - 56px);
+    height: calc(var(--app-h, 100dvh) - 56px);
   }
 
   .kanban-board {
