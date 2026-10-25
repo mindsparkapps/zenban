@@ -380,15 +380,14 @@ function createScaler(keys, ox, oy) {
 }
 
 // ----- Agrandar varios objetos a la vez (selección múltiple o grupo) -----
-// Un recuadro punteado rodea lo seleccionado y su manija ⤢ (abajo a la derecha) lo escala todo en
-// proporción desde la esquina superior izquierda, igual que la manija ⤢ de los frames.
+// Un recuadro punteado rodea lo seleccionado y su manija (abajo a la derecha, la misma bolita que la de un
+// objeto solo) lo escala todo en proporción desde la esquina superior izquierda, como la manija ⤢ de los frames.
 const selScaleBox = document.createElement('div');
 selScaleBox.className = 'sel-scale-box';
 selScaleBox.hidden = true;
 const selScaleHandle = document.createElement('div');
 selScaleHandle.className = 'sel-scale-handle';
 selScaleHandle.title = 'Arrastra para agrandar o achicar todo lo seleccionado';
-selScaleHandle.textContent = '⤢';
 selScaleHandle.hidden = true;
 zoomCanvas.appendChild(selScaleBox);
 zoomCanvas.appendChild(selScaleHandle);

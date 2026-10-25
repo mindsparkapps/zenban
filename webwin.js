@@ -146,6 +146,18 @@ editText = function (id) {
   return baseEditTextWeb.apply(this, arguments);
 };
 
+// Al seleccionar una ventana su página no se puede usar enseguida: el escudo sigue unos instantes. Así el
+// segundo clic de un doble clic llega al lienzo (y acerca la vista al plugin) en vez de caer en la página.
+let webLiveTimer = null;
+const baseApplySelectionVisualsWeb = applySelectionVisuals;
+applySelectionVisuals = function () {
+  baseApplySelectionVisualsWeb.apply(this, arguments);
+  clearTimeout(webLiveTimer);
+  textLayer.querySelectorAll('.canvas-text.is-web-live:not(.is-solo)').forEach(el => el.classList.remove('is-web-live'));
+  const solo = textLayer.querySelector('.canvas-text.is-webwin.is-solo:not(.is-web-live)');
+  if (solo) webLiveTimer = setTimeout(() => solo.classList.add('is-web-live'), 400);
+};
+
 // ----- Crear -----
 function addWebWindow(at, url, plugin = null) {
   const size = plugin ? { w: plugin.width || WEB_DEFAULT_SIZE.w, h: plugin.height || WEB_DEFAULT_SIZE.h } : WEB_DEFAULT_SIZE;
@@ -520,7 +532,7 @@ canvasMenu.addEventListener('click', async (e) => {
     .webwin-shield { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 0.8em; cursor: pointer; }
     .webwin-shield span { opacity: 0; transition: opacity 0.15s; background: rgba(15, 23, 42, 0.8); color: #fff; padding: 0.3em 0.8em; border-radius: 999px; font-size: 0.85em; }
     .webwin-shield:hover span { opacity: 1; }
-    @media (pointer: fine) { .canvas-text.is-solo .webwin-shield { display: none; } }
+    @media (pointer: fine) { .canvas-text.is-solo.is-web-live .webwin-shield { display: none; } }
     @media (pointer: coarse) { .webwin-shield span { opacity: 1; } }
     .canvas-text.is-webwin.is-resizing .webwin-frame { pointer-events: none; }
     .webwin-resize { position: absolute; right: -9px; bottom: -9px; width: 18px; height: 18px; border-radius: 50%; background: var(--accent-primary); border: 2px solid #fff; cursor: nwse-resize; display: none; transform: scale(var(--inv-zoom, 1)); touch-action: none; }

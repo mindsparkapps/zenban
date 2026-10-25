@@ -685,7 +685,7 @@ function objectRectAt(target) {
   const frame = target.closest('.board-frame');
   if (frame) {
     const b = boards.find(x => x.id === frame.dataset.boardId);
-    if (b) return { x: b.x, y: b.y, w: frame.offsetWidth, h: frame.offsetHeight };
+    if (b) return { x: b.x, y: b.y, w: frame.offsetWidth * boardScale(b), h: frame.offsetHeight * boardScale(b) };
   }
   const frameEl = target.closest('.canvas-frame');
   if (frameEl && typeof getFrames === 'function') {
@@ -5140,7 +5140,9 @@ viewportArea.addEventListener('dblclick', (e) => {
   if (linkAtEvent(e)) return; // doble clic sobre un link: lo abre (no edita el texto)
   const under = document.elementsFromPoint(e.clientX, e.clientY);
   const textEl = under.find(n => n.classList && n.classList.contains('canvas-text'));
-  if (textEl) {
+  // Un plugin no se escribe: el doble clic acerca la vista a él, como con los demás objetos
+  const textObj = textEl && getTexts().find(x => x.id === textEl.dataset.textId);
+  if (textEl && !(textObj && textObj.web && textObj.web.plugin)) {
     e.preventDefault();
     editText(textEl.dataset.textId);
     return;
@@ -7039,7 +7041,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '100';
+const APP_VERSION = '101';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -8027,6 +8029,46 @@ async function addBgImageShared(ref, blob, point) {
   showToast('Imagen insertada desde la biblioteca (es la misma imagen, no una copia)', 'success');
 }
 
+// Cambia el nombre de una imagen de la Biblioteca: queda guardado por archivo y se usa en todos los lugares
+// donde está esa misma imagen. Se sincroniza con Drive junto con el resto de los datos.
+function renameLibraryImage(item, name) {
+  setSavedImageName(item.ref, name);
+  projects.forEach(p => (p.bgImages || []).forEach(i => {
+    if (bgImageRef(i) !== item.ref) return;
+    if (name) i.name = name; else delete i.name;
+  }));
+  if (!name) ensureImageNames();
+  persist();
+  updateContextBar();
+  item.name = name || (projects.flatMap(p => p.bgImages || []).find(i => bgImageRef(i) === item.ref) || {}).name || '';
+  item.saved = !!name;
+}
+
+// Menú contextual de la Biblioteca (clic derecho o mantener apretada una imagen)
+function openLibraryMenu(clientX, clientY, actions) {
+  let menu = document.getElementById('libraryMenu');
+  if (!menu) {
+    menu = document.createElement('div');
+    menu.id = 'libraryMenu';
+    menu.className = 'canvas-menu library-menu';
+    menu.setAttribute('role', 'menu');
+    document.body.appendChild(menu);
+    menu.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.addEventListener('pointerdown', (e) => { if (!menu.hidden && !menu.contains(e.target)) menu.hidden = true; }, true);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { e.stopPropagation(); menu.hidden = true; } }, true);
+  }
+  menu.innerHTML = actions.map((a, i) => `<button type="button" role="menuitem" data-act="${i}"${a.disabled ? ' disabled' : ''}${a.title ? ` title="${escapeHtml(a.title)}"` : ''}><span class="menu-emoji" aria-hidden="true">${a.icon}</span><span>${escapeHtml(a.label)}</span></button>`).join('');
+  menu.onclick = (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b || b.disabled) return;
+    menu.hidden = true;
+    actions[Number(b.dataset.act)].run();
+  };
+  menu.hidden = false;
+  menu.style.left = `${Math.min(clientX, window.innerWidth - menu.offsetWidth - 8)}px`;
+  menu.style.top = `${Math.min(clientY, window.innerHeight - menu.offsetHeight - 8)}px`;
+}
+
 function openImageLibrary(point = null) {
   if (!point) {
     const rect = viewportArea.getBoundingClientRect();
@@ -8112,6 +8154,50 @@ function openImageLibrary(point = null) {
       b.classList.remove('is-loading');
       showToast('No se pudo traer esa imagen. Revisa tu conexión e inténtalo de nuevo.', 'warning');
     }
+  };
+  // Renombrar en el mismo cuadro: Enter guarda, Esc cancela
+  const startRename = (b, it) => {
+    const nameEl = b.querySelector('b');
+    if (!nameEl || b.querySelector('input')) return;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'image-finder-rename';
+    input.value = label(it);
+    input.maxLength = 80;
+    nameEl.replaceWith(input);
+    let done = false;
+    const finish = (save) => {
+      if (done) return;
+      done = true;
+      const name = input.value.trim();
+      if (save && name !== label(it)) {
+        renameLibraryImage(it, name);
+        numberItems();
+        showToast(name ? `Imagen renombrada: «${name}»` : 'Se quitó el nombre de la imagen', 'success');
+      }
+      paint();
+    };
+    // Lo que se toca dentro del campo no inserta la imagen
+    ['click', 'pointerdown'].forEach(ev => input.addEventListener(ev, (e) => e.stopPropagation()));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+    input.focus();
+    input.select();
+  };
+  grid.oncontextmenu = (e) => {
+    const b = e.target.closest('[data-i]');
+    if (!b) return;
+    e.preventDefault();
+    const it = items[Number(b.dataset.i)];
+    // Las de otro espacio se nombran en los datos de ese espacio: se renombran abriéndolo
+    const other = !!it.space;
+    openLibraryMenu(e.clientX, e.clientY, [
+      { icon: '✏️', label: 'Renombrar', disabled: other, title: other ? `Es de «${it.spaceLabel}»: ábrelo para renombrarla` : '', run: () => startRename(b, it) },
+      { icon: '➕', label: 'Insertar en el lienzo', disabled: b.classList.contains('is-missing'), run: () => b.click() }
+    ]);
   };
   // Los otros espacios se leen de Drive (si hay sesión) y se suman al llegar
   const signed = syncEnabled() && SYNC.token && Date.now() < SYNC.tokenExp;

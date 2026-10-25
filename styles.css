@@ -3889,7 +3889,8 @@ select option:checked {
   .frame-scale-handle { width: 34px; height: 34px; line-height: 30px; font-size: 18px; }
 }
 
-/* Selección múltiple o grupo: recuadro punteado y manija ⤢ (abajo a la derecha) para escalar todo junto */
+/* Selección múltiple o grupo: recuadro punteado y manija (abajo a la derecha) para escalar todo junto.
+   La manija es la misma bolita de las imágenes y los textos solos (.bg-image-handle, .canvas-text-handle) */
 .sel-scale-box {
   position: absolute;
   z-index: 59;
@@ -3902,31 +3903,20 @@ select option:checked {
 .sel-scale-handle {
   position: absolute;
   z-index: 60;
-  width: 26px;
-  height: 26px;
-  margin: -13px 0 0 -13px;
-  transform: scale(var(--inv-zoom, 1));
-  border-radius: 8px;
-  background: #fff;
-  color: var(--accent-primary);
-  border: 2px solid var(--accent-primary);
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 22px;
-  text-align: center;
+  width: 16px;
+  height: 16px;
+  transform: translate(-50%, -50%) scale(var(--inv-zoom, 1));
+  background: var(--accent-primary);
+  border: 2px solid #fff;
+  border-radius: 50%;
   cursor: nwse-resize;
   touch-action: none;
-  user-select: none;
   box-shadow: var(--shadow-sm);
 }
 
 .sel-scale-box[hidden],
 .sel-scale-handle[hidden] {
   display: none;
-}
-
-@media (pointer: coarse) {
-  .sel-scale-handle { width: 34px; height: 34px; margin: -17px 0 0 -17px; line-height: 30px; font-size: 18px; }
 }
 
 .connector-layer {
@@ -4390,6 +4380,24 @@ select option:checked {
 .image-finder-item.is-loading {
   opacity: 0.6;
   pointer-events: none;
+}
+
+/* Renombrar una imagen de la Biblioteca (menú contextual): campo en lugar del nombre */
+.image-finder-rename {
+  width: 100%;
+  min-width: 0;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font: inherit;
+  font-weight: 700;
+}
+
+/* El menú de la Biblioteca va sobre su ventana */
+.canvas-menu.library-menu {
+  z-index: 3500;
 }
 
 .image-finder-empty {
