@@ -6876,7 +6876,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '91';
+const APP_VERSION = '92';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -7061,7 +7061,9 @@ document.getElementById('diagCopyBtn').addEventListener('click', async () => {
 const settingToolsAutoHide = document.getElementById('settingToolsAutoHide');
 const settingToolsOpacity = document.getElementById('settingToolsOpacity');
 const settingToolsOpacityValue = document.getElementById('settingToolsOpacityValue');
-const autoHideBars = [toolbox, document.getElementById('zoomHud')];
+// En el celular la barra de zoom (con "ajustar a pantalla") queda siempre visible: tenue sobre el lienzo
+// parecía que no estaba, y tocarla para que apareciera también apretaba el botón de abajo
+const autoHideBars = matchMedia('(pointer: coarse)').matches ? [toolbox] : [toolbox, document.getElementById('zoomHud')];
 const AUTOHIDE_DELAY_MS = 700;      // al sacar el mouse
 const AUTOHIDE_TOUCH_MS = 3500;     // después de tocarlas en el celular
 let autoHidePreview = null;         // { on, opacity } mientras se mueve el control en Configuración
