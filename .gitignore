@@ -1,2 +1,7 @@
 # Graphify knowledge graph (local, regenerate with: graphify update .)
 graphify-out/
+
+# Integración local de Graphify con Claude Code (no publicar)
+CLAUDE.md
+.claude/
+.gitattributes
