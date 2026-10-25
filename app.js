@@ -3208,7 +3208,7 @@ async function addBgImageFromFile(file, clientX = null, clientY = null, opts = {
       center = screenToCanvas(rect.left + rect.width / 2, rect.top + rect.height / 2);
     }
 
-    const img = { id, x: Math.round(center.x - width / 2), y: Math.round(center.y - height / 2), w: width, h: height, ...(typeof defaultStyleFor === 'function' ? defaultStyleFor('img') : {}) };
+    const img = { id, name: nextImageName(), x: Math.round(center.x - width / 2), y: Math.round(center.y - height / 2), w: width, h: height, ...(typeof defaultStyleFor === 'function' ? defaultStyleFor('img') : {}) };
     getBgImages().push(img);
     persist();
     selection = new Set([`img:${id}`]);
@@ -5406,6 +5406,9 @@ function updateContextBar() {
     ctxDot.style.background = '#06b6d4';
     const first = selectedImages()[0];
     if (first) ctxImgOpacity.value = Math.round((typeof first.opacity === 'number' ? first.opacity : 1) * 100);
+    const nameInput = document.getElementById('ctxImgName');
+    if (first && document.activeElement !== nameInput) nameInput.value = first.name || '';
+    if (first && first.name && ctx.count === 1) ctxTitle.textContent = first.name;
   } else if (ctx.type === 'stroke') {
     const onlyArrows = selectedStrokes().every(s => s.arrow);
     ctxTitle.textContent = ctx.count === 1 ? (onlyArrows ? 'Flecha' : 'Trazo') : `${ctx.count} ${onlyArrows ? 'flechas' : 'trazos'}`;
@@ -5760,6 +5763,21 @@ ctxImgOpacity.addEventListener('input', () => {
   });
 });
 ctxImgOpacity.addEventListener('change', () => persist());
+
+// Nombre de la imagen: se cambia en todos los lugares donde se usa esa misma imagen (para la Biblioteca)
+const ctxImgName = document.getElementById('ctxImgName');
+ctxImgName.addEventListener('input', () => {
+  const refs = new Set(selectedImages().map(bgImageRef));
+  const name = ctxImgName.value.trim();
+  projects.forEach(p => (p.bgImages || []).forEach(i => { if (refs.has(bgImageRef(i))) i.name = name; }));
+  if (selectedImages().length === 1 && name) ctxTitle.textContent = name;
+});
+ctxImgName.addEventListener('change', () => {
+  // Sin nombre vuelve a recibir un número
+  if (!ctxImgName.value.trim()) { selectedImages().forEach(i => { delete i.name; }); ensureImageNames(); updateContextBar(); }
+  persist();
+});
+ctxImgName.addEventListener('keydown', (e) => { if (e.key === 'Enter') ctxImgName.blur(); });
 
 ctxStrokeColor.addEventListener('input', () => {
   selectedStrokes().forEach(st => {
@@ -6995,7 +7013,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '96';
+const APP_VERSION = '97';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -7770,9 +7788,9 @@ function focusInternalTarget(ref) {
 //       elegir una inserta una copia donde se abrió el menú (o al centro de la vista) -----
 function imagesOfProjects(list, spaceLabel, space) {
   const out = [];
-  const add = (ref, p, where) => out.push({ ref, project: p, where, spaceLabel, space });
+  const add = (ref, p, where, name = '') => out.push({ ref, project: p, where, spaceLabel, space, name });
   list.forEach(p => {
-    (p.bgImages || []).forEach(i => add(bgImageRef(i), p, 'Lienzo'));
+    (p.bgImages || []).forEach(i => add(bgImageRef(i), p, 'Lienzo', i.name || ''));
     (p.texts || []).forEach(t => { if (t.web && t.web.image) add(t.web.image, p, `Ventana: ${t.web.title || t.text || ''}`); });
     (p.tasks || []).forEach(t => (t.images || []).forEach(i => add(i.id, p, `Tarea: ${t.title}`)));
     (p.boards || []).forEach(b => { if (b.image) add(b.image, p, `Tablero: ${b.title}`); });
@@ -7794,9 +7812,46 @@ function libraryItems() {
       if (!e.error) items = items.concat(imagesOfProjects(e.projects || [], spaceTitle(e.space), e.space));
     });
   }
-  // La misma imagen usada en varios lugares se muestra una vez
-  const seen = new Set();
-  return items.filter(it => (seen.has(it.ref) ? false : seen.add(it.ref)));
+  // La misma imagen usada en varios lugares se muestra una vez (con el nombre que tenga en alguno)
+  const byRef = new Map();
+  items.forEach(it => {
+    const prev = byRef.get(it.ref);
+    if (!prev) byRef.set(it.ref, it);
+    else if (!prev.name && it.name) prev.name = it.name;
+  });
+  return [...byRef.values()];
+}
+
+// ----- Nombres de las imágenes del lienzo ("Imagen 1", "Imagen 2"…; se cambian en la barra de Imagen) -----
+function imageNumberFrom(name) {
+  const m = String(name || '').match(/^Imagen (\d+)$/);
+  return m ? Number(m[1]) : 0;
+}
+
+function nextImageName(list = projects) {
+  let max = 0;
+  list.forEach(p => (p.bgImages || []).forEach(i => { max = Math.max(max, imageNumberFrom(i.name)); }));
+  return `Imagen ${max + 1}`;
+}
+
+// Las imágenes del lienzo que todavía no tienen nombre reciben "Imagen N" (la misma imagen usada en varios
+// lugares comparte el número)
+function ensureImageNames() {
+  let max = 0;
+  const byRef = new Map();
+  projects.forEach(p => (p.bgImages || []).forEach(i => {
+    max = Math.max(max, imageNumberFrom(i.name));
+    if (i.name && !byRef.has(bgImageRef(i))) byRef.set(bgImageRef(i), i.name);
+  }));
+  let changed = false;
+  projects.forEach(p => (p.bgImages || []).forEach(i => {
+    if (i.name) return;
+    const ref = bgImageRef(i);
+    if (!byRef.has(ref)) byRef.set(ref, `Imagen ${++max}`);
+    i.name = byRef.get(ref);
+    changed = true;
+  }));
+  if (changed) persist();
 }
 
 // Imagen guardada: de este dispositivo o, si no está, de la carpeta de Drive de su espacio
@@ -7865,12 +7920,14 @@ function openImageSource(src, q) {
 
 // Huella del contenido de cada imagen guardada en este dispositivo (tipo, tamaño y SHA-256): dos archivos
 // con la misma huella son la misma imagen
-const imageFingerprints = new Map(); // ref -> huella (o null si no está aquí)
-async function imageFingerprint(ref) {
+const imageFingerprints = new Map(); // ref -> huella (o null si no se pudo leer)
+async function imageFingerprint(item) {
+  const ref = item.ref;
   if (imageFingerprints.has(ref)) return imageFingerprints.get(ref);
   let fp = null;
   if (!isRemoteImage(ref)) {
-    const blob = await ImageStore.get(ref).catch(() => null);
+    // De este dispositivo o, si es de otro espacio, de su carpeta de Drive (queda guardada aquí)
+    const blob = await ImageStore.get(ref).catch(() => null) || await libraryBlob(item).catch(() => null);
     if (blob) {
       try {
         const hash = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
@@ -7883,12 +7940,16 @@ async function imageFingerprint(ref) {
 }
 
 async function dedupeLibraryByContent(items) {
-  const seen = new Set();
   const out = [];
+  const byFp = new Map();
   for (const it of items) {
-    const fp = await imageFingerprint(it.ref);
-    if (fp && seen.has(fp)) continue;
-    if (fp) seen.add(fp);
+    const fp = await imageFingerprint(it);
+    if (fp && byFp.has(fp)) {
+      const kept = byFp.get(fp);
+      if (!kept.name && it.name) kept.name = it.name;
+      continue;
+    }
+    if (fp) byFp.set(fp, it);
     out.push(it);
   }
   return out;
@@ -7904,7 +7965,9 @@ async function addBgImageShared(ref, blob, point) {
   }
   const width = Math.min(600, w);
   const height = Math.round(width * (h / w));
-  const img = { id: generateId('img'), src: ref, x: Math.round(point.x - width / 2), y: Math.round(point.y - height / 2), w: width, h: height, ...(typeof defaultStyleFor === 'function' ? defaultStyleFor('img') : {}) };
+  // La misma imagen conserva su nombre en todos los lugares donde se usa
+  const named = projects.flatMap(p => p.bgImages || []).find(i => bgImageRef(i) === ref && i.name);
+  const img = { id: generateId('img'), src: ref, name: named ? named.name : nextImageName(), x: Math.round(point.x - width / 2), y: Math.round(point.y - height / 2), w: width, h: height, ...(typeof defaultStyleFor === 'function' ? defaultStyleFor('img') : {}) };
   getBgImages().push(img);
   persist();
   selection = new Set([`img:${img.id}`]);
@@ -7929,7 +7992,7 @@ function openImageLibrary(point = null) {
           <button class="modal-close-btn" type="button" data-close aria-label="Cerrar">&times;</button>
         </div>
         <div class="image-finder-body">
-          <input type="search" class="image-finder-search" placeholder="Filtrar por espacio, proyecto, tablero o tarea…" autocomplete="off">
+          <input type="search" class="image-finder-search" placeholder="Filtrar por nombre, espacio, proyecto, tablero o tarea…" autocomplete="off">
           <div class="image-finder-sources"></div>
           <p class="image-finder-note"></p>
           <div class="image-finder-grid"></div>
@@ -7941,20 +8004,30 @@ function openImageLibrary(point = null) {
   const grid = m.querySelector('.image-finder-grid');
   const search = m.querySelector('.image-finder-search');
   const note = m.querySelector('.image-finder-note');
+  ensureImageNames();
   let items = libraryItems();
+  // Las que no tienen nombre guardado (tareas, pestañas, otros espacios) se muestran como "Imagen N",
+  // siguiendo la numeración de las del lienzo
+  const label = (it) => it.name || it.autoName;
+  const numberItems = () => {
+    let max = 0;
+    items.forEach(it => { max = Math.max(max, imageNumberFrom(it.name)); });
+    items.forEach(it => { if (!it.name) it.autoName = `Imagen ${++max}`; });
+  };
+  numberItems();
   // Copias de la misma imagen guardadas por separado (antes cada inserción desde la Biblioteca creaba
   // una): se comparan por contenido y se muestra una sola
   const dedupe = async () => {
     const unique = await dedupeLibraryByContent(items);
-    if (unique.length !== items.length) { items = unique; paint(); }
+    if (unique.length !== items.length) { items = unique; numberItems(); paint(); }
   };
   const paint = () => {
     const q = search.value.trim().toLowerCase();
-    const list = items.filter(it => !q || `${it.spaceLabel} ${it.project.name} ${it.where}`.toLowerCase().includes(q));
+    const list = items.filter(it => !q || `${label(it)} ${it.spaceLabel} ${it.project.name} ${it.where}`.toLowerCase().includes(q));
     grid.innerHTML = list.length ? list.map(it => `
-      <button type="button" class="image-finder-item" data-i="${items.indexOf(it)}" title="Insertar · ${escapeHtml(it.spaceLabel)} › ${escapeHtml(it.project.name)} · ${escapeHtml(it.where)}">
+      <button type="button" class="image-finder-item" data-i="${items.indexOf(it)}" title="Insertar «${escapeHtml(label(it))}» · ${escapeHtml(it.spaceLabel)} › ${escapeHtml(it.project.name)} · ${escapeHtml(it.where)}">
         <img alt="" loading="lazy">
-        <span><b>${escapeHtml(it.project.name)}</b><small>${escapeHtml(it.spaceLabel)} · ${escapeHtml(it.where)}</small></span>
+        <span><b>${escapeHtml(label(it))}</b><small>${escapeHtml(it.project.name)} · ${escapeHtml(it.where)} · ${escapeHtml(it.spaceLabel)}</small></span>
       </button>`).join('')
       : `<p class="image-finder-empty">${items.length ? 'Ninguna imagen coincide.' : 'Todavía no hay imágenes.'}</p>`;
     grid.querySelectorAll('[data-i]').forEach(b => libraryThumb(b.querySelector('img'), items[Number(b.dataset.i)]));
@@ -7992,7 +8065,7 @@ function openImageLibrary(point = null) {
   const signed = syncEnabled() && SYNC.token && Date.now() < SYNC.tokenExp;
   note.textContent = signed ? 'Buscando también en tus otros espacios…' : 'Inicia sesión con Google para ver también las imágenes de tus otros espacios.';
   if (signed && typeof loadOtherSpaces === 'function') {
-    loadOtherSpaces().then(() => { items = libraryItems(); note.textContent = ''; paint(); dedupe(); }).catch(() => { note.textContent = 'No se pudieron leer tus otros espacios.'; });
+    loadOtherSpaces().then(() => { items = libraryItems(); numberItems(); note.textContent = ''; paint(); dedupe(); }).catch(() => { note.textContent = 'No se pudieron leer tus otros espacios.'; });
   }
   paint();
   dedupe();
@@ -8664,6 +8737,8 @@ document.addEventListener('DOMContentLoaded', () => {
   applyTransform();
   resetHistory();
   ImageStore.gc();
+  // Todas las imágenes del lienzo tienen nombre ("Imagen N"), para buscarlas en la Biblioteca
+  ensureImageNames();
   // Al abrir la app, el proyecto se muestra ajustado a la pantalla
   fitBoardToScreen();
 });
