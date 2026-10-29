@@ -3902,6 +3902,7 @@ const penOptions = document.getElementById('penOptions');
 const penColorsEl = document.getElementById('penColors');
 const penSizesEl = document.getElementById('penSizes');
 const penCustomColor = document.getElementById('penCustomColor');
+const shapePickerEl = document.getElementById('shapePicker');
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 const PEN_COLORS = ['#f8fafc', '#0f172a', '#f43f5e', '#f59e0b', '#10b981', '#3b82f6', '#a855f7'];
@@ -3934,8 +3935,9 @@ function setTool(tool) {
   viewportArea.classList.toggle('tool-text', tool === 'text');
   viewportArea.classList.toggle('tool-arrow', tool === 'arrow');
   viewportArea.classList.toggle('tool-connector', tool === 'connector');
-  // La flecha usa el mismo color y grosor que el lápiz
+  // La flecha y las formas usan el mismo color y grosor que el lápiz
   penOptions.hidden = tool !== 'pen' && tool !== 'arrow';
+  shapePickerEl.hidden = tool !== 'arrow';
   eraserOptions.hidden = tool !== 'eraser';
   if (tool !== 'eraser') eraserCursor.hidden = true;
 
@@ -3976,15 +3978,73 @@ function arrowToPath(stroke) {
   return `M ${x1} ${y1} L ${x2} ${y2} M ${f(hx1)} ${f(hy1)} L ${x2} ${y2} L ${f(hx2)} ${f(hy2)}`;
 }
 
+// ----- Formas básicas (en el mismo botón que la flecha) -----
+// Se guardan como trazos de dos puntos (esquinas opuestas del recuadro, o inicio y fin de la línea) con
+// stroke.shape; así se mueven, escalan, borran y deshacen igual que la flecha.
+const SHAPES = [
+  { id: 'arrow', label: 'Flecha', icon: '<line x1="5" y1="19" x2="19" y2="5"></line><polyline points="10 5 19 5 19 14"></polyline>' },
+  { id: 'line', label: 'Línea', icon: '<line x1="5" y1="19" x2="19" y2="5"></line>' },
+  { id: 'dashed', label: 'Línea segmentada', icon: '<line x1="5" y1="19" x2="19" y2="5" stroke-dasharray="3.5 3"></line>' },
+  { id: 'rect', label: 'Cuadrado', icon: '<rect x="4" y="4" width="16" height="16" rx="1.5"></rect>' },
+  { id: 'ellipse', label: 'Círculo', icon: '<circle cx="12" cy="12" r="8.5"></circle>' },
+  { id: 'triangle', label: 'Triángulo', icon: '<path d="M12 4 L20.5 19.5 H3.5 Z"></path>' },
+  { id: 'diamond', label: 'Rombo', icon: '<path d="M12 3 L21 12 L12 21 L3 12 Z"></path>' }
+];
+
+function isTwoPointStroke(stroke) {
+  return !!(stroke.arrow || stroke.shape);
+}
+
+// Contorno de la forma como polilínea (para dibujarla, tocarla, borrarla y seleccionarla con recuadro)
+function shapeOutline(stroke) {
+  const [[x1, y1], [x2, y2]] = stroke.points.length > 1 ? stroke.points : [stroke.points[0], stroke.points[0]];
+  const l = Math.min(x1, x2), r = Math.max(x1, x2), t = Math.min(y1, y2), b = Math.max(y1, y2);
+  const cx = (l + r) / 2, cy = (t + b) / 2;
+  switch (stroke.shape) {
+    case 'rect': return [[l, t], [r, t], [r, b], [l, b], [l, t]];
+    case 'triangle': return [[cx, t], [r, b], [l, b], [cx, t]];
+    case 'diamond': return [[cx, t], [r, cy], [cx, b], [l, cy], [cx, t]];
+    case 'ellipse': {
+      const pts = [];
+      for (let i = 0; i <= 48; i++) {
+        const a = (i / 48) * Math.PI * 2;
+        pts.push([cx + ((r - l) / 2) * Math.cos(a), cy + ((b - t) / 2) * Math.sin(a)]);
+      }
+      return pts;
+    }
+    default: return [[x1, y1], [x2, y2]]; // flecha, línea y línea segmentada
+  }
+}
+
+function shapeToPath(stroke) {
+  const f = (n) => +n.toFixed(1);
+  if (stroke.shape === 'ellipse') {
+    const [[x1, y1], [x2, y2]] = stroke.points;
+    const rx = f(Math.abs(x2 - x1) / 2), ry = f(Math.abs(y2 - y1) / 2);
+    const cx = f((x1 + x2) / 2), cy = f((y1 + y2) / 2);
+    return `M ${f(cx - rx)} ${cy} A ${rx} ${ry} 0 1 0 ${f(cx + rx)} ${cy} A ${rx} ${ry} 0 1 0 ${f(cx - rx)} ${cy} Z`;
+  }
+  const pts = shapeOutline(stroke);
+  const closed = pts.length > 2;
+  return pts.slice(0, closed ? -1 : pts.length).map(([x, y], i) => `${i ? 'L' : 'M'} ${f(x)} ${f(y)}`).join(' ') + (closed ? ' Z' : '');
+}
+
 function strokePathD(stroke) {
-  return stroke.arrow ? arrowToPath(stroke) : strokeToPath(stroke.points);
+  if (stroke.arrow) return arrowToPath(stroke);
+  return stroke.shape ? shapeToPath(stroke) : strokeToPath(stroke.points);
+}
+
+// Grosor, punta de la flecha y segmentos de la línea segmentada dependen del grosor del trazo
+function applyStrokeAttrs(path, stroke) {
+  path.setAttribute('d', strokePathD(stroke));
+  path.setAttribute('stroke-width', stroke.size);
+  if (stroke.shape === 'dashed') path.setAttribute('stroke-dasharray', `${+(stroke.size * 3).toFixed(2)} ${+(stroke.size * 2.5).toFixed(2)}`);
 }
 
 function createStrokeEl(stroke) {
   const path = document.createElementNS(SVG_NS, 'path');
-  path.setAttribute('d', strokePathD(stroke));
   path.setAttribute('stroke', stroke.color);
-  path.setAttribute('stroke-width', stroke.size);
+  applyStrokeAttrs(path, stroke);
   path.dataset.strokeId = stroke.id;
   return path;
 }
@@ -4027,6 +4087,38 @@ function renderPenOptions() {
     });
     penSizesEl.appendChild(btn);
   });
+  renderShapePicker();
+}
+
+// Formas del botón Flecha: la elegida queda como ícono del botón
+function currentShape() {
+  return SHAPES.find(s => s.id === penPrefs.shape) || SHAPES[0];
+}
+
+function renderShapePicker() {
+  const svg = (icon) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>`;
+  const shape = currentShape();
+  shapePickerEl.innerHTML = '';
+  SHAPES.forEach(s => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `shape-btn ${s.id === shape.id ? 'active' : ''}`;
+    btn.title = s.label;
+    btn.setAttribute('aria-label', s.label);
+    btn.innerHTML = svg(s.icon);
+    btn.addEventListener('click', () => {
+      penPrefs.shape = s.id;
+      saveData(PEN_PREFS_KEY, penPrefs);
+      renderShapePicker();
+    });
+    shapePickerEl.appendChild(btn);
+  });
+  const toolBtn = toolbox.querySelector('.tool-btn[data-tool="arrow"]');
+  if (toolBtn) {
+    toolBtn.innerHTML = svg(shape.icon);
+    toolBtn.title = `${shape.label} (A): arrastra para dibujarla (Shift: ángulos de 45° o proporción exacta). Elige la forma al lado`;
+    toolBtn.setAttribute('aria-label', 'Flecha y formas');
+  }
 }
 
 penCustomColor.addEventListener('input', () => {
@@ -4095,9 +4187,9 @@ function eraseAt(clientX, clientY) {
   for (let i = drawings.length - 1; i >= 0; i--) {
     const stroke = drawings[i];
     const reach = radius + stroke.size / 2;
-    const pts = stroke.points;
-    const hit = stroke.arrow && pts.length > 1
-      ? distToSegment(p.x, p.y, pts[0][0], pts[0][1], pts[1][0], pts[1][1]) <= reach
+    const pts = isTwoPointStroke(stroke) && stroke.points.length > 1 ? shapeOutline(stroke) : stroke.points;
+    const hit = isTwoPointStroke(stroke) && pts.length > 1
+      ? pts.slice(1).some(([x, y], j) => distToSegment(p.x, p.y, pts[j][0], pts[j][1], x, y) <= reach)
       : pts.some(([x, y]) => Math.hypot(x - p.x, y - p.y) <= reach);
     if (hit) {
       erasedInGesture.push({ stroke, index: i });
@@ -4128,9 +4220,10 @@ viewportArea.addEventListener('pointerdown', (e) => {
   if (currentTool === 'arrow') {
     const p = screenToCanvas(e.clientX, e.clientY);
     const start = [+p.x.toFixed(1), +p.y.toFixed(1)];
+    const shape = currentShape().id;
     activeStroke = {
       id: generateId('stroke'),
-      arrow: true,
+      ...(shape === 'arrow' ? { arrow: true } : { shape }),
       color: penPrefs.color,
       size: +(penPrefs.size / zoom).toFixed(2),
       points: [start, start.slice()]
@@ -4160,8 +4253,14 @@ viewportArea.addEventListener('pointermove', (e) => {
     const [x1, y1] = activeStroke.points[0];
     let x2 = p.x;
     let y2 = p.y;
-    // Con Shift la flecha queda en ángulos de 45°
-    if (e.shiftKey) {
+    const boxShape = ['rect', 'ellipse', 'triangle', 'diamond'].includes(activeStroke.shape);
+    // Con Shift las formas quedan con el mismo ancho que alto (cuadrado, círculo…)
+    if (e.shiftKey && boxShape) {
+      const side = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
+      x2 = x1 + side * (x2 < x1 ? -1 : 1);
+      y2 = y1 + side * (y2 < y1 ? -1 : 1);
+    } else if (e.shiftKey) {
+      // y las flechas y líneas en ángulos de 45°
       const step = Math.PI / 4;
       const angle = Math.round(Math.atan2(y2 - y1, x2 - x1) / step) * step;
       const len = Math.hypot(x2 - x1, y2 - y1);
@@ -4169,7 +4268,7 @@ viewportArea.addEventListener('pointermove', (e) => {
       y2 = y1 + len * Math.sin(angle);
     }
     activeStroke.points[1] = [+x2.toFixed(1), +y2.toFixed(1)];
-    activeStrokeEl.setAttribute('d', arrowToPath(activeStroke));
+    activeStrokeEl.setAttribute('d', strokePathD(activeStroke));
   } else if (currentTool === 'pen' && activeStroke) {
     const p = screenToCanvas(e.clientX, e.clientY);
     const last = activeStroke.points[activeStroke.points.length - 1];
@@ -4185,8 +4284,8 @@ viewportArea.addEventListener('pointermove', (e) => {
 function endDrawGesture(e) {
   if (e.pointerId !== drawPointerId) return;
   drawPointerId = null;
-  // Una flecha sin largo (solo un toque) no se guarda
-  if (activeStroke && activeStroke.arrow) {
+  // Una flecha o forma sin largo (solo un toque) no se guarda
+  if (activeStroke && isTwoPointStroke(activeStroke)) {
     const [[x1, y1], [x2, y2]] = activeStroke.points;
     if (Math.hypot(x2 - x1, y2 - y1) < 6 / zoom) {
       if (activeStrokeEl) activeStrokeEl.remove();
@@ -4616,7 +4715,8 @@ function hitStroke(clientX, clientY) {
   for (let i = drawings.length - 1; i >= 0; i--) {
     const s = drawings[i];
     const tol = 6 / zoom + s.size / 2;
-    const pts = s.points;
+    // Las formas se tocan por su contorno (un cuadrado solo guarda dos esquinas)
+    const pts = s.shape && s.points.length > 1 ? shapeOutline(s) : s.points;
     if (pts.length === 1 && Math.hypot(p.x - pts[0][0], p.y - pts[0][1]) <= tol) return s.id;
     for (let j = 1; j < pts.length; j++) {
       if (distToSegment(p.x, p.y, pts[j - 1][0], pts[j - 1][1], pts[j][0], pts[j][1]) <= tol) return s.id;
@@ -4885,7 +4985,8 @@ function itemsInRect(x1, y1, x2, y2) {
     if (el && overlaps(t.x, t.y, el.offsetWidth, el.offsetHeight)) keys.push(`text:${t.id}`);
   });
   getDrawings().forEach(s => {
-    if (s.points.some(([x, y]) => x >= x1 && x <= x2 && y >= y1 && y <= y2)) keys.push(`stroke:${s.id}`);
+    const pts = s.shape && s.points.length > 1 ? shapeOutline(s) : s.points;
+    if (pts.some(([x, y]) => x >= x1 && x <= x2 && y >= y1 && y <= y2)) keys.push(`stroke:${s.id}`);
   });
   // Frames: solo si quedan completos dentro del recuadro (así se puede seleccionar lo de adentro sin tomar el frame)
   if (typeof getFrames === 'function') {
@@ -5472,8 +5573,14 @@ function updateContextBar() {
     if (first && document.activeElement !== nameInput) nameInput.value = first.name || '';
     if (first && first.name && ctx.count === 1) ctxTitle.textContent = first.name;
   } else if (ctx.type === 'stroke') {
-    const onlyArrows = selectedStrokes().every(s => s.arrow);
-    ctxTitle.textContent = ctx.count === 1 ? (onlyArrows ? 'Flecha' : 'Trazo') : `${ctx.count} ${onlyArrows ? 'flechas' : 'trazos'}`;
+    const strokesSel = selectedStrokes();
+    const onlyArrows = strokesSel.every(s => s.arrow);
+    const onlyShapes = strokesSel.every(s => s.shape);
+    const shapeName = onlyShapes && strokesSel.every(s => s.shape === strokesSel[0].shape)
+      ? (SHAPES.find(x => x.id === strokesSel[0].shape) || {}).label : null;
+    ctxTitle.textContent = ctx.count === 1
+      ? (onlyArrows ? 'Flecha' : shapeName || 'Trazo')
+      : `${ctx.count} ${onlyArrows ? 'flechas' : onlyShapes ? 'formas' : 'trazos'}`;
     const first = selectedStrokes()[0];
     if (first) {
       ctxStrokeColor.value = first.color;
@@ -5863,10 +5970,8 @@ ctxStrokeSize.addEventListener('change', () => {
   selectedStrokes().forEach(st => {
     st.size = size;
     const el = drawLayer.querySelector(`[data-stroke-id="${st.id}"]`);
-    if (el) {
-      el.setAttribute('stroke-width', size);
-      if (st.arrow) el.setAttribute('d', arrowToPath(st)); // la punta crece con el grosor
-    }
+    // La punta de la flecha y los segmentos de la línea segmentada crecen con el grosor
+    if (el) applyStrokeAttrs(el, st);
   });
   persist();
 });
@@ -7096,7 +7201,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '108';
+const APP_VERSION = '109';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -7258,7 +7363,7 @@ async function projectDiagnostics() {
     `Tableros ${(p.boards || []).length} · columnas ${(p.columns || []).length} · tareas ${(p.tasks || []).length}`,
     `Imágenes: ${bg.length} en el lienzo, ${taskImgs.length} en tareas${missing ? ` (${missing} sin descargar)` : ''}`,
     `  guardadas ${mb(stored)} MB · descomprimidas ${mb(decoded)} MB${big.length ? ` · grandes: ${big.length}` : ''}`,
-    `Dibujos: ${strokes.length} trazos (${strokes.filter(s => s.arrow).length} flechas), ${points} puntos · textos ${(p.texts || []).length} (${(p.texts || []).filter(t => t.sticky).length} notas) · PDFs ${(p.texts || []).reduce((n, t) => n + fileIdsInText(t.text).length, 0)}`,
+    `Dibujos: ${strokes.length} trazos (${strokes.filter(s => s.arrow).length} flechas, ${strokes.filter(s => s.shape).length} formas), ${points} puntos · textos ${(p.texts || []).length} (${(p.texts || []).filter(t => t.sticky).length} notas) · PDFs ${(p.texts || []).reduce((n, t) => n + fileIdsInText(t.text).length, 0)}`,
     `Datos del proyecto: ${kb(p)} KB (dibujos ${kb(strokes)} KB, tareas ${kb(p.tasks)} KB)`,
     `Todos los proyectos: ${kb(projects)} KB · elementos en pantalla: ${document.querySelectorAll('#zoomCanvas *').length}`
   ];

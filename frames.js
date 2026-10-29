@@ -297,7 +297,7 @@ function startFrameScale(e, f, el) {
   e.stopPropagation();
   setSelection([`frame:${f.id}`]);
   const startX = e.clientX;
-  const scaler = createScaler(objectsInsideFrame(f), f.x, f.y);
+  const scaler = createScaler(objectsInsideFrame(f), f.x, f.y, [`frame:${f.id}`]);
   const w0 = f.w, h0 = f.h, r0 = f.radius || 0;
   let k = 1;
   el.setPointerCapture(e.pointerId);
@@ -309,7 +309,9 @@ function startFrameScale(e, f, el) {
     f.h = Math.round(h0 * k);
     f.radius = Math.round(r0 * k);
     applyFrameStyle(el, f);
-    followResize(`frame:${f.id}`);
+    // Solo la manija de conexión: las flechas de adentro van con la vista previa del escalado y se
+    // redibujan al soltar
+    updateConnectHandle();
   };
   const onUp = () => {
     el.removeEventListener('pointermove', onMove);
@@ -327,8 +329,13 @@ function startFrameScale(e, f, el) {
 // Escala en proporción desde (ox, oy) los objetos de keys: textos (letra, ancho y ventanas web), notas,
 // imágenes, dibujos, frames y tableros (enteros, con sus columnas y tareas: board.scale).
 // preview(k) lo muestra con una transformación (sin redibujar nada) y commit(k) guarda los nuevos tamaños.
-function createScaler(keys, ox, oy) {
+// Las flechas conectoras con los dos extremos en lo que se escala (o en linkedKeys, p. ej. el frame que se
+// agranda con lo de adentro) también cambian de grosor.
+function createScaler(keys, ox, oy, linkedKeys = []) {
   const has = (k) => keys.includes(k);
+  const joined = (k) => has(k) || linkedKeys.includes(k);
+  const conns = getConnectors().filter(c => joined(endpointKey(c.from)) && joined(endpointKey(c.to)))
+    .map(c => ({ o: c, el: connectorLayer.querySelector(`.connector[data-conn-id="${c.id}"]`) }));
   const texts = getTexts().filter(t => has(`text:${t.id}`)).map(t => ({ o: t, el: getTextEl(t.id) }));
   const imgs = getBgImages().filter(i => has(`img:${i.id}`)).map(i => ({ o: i, el: bgImageLayer.querySelector(`.bg-image[data-image-id="${i.id}"]`) }));
   const frames = getFrames().filter(o => has(`frame:${o.id}`)).map(o => ({ o, el: getFrameEl(o.id) }));
@@ -346,11 +353,11 @@ function createScaler(keys, ox, oy) {
       b.el.style.transformOrigin = '0 0';
       b.el.style.transform = `translate(${ox + (b.o.x - ox) * k - b.o.x}px, ${oy + (b.o.y - oy) * k - b.o.y}px) scale(${k})`;
     });
-    strokes.forEach(s => s.el && s.el.setAttribute('transform', `translate(${ox * (1 - k)} ${oy * (1 - k)}) scale(${k})`));
+    [...strokes, ...conns].forEach(s => s.el && s.el.setAttribute('transform', `translate(${ox * (1 - k)} ${oy * (1 - k)}) scale(${k})`));
   };
   const commit = (k) => {
     boxes.forEach(b => { if (b.el) { b.el.style.transform = ''; b.el.style.transformOrigin = ''; } });
-    strokes.forEach(s => s.el && s.el.removeAttribute('transform'));
+    [...strokes, ...conns].forEach(s => s.el && s.el.removeAttribute('transform'));
     brds.forEach(b => b.el && applyBoardScale(b.el, b.o));
     if (k === 1) return;
     const pos = (o) => { o.x = Math.round(ox + (o.x - ox) * k); o.y = Math.round(oy + (o.y - oy) * k); };
@@ -366,6 +373,7 @@ function createScaler(keys, ox, oy) {
       s.points = s.points.map(([x, y]) => [+(ox + (x - ox) * k).toFixed(1), +(oy + (y - oy) * k).toFixed(1)]);
       s.size = +(s.size * k).toFixed(2);
     });
+    conns.forEach(({ o: c }) => { c.size = +Math.max(0.5, (c.size || 3) * k).toFixed(2); });
     brds.forEach(({ o: b, el: bel }) => {
       pos(b);
       b.scale = +Math.min(10, Math.max(0.1, boardScale(b) * k)).toFixed(3);

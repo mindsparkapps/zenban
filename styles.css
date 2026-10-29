@@ -4823,6 +4823,48 @@ select option:checked {
   border-radius: 50%;
 }
 
+/* Formas del botón Flecha: flecha, línea, línea segmentada, cuadrado, círculo, triángulo y rombo */
+.shape-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-medium);
+}
+
+.shape-picker[hidden] {
+  display: none;
+}
+
+.shape-btn {
+  width: 32px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.shape-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.shape-btn:hover {
+  background: var(--bg-surface-hover);
+}
+
+.shape-btn.active {
+  background: var(--accent-primary-light);
+  outline: 1px solid var(--accent-primary);
+  color: var(--accent-primary);
+}
+
 /* Borrador: tamaños y círculo que sigue al puntero */
 .eraser-size span {
   border: 1.5px solid var(--text-muted);
