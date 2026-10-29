@@ -3653,7 +3653,8 @@ select option:checked {
   left: 0;
   width: 0;
   height: 0;
-  z-index: 0;
+  /* Sin z-index: así el título de cada frame (.frame-title) puede quedar sobre los textos, imágenes,
+     tableros y dibujos de adentro. Los frames siguen debajo de todo por estar primero en el lienzo */
 }
 
 .canvas-frame {
@@ -3830,6 +3831,14 @@ select option:checked {
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: auto;
+  /* Sobre los objetos de adentro (textos 2, dibujos 3), bajo las manijas de selección */
+  z-index: 4;
+  opacity: var(--frame-opacity, 1);
+}
+
+.canvas-frame .frame-image-tab,
+.frame-lock-badge {
+  opacity: var(--frame-opacity, 1);
 }
 
 /* La pestaña con imagen usa el estilo de la de los tableros (--board-color) */

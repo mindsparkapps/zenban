@@ -76,9 +76,13 @@ function applyFrameStyle(el, f) {
   el.style.height = `${f.h}px`;
   el.style.borderRadius = `${Math.max(0, f.radius || 0)}px`;
   el.style.setProperty('--frame-color', f.color || FRAME_DEFAULT_COLOR);
-  el.style.background = hexToRgba(f.color, (f.fill ?? 10) / 100);
-  // Opacidad del frame completo (borde, relleno, título y pestaña); lo de adentro no cambia
-  el.style.opacity = String(f.opacity ?? 1);
+  // Opacidad del frame completo (borde, relleno, título y pestaña); lo de adentro no cambia.
+  // No se usa opacity en el frame: crearía un contexto de apilamiento y el título no podría quedar
+  // sobre los objetos de adentro (ver .frame-title)
+  const opacity = f.opacity ?? 1;
+  el.style.background = hexToRgba(f.color, ((f.fill ?? 10) / 100) * opacity);
+  el.style.borderColor = hexToRgba(f.color || FRAME_DEFAULT_COLOR, opacity);
+  el.style.setProperty('--frame-opacity', String(opacity));
   // "Trabajar dentro": el frame no toma los clics (se puede seleccionar y mover lo de adentro)
   el.classList.toggle('is-locked', !!f.locked);
   // Ancho del frame: limita el tamaño de su pestaña de imagen al alejar la vista (como en los tableros)
