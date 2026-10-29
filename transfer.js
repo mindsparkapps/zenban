@@ -376,11 +376,17 @@ async function xferSend({ payload, dest, projectChoice, columnChoice, move }) {
   return placed;
 }
 
+// Las listas de la ventana van en orden alfabético (sin distinguir mayúsculas ni tildes, y "Proyecto 2"
+// antes que "Proyecto 10")
+function xferSortByName(list, nameOf) {
+  return [...list].sort((a, b) => String(nameOf(a) || '').localeCompare(String(nameOf(b) || ''), 'es', { sensitivity: 'base', numeric: true }));
+}
+
 // Opciones del selector "Proyecto de destino": los proyectos que ya existen y, aparte,
 // la opción de crear uno nuevo (para que no se confunda con un proyecto existente)
 function xferProjectOptions(list, newName) {
   const existing = list.length
-    ? `<optgroup label="Proyectos que ya existen">${list.map(p => `<option value="${shareEsc(p.id)}">${shareEsc(p.name)}</option>`).join('')}</optgroup>`
+    ? `<optgroup label="Proyectos que ya existen">${xferSortByName(list, p => p.name).map(p => `<option value="${shareEsc(p.id)}">${shareEsc(p.name)}</option>`).join('')}</optgroup>`
     : '';
   const create = newName
     ? `<optgroup label="O crear uno"><option value="new">➕ Crear proyecto nuevo «${shareEsc(newName)}»</option></optgroup>`
@@ -436,7 +442,8 @@ async function openTransfer(payload) {
   let dests = [here];
   if (syncEnabled() && SYNC.token && Date.now() < SYNC.tokenExp) {
     try {
-      dests = [here, ...(await xferDestinations())];
+      // Este espacio primero y los demás en orden alfabético
+      dests = [here, ...xferSortByName(await xferDestinations(), xferSpaceLabel)];
     } catch (e) {
       showToast('No se pudieron leer tus otros espacios; puedes enviar dentro de este', 'warning');
     }
@@ -477,10 +484,22 @@ async function openTransfer(payload) {
     if (!proj) {
       colSel.innerHTML = '<option value="">Por hacer (tablero nuevo)</option>';
     } else {
-      const opts = (proj.columns || []).map(c => {
-        const b = (proj.boards || []).find(x => x.id === c.boardId);
-        return `<option value="${shareEsc(c.id)}">${shareEsc((b ? b.title + ' › ' : '') + c.title)}</option>`;
-      });
+      // Tableros en orden alfabético; dentro de cada uno las columnas siguen el orden del tablero
+      // (Por hacer → En progreso → Completadas)
+      const brds = proj.boards || [];
+      const boardOf = (c) => brds.find(x => x.id === c.boardId);
+      const cols = proj.columns || [];
+      const opts = [...cols]
+        .sort((a, b) => {
+          const ba = boardOf(a), bb = boardOf(b);
+          return String((ba || {}).title || '').localeCompare(String((bb || {}).title || ''), 'es', { sensitivity: 'base', numeric: true })
+            || brds.indexOf(ba) - brds.indexOf(bb)
+            || cols.indexOf(a) - cols.indexOf(b);
+        })
+        .map(c => {
+          const b = boardOf(c);
+          return `<option value="${shareEsc(c.id)}">${shareEsc((b ? b.title + ' › ' : '') + c.title)}</option>`;
+        });
       colSel.innerHTML = opts.join('') || '<option value="">(sin columnas)</option>';
     }
     colSel.disabled = false;
@@ -496,7 +515,8 @@ async function openTransfer(payload) {
       // Este espacio: los demás proyectos (no el abierto)
       destData = { projects: projects.filter(p => p.id !== current.id) };
       projSel.innerHTML = xferProjectOptions(destData.projects, `${current.name} (copia)`);
-      projSel.value = destData.projects[0] ? destData.projects[0].id : 'new';
+      const first = xferSortByName(destData.projects, p => p.name)[0];
+      projSel.value = first ? first.id : 'new';
       projSel.disabled = false;
       fillColumns();
       go.disabled = false;
@@ -510,7 +530,8 @@ async function openTransfer(payload) {
     }
     const same = destData.projects.find(p => String(p.name).toLowerCase() === String(current.name).toLowerCase());
     projSel.innerHTML = xferProjectOptions(destData.projects, same ? null : current.name);
-    projSel.value = same ? same.id : (payload.task && destData.projects[0] ? destData.projects[0].id : 'new');
+    const first = xferSortByName(destData.projects, p => p.name)[0];
+    projSel.value = same ? same.id : (payload.task && first ? first.id : 'new');
     projSel.disabled = false;
     fillColumns();
     go.disabled = false;
