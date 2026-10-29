@@ -6720,9 +6720,15 @@ function mergeTags(L, R, B) {
 }
 
 function mergePayloads(local, remote, base = null) {
+  // Un borrado solo cuenta del lado que ya no tiene el proyecto: si un lado tiene el proyecto y
+  // también su borrado, ese borrado quedó viejo (el proyecto siguió vivo) y se ignora
   const tombs = new Map();
-  [...(remote.deletedProjects || []), ...(local.deletedProjects || [])].forEach(t => {
-    if (!tombs.has(t.id) || tombs.get(t.id) < t.at) tombs.set(t.id, t.at);
+  [remote, local].forEach(side => {
+    const alive = new Set((side.projects || []).map(p => p.id));
+    (side.deletedProjects || []).forEach(t => {
+      if (alive.has(t.id)) return;
+      if (!tombs.has(t.id) || tombs.get(t.id) < t.at) tombs.set(t.id, t.at);
+    });
   });
   const lm = new Map((local.projects || []).map(p => [p.id, p]));
   const bm = new Map(((base && base.projects) || []).map(p => [p.id, p]));
@@ -6739,11 +6745,13 @@ function mergePayloads(local, remote, base = null) {
   // Un proyecto borrado no vuelve aunque otro dispositivo atrasado lo haya editado después (su copia
   // queda en las copias de seguridad de ese dispositivo). Solo vuelve si se recuperó a propósito
   // desde una copia de seguridad (restoredAt) después de borrarlo.
+  const alive = merged.filter(p => !tombs.has(p.id) || (p.restoredAt || 0) > tombs.get(p.id));
+  const kept = new Set(alive.map(p => p.id));
   return {
     version: 1,
-    projects: merged.filter(p => !tombs.has(p.id) || (p.restoredAt || 0) > tombs.get(p.id)),
+    projects: alive,
     tags: mergeTags(local.tags, remote.tags, base ? base.tags : null),
-    deletedProjects: [...tombs.entries()].map(([id, at]) => ({ id, at }))
+    deletedProjects: [...tombs.entries()].filter(([id]) => !kept.has(id)).map(([id, at]) => ({ id, at }))
   };
 }
 
@@ -7044,7 +7052,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '103';
+const APP_VERSION = '104';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

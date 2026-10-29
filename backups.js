@@ -149,7 +149,8 @@ function restoreBackup(b) {
   (data.projects || []).forEach(p => { if (deleted.has(p.id) && !projects.some(x => x.id === p.id)) p.restoredAt = now; });
   // Sin base: se juntan ambos (lo de aquí gana si un elemento está en los dos)
   const merged = mergePayloads(localPayload(), { ...data, deletedProjects: [] }, null);
-  merged.deletedProjects = deletedProjects();
+  const kept = new Set(merged.projects.map(p => p.id));
+  merged.deletedProjects = deletedProjects().filter(t => !kept.has(t.id));
   applyPayload(merged);
   // Que se suba a Drive
   onLocalDataChanged();
