@@ -6030,13 +6030,28 @@ window.addEventListener('keydown', (e) => {
 
 const canvasMenu = document.getElementById('canvasContextMenu');
 let rightDown = null; // { x, y, time, target }
+let middleDown = null; // { x, y, time, target }
 let menuCanvasPoint = null;
 let menuTaskId = null;   // tarea bajo el menú (para archivarla)
 let menuColumnId = null; // columna bajo el menú
 
 viewportArea.addEventListener('mousedown', (e) => {
   if (e.button === 2) rightDown = { x: e.clientX, y: e.clientY, time: Date.now(), target: e.target };
+  if (e.button === 1) middleDown = { x: e.clientX, y: e.clientY, time: Date.now(), target: e.target };
 }, true);
+
+// Clic con la rueda (sin arrastrar): ajusta la vista para ver todo, como el botón "Ajustar vista".
+// Arrastrar con la rueda sigue moviendo el lienzo.
+window.addEventListener('mouseup', (e) => {
+  if (e.button !== 1 || !middleDown) return;
+  const moved = Math.hypot(e.clientX - middleDown.x, e.clientY - middleDown.y);
+  const held = Date.now() - middleDown.time;
+  const target = middleDown.target;
+  middleDown = null;
+  if (moved > 5 || held > 600) return;
+  if (target.closest('.toolbox, .zoom-hud, .mobile-fab, a, input, textarea, select')) return;
+  fitBoardToScreen();
+});
 
 // Cualquier clic (izquierdo, derecho, táctil) fuera del menú lo cierra.
 // Se escucha en fase de captura sobre window para que ningún otro manejador lo bloquee.
@@ -7201,7 +7216,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '110';
+const APP_VERSION = '111';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

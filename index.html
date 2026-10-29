@@ -97,7 +97,7 @@
           <button type="button" class="ctx-btn " id="ctxAddImage" title="Agregar una imagen de fondo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><span>Imagen</span></button>
           <button type="button" class="ctx-btn " id="ctxAddText" title="Agregar un texto (T)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg><span>Texto</span></button>
           <button type="button" class="ctx-btn " id="ctxPasteCanvas" title="Pegar lo copiado (Ctrl+V)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1"></rect></svg><span>Pegar</span></button>
-          <button type="button" class="ctx-btn " id="ctxFit" title="Encuadrar todo el contenido"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg><span>Ajustar vista</span></button>
+          <button type="button" class="ctx-btn " id="ctxFit" title="Encuadrar todo el contenido (también con clic en la rueda del mouse)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg><span>Ajustar vista</span></button>
           <label class="ctx-color" title="Color de fondo del lienzo de este proyecto">
             <span>Fondo</span>
             <input type="color" id="ctxCanvasColor" value="#0b0f19">
@@ -488,7 +488,7 @@
 
         <!-- Help tooltip for user gestures -->
         <div class="hud-gesture-hint">
-          <span class="hint-text">💡 Clic derecho + arrastrar: mover lienzo · Rueda: zoom · Arrastrar en vacío: seleccionar</span>
+          <span class="hint-text">💡 Clic derecho + arrastrar: mover lienzo · Rueda: zoom · Clic con la rueda: ajustar vista · Arrastrar en vacío: seleccionar</span>
           <span class="app-version" id="appVersion"></span>
         </div>
       </aside>
@@ -1060,7 +1060,7 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=110"></script>
+  <script src="app.js?v=111"></script>
   <script src="share.js?v=8"></script>
   <script src="transfer.js?v=8"></script>
   <script src="spaces.js?v=9"></script>
