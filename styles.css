@@ -3885,9 +3885,6 @@ select option:checked {
   display: block;
 }
 
-@media (pointer: coarse) {
-  .frame-scale-handle { width: 34px; height: 34px; line-height: 30px; font-size: 18px; }
-}
 
 /* Selección múltiple o grupo: recuadro punteado y manija (abajo a la derecha) para escalar todo junto.
    La manija es la misma bolita de las imágenes y los textos solos (.bg-image-handle, .canvas-text-handle) */
@@ -6007,6 +6004,53 @@ select option:checked {
   border-radius: var(--radius-sm);
   color: var(--text-main);
   user-select: text;
+}
+
+/* Manija para agrandar: la misma en todos los objetos (imágenes, textos, notas, ventanas web, frames,
+   tableros y selección múltiple): bolita del color de acento con una flecha de dos puntas.
+   Con "html" delante gana sobre los estilos que webwin.js agrega después */
+html .bg-image-handle,
+html .canvas-text-handle,
+html .frame-handle,
+html .frame-scale-handle,
+html .sel-scale-handle,
+html .webwin-resize {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--accent-primary) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 7l10 10M7 13V7h6M17 11v6h-6'/%3E%3C/svg%3E") center / 13px no-repeat;
+  box-shadow: var(--shadow-sm);
+  cursor: nwse-resize;
+}
+
+/* La de arriba a la derecha del frame (agranda con todo lo de adentro) apunta en esa diagonal */
+html .frame-scale-handle {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 7L7 17M11 7h6v6M7 11v6h6'/%3E%3C/svg%3E");
+  cursor: nesw-resize;
+}
+
+html .webwin-resize {
+  right: -11px;
+  bottom: -11px;
+}
+
+@media (pointer: coarse) {
+  html .bg-image-handle,
+  html .canvas-text-handle,
+  html .frame-handle,
+  html .frame-scale-handle,
+  html .sel-scale-handle,
+  html .webwin-resize {
+    width: 30px;
+    height: 30px;
+    background-size: 17px;
+  }
+
+  html .webwin-resize {
+    right: -15px;
+    bottom: -15px;
+  }
 }
 
 /* Botones de la barra y opciones del menú contextual ocultos con hidden */

@@ -111,7 +111,7 @@ function renderFrames() {
       ${f.title && !hides.title ? `<div class="frame-title">${escapeHtml(f.title)}</div>` : ''}
       ${f.locked ? '<button type="button" class="frame-lock-badge" title="Volver a mover el frame">✋ Trabajando dentro · <b>Listo</b></button>' : ''}
       <div class="frame-handle" title="Arrastra para agrandar o achicar el frame (lo de adentro no cambia)"></div>
-      <div class="frame-scale-handle" title="Arrastra para agrandar o achicar el frame con todo lo de adentro">⤢</div>`;
+      <div class="frame-scale-handle" title="Arrastra para agrandar o achicar el frame con todo lo de adentro"></div>`;
     el.querySelector('.frame-handle').addEventListener('pointerdown', (e) => startFrameResize(e, f, el));
     el.querySelector('.frame-scale-handle').addEventListener('pointerdown', (e) => startFrameScale(e, f, el));
     const badge = el.querySelector('.frame-lock-badge');
@@ -423,9 +423,13 @@ function placeSelScale(r) {
   selScaleHandle.style.top = `${r.y + r.h}px`;
 }
 
+// Un tablero solo también usa esta manija (se agranda entero, con sus columnas y tareas); su propio borde
+// de selección reemplaza al recuadro punteado
 function updateSelScaleHandle() {
-  const r = currentTool === 'select' && selection.size > 1 ? selectionRect(selectionScaleKeys()) : null;
+  const soloBoard = selection.size === 1 && [...selection][0].startsWith('board:');
+  const r = currentTool === 'select' && (selection.size > 1 || soloBoard) ? selectionRect(selectionScaleKeys()) : null;
   selScaleBox.hidden = selScaleHandle.hidden = !r || r.w < 1 || r.h < 1;
+  if (soloBoard) selScaleBox.hidden = true;
   if (!selScaleHandle.hidden) placeSelScale(r);
 }
 
