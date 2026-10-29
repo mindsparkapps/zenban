@@ -413,6 +413,14 @@ let panStartY = 0;
 let initialPanX = 0;
 let initialPanY = 0;
 
+// Porcentaje del zoom: bajo 10% con un decimal y bajo 1% con dos cifras ("Ajustar vista" puede alejar
+// mucho más que el mínimo de Configuración para que quepa todo)
+function formatZoomPct(z) {
+  const pct = z * 100;
+  const text = pct < 1 ? String(+pct.toPrecision(2)) : pct < 10 ? pct.toFixed(1).replace(/\.0$/, '') : String(Math.round(pct));
+  return `${text.replace('.', ',')}%`;
+}
+
 // Update Transform on Canvas
 function applyTransform(animate = false) {
   if (animate) {
@@ -427,9 +435,7 @@ function applyTransform(animate = false) {
   zoomCanvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
   markCanvasTransforming(animate ? 320 : 220);
   scheduleInvZoom();
-  // Bajo 10% se muestra con un decimal (el zoom mínimo puede llegar a 1%)
-  const pct = zoom * 100;
-  const label = `${pct < 10 ? pct.toFixed(1).replace(/\.0$/, '') : Math.round(pct)}%`;
+  const label = formatZoomPct(zoom);
   if (zoomPercentLabel.textContent !== label) zoomPercentLabel.textContent = label;
 }
 
@@ -611,15 +617,15 @@ function fitBoardToScreen() {
   const scaleX = (vis.width - padding * 2) / boardWidth;
   const scaleY = (vis.height - padding * 2) / boardHeight;
   let targetZoom = Math.min(scaleX, scaleY, 1.2);
-  // Para que se vea TODO se puede alejar más que el zoom mínimo de Configuración (en el celular no alcanzaba)
-  targetZoom = Math.max(targetZoom, 0.02);
+  // Para que se vea TODO se puede alejar más que el zoom mínimo de Configuración y que el 2% de antes
+  // (con objetos muy separados no cabían). El piso solo evita un zoom de 0 si algo quedó absurdamente lejos
+  targetZoom = Math.max(targetZoom, 0.0001);
 
   // Centrado en la parte visible
   animateViewTo(targetZoom,
     vis.offX + (vis.width - boardWidth * targetZoom) / 2 - bounds.minX * targetZoom,
     vis.offY + (vis.height - boardHeight * targetZoom) / 2 - bounds.minY * targetZoom);
-  const pct = targetZoom * 100;
-  showToast(`Tablero ajustado (${pct < 10 ? pct.toFixed(1).replace('.', ',') : Math.round(pct)}%)`, 'info');
+  showToast(`Tablero ajustado (${formatZoomPct(targetZoom)})`, 'info');
 }
 
 // ----- Ir de objeto en objeto: recorre tableros, frames, textos, notas e imágenes (de arriba abajo,
@@ -7216,7 +7222,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '111';
+const APP_VERSION = '112';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
