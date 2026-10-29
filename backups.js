@@ -142,6 +142,11 @@ async function openBackups() {
 function restoreBackup(b) {
   const data = JSON.parse(b.json);
   const before = payloadObjectIds(localPayload()).size;
+  // Los proyectos de la copia que se habían borrado se marcan como recuperados: si no, la
+  // sincronización los volvería a quitar al ver que están borrados
+  const deleted = new Set(deletedProjects().map(t => t.id));
+  const now = Date.now();
+  (data.projects || []).forEach(p => { if (deleted.has(p.id) && !projects.some(x => x.id === p.id)) p.restoredAt = now; });
   // Sin base: se juntan ambos (lo de aquí gana si un elemento está en los dos)
   const merged = mergePayloads(localPayload(), { ...data, deletedProjects: [] }, null);
   merged.deletedProjects = deletedProjects();

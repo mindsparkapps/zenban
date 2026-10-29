@@ -6736,9 +6736,12 @@ function mergePayloads(local, remote, base = null) {
     merged.push(l && r ? mergeProject(l, r, bm.get(p.id) || null) : (l || r));
   });
 
+  // Un proyecto borrado no vuelve aunque otro dispositivo atrasado lo haya editado después (su copia
+  // queda en las copias de seguridad de ese dispositivo). Solo vuelve si se recuperó a propósito
+  // desde una copia de seguridad (restoredAt) después de borrarlo.
   return {
     version: 1,
-    projects: merged.filter(p => !tombs.has(p.id) || (p.updatedAt || 0) > tombs.get(p.id)),
+    projects: merged.filter(p => !tombs.has(p.id) || (p.restoredAt || 0) > tombs.get(p.id)),
     tags: mergeTags(local.tags, remote.tags, base ? base.tags : null),
     deletedProjects: [...tombs.entries()].map(([id, at]) => ({ id, at }))
   };
@@ -7041,7 +7044,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '102';
+const APP_VERSION = '103';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
