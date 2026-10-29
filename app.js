@@ -3343,6 +3343,7 @@ function renderBgImages() {
           data.h = Math.round(data.w * aspect);
           el.style.width = `${data.w}px`;
           el.style.height = `${data.h}px`;
+          if (typeof followResize === 'function') followResize(`img:${data.id}`);
         } else {
           data.x = Math.round(orig.x + dx);
           data.y = Math.round(orig.y + dy);
@@ -5131,6 +5132,7 @@ function startTextResize(e, t, el) {
     t.fixedWidth = true;
     t.w = Math.max(40, Math.round(startWidth + (ev.clientX - startX) / zoom));
     applyTextStyle(el, t);
+    if (typeof followResize === 'function') followResize(`text:${t.id}`);
   };
   const onUp = () => {
     el.removeEventListener('pointermove', onMove);
@@ -7094,7 +7096,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '107';
+const APP_VERSION = '108';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

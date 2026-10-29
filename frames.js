@@ -309,6 +309,7 @@ function startFrameScale(e, f, el) {
     f.h = Math.round(h0 * k);
     f.radius = Math.round(r0 * k);
     applyFrameStyle(el, f);
+    followResize(`frame:${f.id}`);
   };
   const onUp = () => {
     el.removeEventListener('pointermove', onMove);
@@ -452,6 +453,11 @@ selScaleHandle.addEventListener('pointerdown', (e) => {
     k = Math.min(10, Math.max(0.1, 1 + (dx * r.w + dy * r.h) / d2));
     scaler.preview(k);
     placeSelScale({ x: r.x, y: r.y, w: r.w * k, h: r.h * k });
+    // Un objeto solo (tablero) tiene también la manija de conexión: va a la mitad de su borde derecho
+    if (!connectHandle.hidden) {
+      connectHandle.style.left = `${r.x + r.w * k}px`;
+      connectHandle.style.top = `${r.y + (r.h * k) / 2}px`;
+    }
   };
   const onUp = () => {
     selScaleHandle.removeEventListener('pointermove', onMove);
@@ -544,6 +550,13 @@ function updateConnectHandle() {
   connectHandle.dataset.key = key;
   connectHandle.style.left = `${r.x + r.w}px`;
   connectHandle.style.top = `${r.y + r.h / 2}px`;
+}
+
+// Mientras se agranda un objeto, la manija de conexión (y las flechas, si alguna lo toca) lo acompañan.
+// Las flechas solo se redibujan si hace falta: redibujarlas en cada cuadro trababa el celular
+function followResize(key) {
+  if (getConnectors().some(c => endpointKey(c.from) === key || endpointKey(c.to) === key)) renderConnectors();
+  else updateConnectHandle();
 }
 
 // ----- Manija del widget "Progreso de listas": círculo verde (+) a su izquierda. Se arrastra hasta una
