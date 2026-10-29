@@ -233,6 +233,43 @@ renderProjectSwitcher = function () {
   });
 };
 
+// Sección "Favoritos" arriba de todas: los proyectos con estrella de todos los espacios
+// (siguen apareciendo también en su sección). Las copias no se arrastran ni cuentan en el orden manual.
+const spacesRenderProjectSwitcher = renderProjectSwitcher;
+renderProjectSwitcher = function () {
+  spacesRenderProjectSwitcher();
+  const here = xferHere();
+  const byOrder = (list) => (a, b) => (a.order ?? list.indexOf(a)) - (b.order ?? list.indexOf(b));
+  const items = [];
+  const active = getActiveProject();
+  projects.filter(p => p.starred).sort(byOrder(projects)).forEach(p => {
+    const li = projectItemEl(p, active, '');
+    li.classList.add('is-favorite');
+    delete li.dataset.projectId;
+    li.querySelector('.project-drag').remove();
+    if (spaceIsShared(here)) li.querySelector('.project-item-name').insertAdjacentHTML('afterbegin', '<span class="project-shared-mark" title="Compartido">👥</span>');
+    items.push(li);
+  });
+  // Los de los otros espacios solo cuando sus secciones se muestran (con sincronización)
+  if (syncEnabled()) {
+    knownOtherSpaces().filter(e => !e.error).forEach(entry => {
+      entry.projects.filter(p => p.starred).sort(byOrder(entry.projects)).forEach(p => {
+        const li = otherProjectItem(entry.space, p);
+        li.classList.add('is-favorite');
+        li.querySelector('.project-item-name').insertAdjacentHTML('beforeend', ' <span class="project-star-mark">★</span>');
+        items.push(li);
+      });
+    });
+  }
+  if (!items.length) return;
+  const head = document.createElement('li');
+  head.className = 'project-section is-favorites';
+  head.innerHTML = '<span>⭐ Favoritos</span>';
+  const frag = document.createDocumentFragment();
+  frag.append(head, ...items);
+  projectList.insertBefore(frag, projectList.firstChild);
+};
+
 function loadingNote(label) {
   return `<small class="project-loading"><span class="project-spinner" aria-hidden="true"></span>${escapeHtml(label)}</small>`;
 }
@@ -457,6 +494,7 @@ document.getElementById('projectForm').addEventListener('submit', () => {
     .project-section { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 12px 4px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; list-style: none; }
     .project-section.is-personal { color: #6366f1; }
     .project-section.is-shared { color: #10b981; }
+    .project-section.is-favorites { color: #f59e0b; }
     .project-section small { font-size: 0.68rem; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--text-dim); }
     .project-section-note { padding: 4px 14px 8px; font-size: 0.8rem; color: var(--text-muted); list-style: none; }
     .project-loading { display: inline-flex; align-items: center; gap: 5px; color: #10b981 !important; }
