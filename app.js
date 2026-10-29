@@ -970,14 +970,29 @@ function stopCardAutoScroll() {
   dragState.scrollContainer = null;
 }
 
-// Cerca de los bordes de la pantalla el lienzo se desplaza solo, para llevar la tarea a tableros alejados
+// Cerca de los bordes de la pantalla el lienzo se desplaza solo, para llevar la tarea (o cualquier
+// objeto, o una columna) a lugares alejados
 const CARD_PAN_EDGE = 60;   // px de pantalla desde el borde del lienzo
 const CARD_PAN_MAX = 16;    // px de pantalla por cuadro, con el puntero en el borde mismo
 
 function cardEdgePanStep() {
+  return edgePanStep(dragState.lastX, dragState.lastY);
+}
+
+// Mientras se arrastra un objeto o una columna el lienzo avanza solo en los bordes; onPan vuelve a
+// poner lo arrastrado bajo el puntero. Devuelve la función que lo detiene
+function startEdgeAutoPan(getPoint, onPan) {
+  let raf = requestAnimationFrame(function step() {
+    const p = getPoint();
+    if (p && edgePanStep(p.x, p.y)) onPan();
+    raf = requestAnimationFrame(step);
+  });
+  return () => cancelAnimationFrame(raf);
+}
+
+// Avanza el lienzo un cuadro si (x, y) está cerca de un borde; devuelve si se movió
+function edgePanStep(x, y) {
   const vp = viewportArea.getBoundingClientRect();
-  const x = dragState.lastX;
-  const y = dragState.lastY;
   const pull = (dist) => Math.min(1, Math.max(0, dist) / CARD_PAN_EDGE);
   let dx = 0;
   let dy = 0;
@@ -4638,13 +4653,28 @@ function startGroupDrag(e) {
   handlesFollowDrag = handles.length > 0;
   viewportArea.setPointerCapture(e.pointerId);
 
+  // Punto del lienzo donde empezó el arrastre: si el lienzo se desplaza (bordes, rueda) lo arrastrado
+  // sigue bajo el puntero
+  const startWX = (startX - panX) / zoom;
+  const startWY = (startY - panY) / zoom;
+  let lastX = startX, lastY = startY, stopAutoPan = null;
+
   const onMove = (ev) => {
     if (ev.pointerId !== e.pointerId) return;
     if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 3) return;
-    if (!moved) brds.forEach(o => o.el && o.el.classList.add('is-moving'));
+    if (!moved) {
+      brds.forEach(o => o.el && o.el.classList.add('is-moving'));
+      stopAutoPan = startEdgeAutoPan(() => ({ x: lastX, y: lastY }), () => moveTo(lastX, lastY));
+    }
     moved = true;
-    dx = (ev.clientX - startX) / zoom;
-    dy = (ev.clientY - startY) / zoom;
+    lastX = ev.clientX;
+    lastY = ev.clientY;
+    moveTo(lastX, lastY);
+  };
+
+  const moveTo = (clientX, clientY) => {
+    dx = (clientX - panX) / zoom - startWX;
+    dy = (clientY - panY) / zoom - startWY;
     brds.forEach(o => {
       o.b.x = Math.round(o.x + dx);
       o.b.y = Math.round(o.y + dy);
@@ -4671,9 +4701,9 @@ function startGroupDrag(e) {
     if (movesConnectors) renderConnectors();
     if (singleImg) {
       // Sobre un link o un tablero gana ese destino; si no, una tarea
-      imageTarget = imageDropTargetAt(ev.clientX, ev.clientY);
+      imageTarget = imageDropTargetAt(clientX, clientY);
       highlightImageDropTarget(imageTarget);
-      targetCard = imageTarget ? null : document.elementsFromPoint(ev.clientX, ev.clientY).find(n => n.classList && n.classList.contains('kanban-card')) || null;
+      targetCard = imageTarget ? null : document.elementsFromPoint(clientX, clientY).find(n => n.classList && n.classList.contains('kanban-card')) || null;
       highlightDropCard(targetCard);
       if (singleImg.el) singleImg.el.classList.toggle('is-over-card', !!(targetCard || imageTarget));
     }
@@ -4684,6 +4714,7 @@ function startGroupDrag(e) {
     viewportArea.removeEventListener('pointermove', onMove);
     viewportArea.removeEventListener('pointerup', onUp);
     viewportArea.removeEventListener('pointercancel', onUp);
+    if (stopAutoPan) stopAutoPan();
     selectGestureActive = false;
     handlesFollowDrag = false;
     cancelSelectGesture = null;
@@ -4728,6 +4759,7 @@ function startGroupDrag(e) {
     viewportArea.removeEventListener('pointermove', onMove);
     viewportArea.removeEventListener('pointerup', onUp);
     viewportArea.removeEventListener('pointercancel', onUp);
+    if (stopAutoPan) stopAutoPan();
     selectGestureActive = false;
     brds.forEach(o => {
       o.b.x = o.x; o.b.y = o.y;
@@ -4754,14 +4786,23 @@ function startColumnDrag(e, colId) {
   let ghost = null;
   let placeholder = null;
   let target = null; // { boardId, beforeColId }
+  let lastX = startX, lastY = startY, stopAutoPan = null;
 
   selectGestureActive = true;
   viewportArea.setPointerCapture(e.pointerId);
 
   const onMove = (ev) => {
     if (ev.pointerId !== e.pointerId) return;
+    lastX = ev.clientX;
+    lastY = ev.clientY;
+    if (!ghost && Math.hypot(lastX - startX, lastY - startY) < 4) return;
+    // El lienzo avanzó bajo la columna: se recalcula a qué tablero caería
+    if (!ghost) stopAutoPan = startEdgeAutoPan(() => ({ x: lastX, y: lastY }), () => moveTo(lastX, lastY));
+    moveTo(lastX, lastY);
+  };
+
+  const moveTo = (clientX, clientY) => {
     if (!ghost) {
-      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
       ghost = colEl.cloneNode(true);
       ghost.classList.add('column-drag-ghost');
       ghost.style.width = `${rect.width}px`;
@@ -4771,10 +4812,10 @@ function startColumnDrag(e, colId) {
       placeholder = document.createElement('div');
       placeholder.className = 'column-drop-placeholder';
     }
-    ghost.style.left = `${ev.clientX - offX * Math.min(1, zoom)}px`;
-    ghost.style.top = `${ev.clientY - offY * Math.min(1, zoom)}px`;
+    ghost.style.left = `${clientX - offX * Math.min(1, zoom)}px`;
+    ghost.style.top = `${clientY - offY * Math.min(1, zoom)}px`;
 
-    const under = document.elementsFromPoint(ev.clientX, ev.clientY);
+    const under = document.elementsFromPoint(clientX, clientY);
     const frame = under.find(n => n.classList && n.classList.contains('board-frame'));
     if (!frame) {
       target = null;
@@ -4786,7 +4827,7 @@ function startColumnDrag(e, colId) {
     let before = null;
     for (const sib of siblings) {
       const r = sib.getBoundingClientRect();
-      if (ev.clientX < r.left + r.width / 2) { before = sib; break; }
+      if (clientX < r.left + r.width / 2) { before = sib; break; }
     }
     container.insertBefore(placeholder, before || container.querySelector('.add-column-tile'));
     target = { boardId: frame.dataset.boardId, beforeColId: before ? before.dataset.columnId : null };
@@ -4797,6 +4838,7 @@ function startColumnDrag(e, colId) {
     viewportArea.removeEventListener('pointermove', onMove);
     viewportArea.removeEventListener('pointerup', onUp);
     viewportArea.removeEventListener('pointercancel', onUp);
+    if (stopAutoPan) stopAutoPan();
     selectGestureActive = false;
     if (ghost) ghost.remove();
     if (placeholder) placeholder.remove();
@@ -7052,7 +7094,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '104';
+const APP_VERSION = '105';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
