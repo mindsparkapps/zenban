@@ -7362,7 +7362,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '120';
+const APP_VERSION = '121';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -8596,6 +8596,12 @@ function richMarks(h) {
     .replace(/^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*$/gm, '<hr class="rt-hr">')
     .replace(/^(#{1,6}) (.+)$/gm, (m, hs, t) => `<span class="rt-h rt-h${Math.min(hs.length, 3)}">${t}</span>`)
     .replace(/^([ \t]*)[-*+] (?=\S)/gm, '$1• ')
+    // Elementos de lista: la sangría se respeta y, si el texto da más de una línea, las siguientes quedan
+    // alineadas bajo el texto (no bajo la viñeta o el número). El salto de línea final lo hace el bloque.
+    .replace(/^([ \t]*)(•|\d{1,3}[.)])[ \t]+([^\n]*)(?:\n|$)/gm, (m, ind, mk, body) => {
+      const depth = ind.replace(/\t/g, '    ').length;
+      return `<span class="rt-li" style="margin-left:${(depth * 0.5).toFixed(1)}em"><span class="rt-mk">${mk}</span>${body}</span>`;
+    })
     .replace(/^&gt; ?(.*)$/gm, '<span class="rt-quote">$1</span>')
     .replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, '<b>$1</b>')
     .replace(/(^|[^\w])__(?=\S)([^\n]*?\S)__(?!\w)/g, '$1<b>$2</b>')

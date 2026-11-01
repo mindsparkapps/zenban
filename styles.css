@@ -4150,6 +4150,17 @@ select option:checked {
 /* Formato de los textos pegados con formato */
 .canvas-text b,
 .canvas-text .rt-h { font-weight: 800; }
+.canvas-text .rt-li {
+  display: block;
+  padding-left: 1.6em;
+  text-indent: -1.6em;
+}
+.canvas-text .rt-mk {
+  display: inline-block;
+  min-width: 1.6em;
+  text-indent: 0;
+  white-space: pre;
+}
 .canvas-text i { font-style: italic; }
 .canvas-text .rt-h1 { font-size: 1.5em; }
 .canvas-text .rt-h2 { font-size: 1.25em; }
