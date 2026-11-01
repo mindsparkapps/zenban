@@ -5115,8 +5115,10 @@ function addStickyNote(at = null) {
 // Devuelve null si no había formato (entonces se pega el texto plano de siempre).
 function clipboardHtmlToText(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  const BREAK = '\u0001', HARD = '\u0003', SPACE = '\u0004';
-  const BLOCKS = ['p', 'div', 'section', 'article', 'header', 'footer', 'blockquote', 'pre', 'table', 'tbody', 'tr', 'li'];
+  // BREAK: salto de línea; PARA: línea en blanco entre párrafos (como el texto plano); HARD: <br>
+  const BREAK = '\u0001', PARA = '\u0002', HARD = '\u0003', SPACE = '\u0004';
+  const PARAS = ['p', 'blockquote', 'pre', 'table'];
+  const BLOCKS = ['div', 'section', 'article', 'header', 'footer', 'tbody', 'tr', 'li'];
   let formatted = false;
   let listDepth = 0;
   const hasBreak = (s) => /[\u0001-\u0003]/.test(s);
@@ -5150,14 +5152,16 @@ function clipboardHtmlToText(html) {
         return BREAK + SPACE.repeat(2 * (listDepth - 1)) + bullet.replace(/ /g, SPACE) + inner(c).replace(/^ +/, '') + BREAK;
       }).join('');
       listDepth--;
-      return BREAK + items + BREAK;
+      // Una lista dentro de otra no deja línea en blanco
+      const edge = listDepth ? BREAK : PARA;
+      return edge + items + edge;
     }
 
     let out = inner(node);
     if (/^h[1-6]$/.test(tag)) {
-      if (!out.trim() || hasBreak(out.trim())) return BREAK + out + BREAK;
+      if (!out.trim() || hasBreak(out.trim())) return PARA + out + PARA;
       formatted = true;
-      return BREAK + '#'.repeat(Math.min(+tag[1], 3)) + SPACE + out.trim() + BREAK;
+      return PARA + '#'.repeat(Math.min(+tag[1], 3)) + SPACE + out.trim() + PARA;
     }
     if (tag === 'td' || tag === 'th') return out + '\t';
 
@@ -5179,13 +5183,14 @@ function clipboardHtmlToText(html) {
         return `[${label}](${href})`;
       }
     }
+    if (PARAS.includes(tag)) return PARA + out + PARA;
     return BLOCKS.includes(tag) ? BREAK + out + BREAK : out;
   };
 
   let s = walk(doc.body, false);
   if (!formatted) return null;
   s = s.replace(/([\u0001-\u0003]) +/g, '$1').replace(/ +(?=[\u0001-\u0003])/g, '')
-    .replace(/[\u0001-\u0003]+/g, run => '\n'.repeat(Math.max((run.match(/\u0003/g) || []).length, 1)))
+    .replace(/[\u0001-\u0003]+/g, run => '\n'.repeat(Math.max((run.match(/\u0003/g) || []).length, run.includes(PARA) ? 2 : 1)))
     .replace(/\t+\n/g, '\n').replace(/\u0004/g, ' ')
     .replace(/^\s*\n/, '').replace(/\s+$/, '');
   return s.trim() ? s : null;
@@ -5278,8 +5283,12 @@ function editText(id) {
     const rich = richClipboardText(e.clipboardData);
     if (!rich) return;
     e.preventDefault();
+    e.stopPropagation(); // que el pegado del lienzo no cree además otro texto
+    const wasEmpty = !ta.value.trim();
     ta.setRangeText(rich, ta.selectionStart, ta.selectionEnd, 'end');
     ta.dispatchEvent(new Event('input'));
+    // En una caja nueva (herramienta Texto) se termina la edición para que se vea ya con formato
+    if (wasEmpty) finishTextEdit();
   });
   ta.addEventListener('keydown', (e) => {
     // Esc o Ctrl+Enter terminan la edición
@@ -7316,7 +7325,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '112';
+const APP_VERSION = '116';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
