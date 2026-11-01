@@ -5479,7 +5479,8 @@ viewportArea.addEventListener('drop', (e) => {
   viewportArea.classList.remove('is-drop-target');
   if (!text || !text.trim()) return;
   e.preventDefault();
-  addText(text, screenToCanvas(e.clientX, e.clientY));
+  // Texto arrastrado desde otra app o página: conserva el formato (negritas, listas, tablas…)
+  addText(richClipboardText(dt) || text, screenToCanvas(e.clientX, e.clientY));
 });
 
 document.getElementById('ctxAddText').addEventListener('click', () => addText(''));
@@ -6406,9 +6407,19 @@ canvasMenu.addEventListener('click', async (e) => {
 // Pegar desde el menú: texto o imagen copiados en otra app, o lo copiado en el lienzo
 async function pasteHere(point) {
   let text = '';
-  try { text = await navigator.clipboard.readText(); } catch (e) {}
+  let html = '';
+  let items = [];
+  // clipboard.read() trae también el HTML (con el formato); readText() solo el texto plano
+  try {
+    items = await navigator.clipboard.read();
+    for (const item of items) {
+      if (!html && item.types.includes('text/html')) html = await (await item.getType('text/html')).text();
+      if (!text && item.types.includes('text/plain')) text = await (await item.getType('text/plain')).text();
+    }
+  } catch (e) {}
+  if (!text) { try { text = await navigator.clipboard.readText(); } catch (e) {} }
   if (text && text !== CANVAS_CLIPBOARD_MARK && text.trim()) {
-    addText(text, point);
+    addText((html && clipboardHtmlToText(html)) || text, point);
     return;
   }
   if (canvasClipboard) {
@@ -6416,7 +6427,7 @@ async function pasteHere(point) {
     return;
   }
   try {
-    for (const item of await navigator.clipboard.read()) {
+    for (const item of items) {
       const type = item.types.find(t => t.startsWith('image/'));
       if (type) {
         const blob = await item.getType(type);
@@ -7362,7 +7373,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '121';
+const APP_VERSION = '122';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
