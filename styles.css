@@ -1063,6 +1063,7 @@ body.theme-light .moon-icon { display: none; }
   -webkit-box-orient: vertical;
   overflow: hidden;
   word-break: break-word;
+  white-space: pre-wrap; /* conserva saltos de línea y sangrías del texto pegado */
 }
 
 /* Subtasks Progress Bar inside Card */
@@ -4144,6 +4145,21 @@ select option:checked {
   touch-action: none;
   user-select: none;
   border-radius: 4px;
+}
+
+/* Formato de los textos pegados con formato */
+.canvas-text b,
+.canvas-text .rt-h { font-weight: 800; }
+.canvas-text i { font-style: italic; }
+.canvas-text .rt-h1 { font-size: 1.5em; }
+.canvas-text .rt-h2 { font-size: 1.25em; }
+.canvas-text .rt-h3 { font-size: 1.1em; }
+.canvas-text .rt-code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.9em;
+  padding: 0 0.25em;
+  border-radius: 3px;
+  background: rgba(127, 127, 127, 0.22);
 }
 
 .canvas-text.is-selected {

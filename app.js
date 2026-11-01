@@ -3890,7 +3890,7 @@ document.addEventListener('paste', (e) => {
   } else if (text && text !== CANVAS_CLIPBOARD_MARK && text.trim()) {
     // Texto copiado en otra app: se agrega como texto del lienzo donde está el puntero
     e.preventDefault();
-    addText(text);
+    addText(richClipboardText(e.clipboardData) || text);
   } else if (canvasClipboard && !text) {
     e.preventDefault();
     pasteClipboard();
@@ -5110,6 +5110,92 @@ function addStickyNote(at = null) {
 
 // Crea un texto en un punto del lienzo (o al centro de la vista). Sin contenido, se abre para escribir.
 // extra: propiedades adicionales (por ejemplo, las de una nota adhesiva)
+// Convierte el HTML del portapapeles (web, Word, Docs) en texto con marcas ligeras que el lienzo dibuja:
+// **negrita**, *cursiva*, ~~tachado~~, `código`, # títulos, • listas y [texto](link).
+// Devuelve null si no había formato (entonces se pega el texto plano de siempre).
+function clipboardHtmlToText(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const BREAK = '\u0001', HARD = '\u0003', SPACE = '\u0004';
+  const BLOCKS = ['p', 'div', 'section', 'article', 'header', 'footer', 'blockquote', 'pre', 'table', 'tbody', 'tr', 'li'];
+  let formatted = false;
+  let listDepth = 0;
+  const hasBreak = (s) => /[\u0001-\u0003]/.test(s);
+  const wrap = (s, mark) => {
+    const m = s.match(/^(\s*)([\s\S]*?)(\s*)$/);
+    if (!m[2] || hasBreak(m[2])) return s;
+    formatted = true;
+    return m[1] + mark + m[2] + mark + m[3];
+  };
+  const walk = (node, keep) => {
+    if (node.nodeType === 3) {
+      const v = node.nodeValue;
+      return keep ? v.replace(/ /g, SPACE).replace(/\r?\n/g, HARD) : v.replace(/\s+/g, ' ');
+    }
+    if (node.nodeType !== 1) return '';
+    const tag = node.tagName.toLowerCase();
+    if (['script', 'style', 'head', 'meta', 'title'].includes(tag)) return '';
+    if (tag === 'br') return HARD;
+    const st = node.style || {};
+    const pre = keep || tag === 'pre' || /^pre/.test(st.whiteSpace || '');
+    const inner = (el) => Array.from(el.childNodes).map(c => walk(c, pre)).join('');
+
+    if (tag === 'ul' || tag === 'ol') {
+      listDepth++;
+      let n = 0;
+      const items = Array.from(node.children).map(c => {
+        if (c.tagName.toLowerCase() !== 'li') return walk(c, pre);
+        n++;
+        formatted = true;
+        const bullet = tag === 'ol' ? `${n}. ` : '• ';
+        return BREAK + SPACE.repeat(2 * (listDepth - 1)) + bullet.replace(/ /g, SPACE) + inner(c).replace(/^ +/, '') + BREAK;
+      }).join('');
+      listDepth--;
+      return BREAK + items + BREAK;
+    }
+
+    let out = inner(node);
+    if (/^h[1-6]$/.test(tag)) {
+      if (!out.trim() || hasBreak(out.trim())) return BREAK + out + BREAK;
+      formatted = true;
+      return BREAK + '#'.repeat(Math.min(+tag[1], 3)) + SPACE + out.trim() + BREAK;
+    }
+    if (tag === 'td' || tag === 'th') return out + '\t';
+
+    const weight = st.fontWeight;
+    const bold = (tag === 'b' || tag === 'strong')
+      ? !(weight === 'normal' || weight === '400')
+      : (weight === 'bold' || parseInt(weight, 10) >= 600);
+    const italic = (tag === 'i' || tag === 'em') ? st.fontStyle !== 'normal' : st.fontStyle === 'italic';
+    const strike = ['s', 'del', 'strike'].includes(tag) || /line-through/.test(st.textDecoration || st.textDecorationLine || '');
+    if (tag === 'code' && !keep) out = wrap(out, '`');
+    if (bold) out = wrap(out, '**');
+    if (italic) out = wrap(out, '*');
+    if (strike) out = wrap(out, '~~');
+    if (tag === 'a') {
+      const href = node.getAttribute('href') || '';
+      const label = out.trim().replace(/[\[\]]/g, '');
+      if (/^(https?:\/\/|www\.)/i.test(href) && label && !hasBreak(label) && label !== href) {
+        formatted = true;
+        return `[${label}](${href})`;
+      }
+    }
+    return BLOCKS.includes(tag) ? BREAK + out + BREAK : out;
+  };
+
+  let s = walk(doc.body, false);
+  if (!formatted) return null;
+  s = s.replace(/([\u0001-\u0003]) +/g, '$1').replace(/ +(?=[\u0001-\u0003])/g, '')
+    .replace(/[\u0001-\u0003]+/g, run => '\n'.repeat(Math.max((run.match(/\u0003/g) || []).length, 1)))
+    .replace(/\t+\n/g, '\n').replace(/\u0004/g, ' ')
+    .replace(/^\s*\n/, '').replace(/\s+$/, '');
+  return s.trim() ? s : null;
+}
+
+function richClipboardText(clipboardData) {
+  const html = clipboardData ? clipboardData.getData('text/html') : '';
+  return html ? clipboardHtmlToText(html) : null;
+}
+
 function addText(content = '', at = null, extra = null) {
   if (!at) {
     if (lastViewportPointer) {
@@ -5187,6 +5273,14 @@ function editText(id) {
     ta.style.height = `${ta.scrollHeight}px`;
   };
   ta.addEventListener('input', fit);
+  // Pegar con formato (negritas, listas, títulos, links) conserva las marcas
+  ta.addEventListener('paste', (e) => {
+    const rich = richClipboardText(e.clipboardData);
+    if (!rich) return;
+    e.preventDefault();
+    ta.setRangeText(rich, ta.selectionStart, ta.selectionEnd, 'end');
+    ta.dispatchEvent(new Event('input'));
+  });
   ta.addEventListener('keydown', (e) => {
     // Esc o Ctrl+Enter terminan la edición
     if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
@@ -5215,7 +5309,7 @@ function renderTexts() {
     const isWeb = !!t.web && typeof webWindowHtml === 'function';
     el.classList.toggle('is-ytprogress', isWidget);
     el.classList.toggle('is-webwin', isWeb);
-    el.innerHTML = isWeb ? webWindowHtml(t) : isWidget ? ytProgressWidgetHtml(t) : linkify(t.text, t.linkNames) + youtubePreviews(t.text);
+    el.innerHTML = isWeb ? webWindowHtml(t) : isWidget ? ytProgressWidgetHtml(t) : linkify(t.text, t.linkNames, true) + youtubePreviews(t.text);
     const handle = document.createElement('div');
     handle.className = 'canvas-text-handle';
     handle.title = 'Arrastra para cambiar el ancho de la caja';
@@ -8436,8 +8530,18 @@ function openInternalLinkPicker(onPick) {
   };
   m.style.display = 'flex';
 }
-function linkify(str, names = null) {
-  return escapeHtml(str).replace(LINK_RE, (match, label, labelUrl, url) => {
+// Marcas ligeras de los textos del lienzo: **negrita**, *cursiva*, ~~tachado~~, `código`, # títulos
+function richMarks(h) {
+  return h
+    .replace(/^(#{1,3}) (.+)$/gm, (m, hs, t) => `<span class="rt-h rt-h${hs.length}">${t}</span>`)
+    .replace(/`([^`\n]+)`/g, '<code class="rt-code">$1</code>')
+    .replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, '<b>$1</b>')
+    .replace(/~~(?=\S)([^\n]*?\S)~~/g, '<s>$1</s>')
+    .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, '$1<i>$2</i>');
+}
+
+function linkify(str, names = null, rich = false) {
+  return (rich ? richMarks(escapeHtml(str)) : escapeHtml(str)).replace(LINK_RE, (match, label, labelUrl, url) => {
     if (label) {
       return `<a class="auto-link" href="${linkHref(labelUrl)}" target="_blank" rel="noopener noreferrer" title="${labelUrl}">${label}</a>`;
     }
