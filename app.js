@@ -5117,7 +5117,7 @@ function clipboardHtmlToText(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   // BREAK: salto de línea; PARA: línea en blanco entre párrafos (como el texto plano); HARD: <br>
   const BREAK = '\u0001', PARA = '\u0002', HARD = '\u0003', SPACE = '\u0004';
-  const PARAS = ['p', 'blockquote', 'pre', 'table'];
+  const PARAS = ['p', 'table'];
   const BLOCKS = ['div', 'section', 'article', 'header', 'footer', 'tbody', 'tr', 'li'];
   let formatted = false;
   let listDepth = 0;
@@ -5149,7 +5149,9 @@ function clipboardHtmlToText(html) {
         n++;
         formatted = true;
         const bullet = tag === 'ol' ? `${n}. ` : '• ';
-        return BREAK + SPACE.repeat(2 * (listDepth - 1)) + bullet.replace(/ /g, SPACE) + inner(c).replace(/^ +/, '') + BREAK;
+        // Claude y muchas páginas ponen un <p> dentro de cada elemento: no debe separar la viñeta del texto
+        const body = inner(c).replace(/\u0002/g, BREAK).replace(/^[ \u0001\u0003]+|[ \u0001\u0003]+$/g, '');
+        return BREAK + SPACE.repeat(2 * (listDepth - 1)) + bullet.replace(/ /g, SPACE) + body + BREAK;
       }).join('');
       listDepth--;
       // Una lista dentro de otra no deja línea en blanco
@@ -5164,6 +5166,18 @@ function clipboardHtmlToText(html) {
       return PARA + '#'.repeat(Math.min(+tag[1], 3)) + SPACE + out.trim() + PARA;
     }
     if (tag === 'td' || tag === 'th') return out + '\t';
+    if (tag === 'blockquote') {
+      const body = out.replace(/^[\s\u0001-\u0003]+|[\s\u0001-\u0003]+$/g, '').replace(/\u0002/g, BREAK);
+      if (!body) return '';
+      formatted = true;
+      return PARA + '>' + SPACE + body.replace(/([\u0001\u0003]+)/g, '$1>' + SPACE) + PARA;
+    }
+    if (tag === 'pre') {
+      const body = out.replace(/^[\u0001\u0003]+|[\u0001\u0003]+$/g, '');
+      if (!body.trim()) return '';
+      formatted = true;
+      return PARA + '```' + HARD + body + HARD + '```' + PARA;
+    }
 
     const weight = st.fontWeight;
     const bold = (tag === 'b' || tag === 'strong')
@@ -5280,12 +5294,13 @@ function editText(id) {
   ta.addEventListener('input', fit);
   // Pegar con formato (negritas, listas, títulos, links) conserva las marcas
   ta.addEventListener('paste', (e) => {
-    const rich = richClipboardText(e.clipboardData);
-    if (!rich) return;
+    const wasEmpty = !ta.value.trim();
+    // Sin HTML (p. ej. el botón Copiar de Claude, que copia Markdown) en una caja nueva se pega el texto tal cual
+    const text = richClipboardText(e.clipboardData) || (wasEmpty && e.clipboardData ? e.clipboardData.getData('text/plain') : '');
+    if (!text || !text.trim()) return;
     e.preventDefault();
     e.stopPropagation(); // que el pegado del lienzo no cree además otro texto
-    const wasEmpty = !ta.value.trim();
-    ta.setRangeText(rich, ta.selectionStart, ta.selectionEnd, 'end');
+    ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, 'end');
     ta.dispatchEvent(new Event('input'));
     // En una caja nueva (herramienta Texto) se termina la edición para que se vea ya con formato
     if (wasEmpty) finishTextEdit();
@@ -7325,7 +7340,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '116';
+const APP_VERSION = '117';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -8539,14 +8554,22 @@ function openInternalLinkPicker(onPick) {
   };
   m.style.display = 'flex';
 }
-// Marcas ligeras de los textos del lienzo: **negrita**, *cursiva*, ~~tachado~~, `código`, # títulos
+// Marcas ligeras (Markdown) de los textos del lienzo: **negrita**, *cursiva*, ~~tachado~~, `código`,
+// ```bloques de código```, # títulos, - listas y > citas (como lo que copia el botón Copiar de Claude)
 function richMarks(h) {
+  // El código se aparta para que sus asteriscos o # no se vuelvan formato
+  const code = [];
+  const keep = (html) => `\u0005${code.push(html) - 1}\u0005`;
   return h
-    .replace(/^(#{1,3}) (.+)$/gm, (m, hs, t) => `<span class="rt-h rt-h${hs.length}">${t}</span>`)
-    .replace(/`([^`\n]+)`/g, '<code class="rt-code">$1</code>')
+    .replace(/^[ \t]*```[^\n]*\n([\s\S]*?)\n?[ \t]*```[ \t]*$/gm, (m, c) => keep(`<code class="rt-code rt-block">${c}</code>`))
+    .replace(/`([^`\n]+)`/g, (m, c) => keep(`<code class="rt-code">${c}</code>`))
+    .replace(/^(#{1,6}) (.+)$/gm, (m, hs, t) => `<span class="rt-h rt-h${Math.min(hs.length, 3)}">${t}</span>`)
+    .replace(/^([ \t]*)[-*+] (?=\S)/gm, '$1• ')
+    .replace(/^&gt; ?(.*)$/gm, '<span class="rt-quote">$1</span>')
     .replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, '<b>$1</b>')
     .replace(/~~(?=\S)([^\n]*?\S)~~/g, '<s>$1</s>')
-    .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, '$1<i>$2</i>');
+    .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, '$1<i>$2</i>')
+    .replace(/\u0005(\d+)\u0005/g, (m, i) => code[i]);
 }
 
 function linkify(str, names = null, rich = false) {

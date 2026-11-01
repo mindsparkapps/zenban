@@ -4161,6 +4161,20 @@ select option:checked {
   border-radius: 3px;
   background: rgba(127, 127, 127, 0.22);
 }
+.canvas-text .rt-block {
+  display: inline-block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4em 0.6em;
+  border-radius: 6px;
+  font-weight: 400;
+}
+.canvas-text .rt-quote {
+  display: inline-block;
+  padding-left: 0.6em;
+  border-left: 3px solid var(--accent-primary);
+  color: var(--text-muted);
+}
 
 .canvas-text.is-selected {
   outline: calc(2px * var(--inv-zoom, 1)) solid var(--accent-primary);
