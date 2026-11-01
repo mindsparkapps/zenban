@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zenban-v114';
+const CACHE_NAME = 'zenban-v115';
 const STATIC_ASSETS = [
   './index.html',
   './styles.css',
@@ -110,7 +110,7 @@ self.addEventListener('fetch', (e) => {
   // For HTML documents / navigation: Network First, fallback to cache
   if (e.request.mode === 'navigate' || e.request.destination === 'document') {
     e.respondWith(
-      fetch(e.request)
+      fetch(e.request, { cache: 'no-cache' })
         .then((response) => {
           if (response && response.status === 200) {
             const clone = response.clone();
@@ -128,7 +128,7 @@ self.addEventListener('fetch', (e) => {
   // Para CSS, JS e imágenes: Network First (siempre la versión más nueva),
   // con la caché solo como respaldo cuando no hay conexión
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((networkResponse) => {
         if (networkResponse && networkResponse.status === 200 && url.origin === self.location.origin) {
           const clone = networkResponse.clone();
