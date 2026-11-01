@@ -5146,6 +5146,19 @@ function clipboardHtmlToText(html) {
     const tag = node.tagName.toLowerCase();
     if (['script', 'style', 'head', 'meta', 'title'].includes(tag)) return '';
     if (tag === 'br') return HARD;
+    if (tag === 'hr') { formatted = true; return PARA + '---' + PARA; }
+    if (tag === 'table') {
+      // Tabla: se pega como tabla Markdown (la primera fila es el encabezado)
+      const rows = Array.from(node.querySelectorAll('tr')).map(tr => Array.from(tr.children)
+        .filter(c => /^t[dh]$/i.test(c.tagName))
+        .map(c => walk(c, false).replace(/[\u0001-\u0003\t|]+/g, ' ').replace(/\s+/g, ' ').trim()));
+      if (rows.length && rows[0].length) {
+        formatted = true;
+        const line = (r) => '| ' + r.join(' | ') + ' |';
+        const out = [line(rows[0]), line(rows[0].map(() => '---')), ...rows.slice(1).map(line)];
+        return PARA + out.join(HARD) + PARA;
+      }
+    }
     const st = node.style || {};
     const pre = keep || tag === 'pre' || /^pre/.test(st.whiteSpace || '');
     const inner = (el) => Array.from(el.childNodes).map(c => walk(c, pre)).join('');
@@ -7349,7 +7362,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '119';
+const APP_VERSION = '120';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -8572,10 +8585,21 @@ function richMarks(h) {
   return h
     .replace(/^[ \t]*```[^\n]*\n([\s\S]*?)\n?[ \t]*```[ \t]*$/gm, (m, c) => keep(`<code class="rt-code rt-block">${c}</code>`))
     .replace(/`([^`\n]+)`/g, (m, c) => keep(`<code class="rt-code">${c}</code>`))
+    // Tablas (| a | b | con la fila |---|---|): se dibujan como tabla; sus celdas aceptan negrita, código, etc.
+    .replace(/^[ \t]*\|.*\|[ \t]*\n[ \t]*\|[ \t:|-]*-[ \t:|-]*\|[ \t]*(?:\n[ \t]*\|.*\|[ \t]*)*/gm, (block) => {
+      const rows = block.split('\n').map(l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim()));
+      const cell = (tag, c) => `<${tag}>${c}</${tag}>`;
+      const head = `<tr>${rows[0].map(c => cell('th', c)).join('')}</tr>`;
+      const body = rows.slice(2).map(r => `<tr>${r.map(c => cell('td', c)).join('')}</tr>`).join('');
+      return `<table class="rt-table">${head}${body}</table>`;
+    })
+    .replace(/^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*$/gm, '<hr class="rt-hr">')
     .replace(/^(#{1,6}) (.+)$/gm, (m, hs, t) => `<span class="rt-h rt-h${Math.min(hs.length, 3)}">${t}</span>`)
     .replace(/^([ \t]*)[-*+] (?=\S)/gm, '$1• ')
     .replace(/^&gt; ?(.*)$/gm, '<span class="rt-quote">$1</span>')
     .replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, '<b>$1</b>')
+    .replace(/(^|[^\w])__(?=\S)([^\n]*?\S)__(?!\w)/g, '$1<b>$2</b>')
+    .replace(/(^|[^\w])_(?=[^\s_])([^_\n]*?[^\s_])_(?![\w])/g, '$1<i>$2</i>')
     .replace(/~~(?=\S)([^\n]*?\S)~~/g, '<s>$1</s>')
     .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, '$1<i>$2</i>')
     .replace(/\u0005(\d+)\u0005/g, (m, i) => code[i]);

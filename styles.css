@@ -4176,6 +4176,24 @@ select option:checked {
   color: var(--text-muted);
 }
 
+.canvas-text .rt-table {
+  border-collapse: collapse;
+  white-space: normal;
+  margin: 0.3em 0;
+}
+.canvas-text .rt-table th,
+.canvas-text .rt-table td {
+  border: 1px solid rgba(127, 127, 127, 0.5);
+  padding: 0.2em 0.6em;
+  text-align: left;
+}
+.canvas-text .rt-table th { font-weight: 800; background: rgba(127, 127, 127, 0.18); }
+.canvas-text .rt-hr {
+  border: 0;
+  border-top: 1px solid rgba(127, 127, 127, 0.5);
+  margin: 0.4em 0;
+}
+
 .canvas-text.is-selected {
   outline: calc(2px * var(--inv-zoom, 1)) solid var(--accent-primary);
   outline-offset: calc(2px * var(--inv-zoom, 1));
