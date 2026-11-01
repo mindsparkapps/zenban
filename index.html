@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=80">
+  <link rel="stylesheet" href="styles.css?v=81">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -385,6 +385,9 @@
           <button type="button" class="tool-btn" data-tool="connector" title="Conector: arrastra de un frame a otro para unirlos con una flecha" aria-label="Conector">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="7" height="6" rx="1.5"></rect><rect x="15" y="15" width="7" height="6" rx="1.5"></rect><path d="M9 6h4a3 3 0 0 1 3 3v6"></path><polyline points="13 12 16 15 19 12"></polyline></svg>
           </button>
+          <button type="button" class="tool-btn" data-tool="highlight" title="Destacador (M): arrastra sobre una imagen para marcar una parte; luego cambia su color, transparencia y tamaño" aria-label="Destacador">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l-6 6v3h9l3-3"></path><path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"></path></svg>
+          </button>
           <button type="button" class="tool-btn" data-tool="hand" title="Mover lienzo (H)" aria-label="Mover lienzo">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"></path><path d="M14 10V4a2 2 0 0 0-4 0v7"></path><path d="M10 10.5V6a2 2 0 0 0-4 0v8"></path><path d="M18 11a2 2 0 0 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.4L2.4 16.6a2 2 0 0 1 2.8-2.8L7 15.5"></path></svg>
           </button>
@@ -414,6 +417,16 @@
           <input type="color" id="penCustomColor" value="#f43f5e" title="Color personalizado">
           <div class="toolbox-divider"></div>
           <div class="pen-sizes" id="penSizes"></div>
+        </div>
+
+        <!-- Opciones del destacador -->
+        <div class="toolbox-options" id="highlightOptions" hidden>
+          <div class="pen-colors" id="highlightColors"></div>
+          <input type="color" id="highlightCustomColor" value="#facc15" title="Color personalizado">
+          <div class="toolbox-divider"></div>
+          <span class="eraser-size-label">Opacidad</span>
+          <input type="range" id="highlightOpacity" class="highlight-opacity" min="5" max="100" step="5" title="Transparencia de los destacados nuevos">
+          <span class="eraser-size-label" id="highlightOpacityLabel">40%</span>
         </div>
 
         <!-- Opciones del borrador -->
@@ -1060,7 +1073,7 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=122"></script>
+  <script src="app.js?v=124"></script>
   <script src="share.js?v=8"></script>
   <script src="transfer.js?v=8"></script>
   <script src="spaces.js?v=9"></script>
@@ -1072,5 +1085,6 @@
   <script src="backups.js?v=4"></script>
   <script src="permissions.js?v=1"></script>
   <script src="webwin.js?v=4"></script>
+  <script src="highlight.js?v=2"></script>
 </body>
 </html>
