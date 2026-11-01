@@ -531,7 +531,8 @@ function scheduleInvZoom() {
 // Zoom towards a specific screen coordinate (cursor or pinch midpoint)
 function zoomAtPoint(clientX, clientY, newZoom) {
   // Si "Ajustar a pantalla" alejó más que el mínimo, desde ahí se puede acercar sin saltos
-  const clampedZoom = Math.min(Math.max(newZoom, Math.min(ZOOM_CONFIG.MIN, zoom)), ZOOM_CONFIG.MAX);
+  // El mínimo nunca es mayor que lo que alcanza "Ajustar a pantalla": se puede alejar hasta ver todo
+  const clampedZoom = Math.min(Math.max(newZoom, Math.min(ZOOM_CONFIG.MIN, fitZoomValue(), zoom)), ZOOM_CONFIG.MAX);
   if (clampedZoom === zoom) return;
 
   const rect = viewportArea.getBoundingClientRect();
@@ -606,7 +607,8 @@ function visibleCanvasRect() {
   return { width: Math.max(80, right - left), height: Math.max(80, bottom - top), offX: left - r.left, offY: top - r.top };
 }
 
-function fitBoardToScreen() {
+// Zoom con el que "Ajustar a pantalla" muestra todo el contenido
+function fitZoomValue() {
   const vis = visibleCanvasRect();
   const bounds = getContentBounds();
   const boardWidth = Math.max(1, bounds.maxX - bounds.minX);
@@ -616,10 +618,17 @@ function fitBoardToScreen() {
   const padding = vis.width < 600 ? 10 : 40;
   const scaleX = (vis.width - padding * 2) / boardWidth;
   const scaleY = (vis.height - padding * 2) / boardHeight;
-  let targetZoom = Math.min(scaleX, scaleY, 1.2);
   // Para que se vea TODO se puede alejar más que el zoom mínimo de Configuración y que el 2% de antes
   // (con objetos muy separados no cabían). El piso solo evita un zoom de 0 si algo quedó absurdamente lejos
-  targetZoom = Math.max(targetZoom, 0.0001);
+  return Math.max(Math.min(scaleX, scaleY, 1.2), 0.0001);
+}
+
+function fitBoardToScreen() {
+  const vis = visibleCanvasRect();
+  const bounds = getContentBounds();
+  const boardWidth = Math.max(1, bounds.maxX - bounds.minX);
+  const boardHeight = Math.max(1, bounds.maxY - bounds.minY);
+  const targetZoom = fitZoomValue();
 
   // Centrado en la parte visible
   animateViewTo(targetZoom,
@@ -7340,7 +7349,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '117';
+const APP_VERSION = '119';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
