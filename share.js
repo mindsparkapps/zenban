@@ -130,13 +130,21 @@ function leaveSharedSpace() {
     'Volviste a tus datos personales. Los datos compartidos siguen en la carpeta.', 'info');
 }
 
-// Al iniciar sesión: si hay datos compartidos (de otra persona, o tuyos creados desde otro dispositivo), se te ofrecen
+// Al iniciar sesión: los datos compartidos que se encuentren (de otra persona, o tuyos creados desde otro
+// dispositivo) se cargan solos en la lista de proyectos, sin preguntar ni cambiar de espacio.
+// Solo se avisa la primera vez que aparece cada uno.
 async function checkSharedInvites() {
-  if (inShared() || !SYNC.token) return;
+  if (!SYNC.token) return;
   try {
-    const dismissed = dismissedInvites();
-    const invites = (await findSharedSpaces()).filter(f => !dismissed.includes(f.id));
-    if (invites.length) openShareModal(invites);
+    const announced = dismissedInvites();
+    const found = await findSharedSpaces();
+    if (typeof loadOtherSpaces === 'function') await loadOtherSpaces(true);
+    if (typeof renderProjectSwitcher === 'function') renderProjectSwitcher();
+    const here = inShared() ? currentSpace().folderId : null;
+    const fresh = found.filter(f => !announced.includes(f.id) && f.id !== here);
+    if (!fresh.length) return;
+    localStorage.setItem('zenban_invites_dismissed', JSON.stringify([...announced, ...fresh.map(f => f.id)]));
+    showToast(`${fresh.length === 1 ? `Los tableros compartidos «${fresh[0].name}» ya están` : `${fresh.length} espacios compartidos ya están`} en tu lista de proyectos.`, 'success');
   } catch (e) {
     console.warn('Buscar datos compartidos', e);
   }
