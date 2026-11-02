@@ -56,6 +56,10 @@ async function createSharedSpace(emails) {
   });
   const user = savedUser() || {};
   setSpace({ mode: 'shared', folderId: folder.id, folderName: folder.name, ownerEmail: user.email, ownerName: user.name });
+  // Lo de aquí se copia a propósito al nuevo espacio compartido: sus proyectos pasan a ser de ese espacio
+  projects.forEach(p => { p.space = tabSpaceKey; });
+  localStorage.setItem(SYNC_KEYS.DATA_SPACE, tabSpaceKey);
+  saveData(STORAGE_KEYS.PROJECTS, projects);
   setDirty(true);
   for (const email of emails) await addMember(email);
   renderShareState();
