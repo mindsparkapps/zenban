@@ -62,6 +62,7 @@ function webWindowHtml(t) {
   const tab = w.image ? `<div class="board-image-tab webwin-image-tab" style="--board-w:${Math.round(t.w || WEB_DEFAULT_SIZE.w)}px" title="Arrastra para mover"><img data-board-img="${escapeHtml(w.image)}" alt="" draggable="false"></div>` : '';
   return tab + `<div class="webwin" data-web="${t.id}">` +
     `<div class="webwin-bar"><span class="webwin-icon">${icon}</span><span class="webwin-title" title="${escapeHtml(w.url || '')}">${escapeHtml(title)}</span>` +
+    (w.barBtn ? `<button type="button" data-web-act="bar" title="${escapeHtml(w.barBtn.title || '')}">${escapeHtml(w.barBtn.label)}</button>` : '') +
     `<button type="button" data-web-act="reload" title="Recargar">⟳</button>` +
     `<button type="button" data-web-act="open" title="Abrir en el navegador">↗</button>` +
     `<button type="button" data-web-act="max" title="Maximizar (para salir: ✕ o Esc)">⛶</button></div>` +
@@ -220,6 +221,7 @@ textLayer.addEventListener('click', (e) => {
   if (!t) return;
   const act = btn.dataset.webAct;
   if (act === 'reload') { const f = webFrames.get(id); if (f) f.src = f.dataset.src; }
+  if (act === 'bar') sendBarClick(id);
   if (act === 'open') window.open(t.web.url, '_blank', 'noopener');
   if (act === 'max') maximizeWebWindow(id);
 });
@@ -311,6 +313,7 @@ const webMax = document.createElement('div');
 webMax.className = 'webwin-max';
 webMax.hidden = true;
 webMax.innerHTML = `<div class="webwin-max-bar"><span class="webwin-icon"></span><span class="webwin-max-title"></span>
+  <button type="button" data-max-act="bar" hidden></button>
   <button type="button" data-max-act="reload" title="Recargar">⟳</button>
   <button type="button" data-max-act="open" title="Abrir en el navegador">↗</button>
   <button type="button" data-max-act="close" class="webwin-max-close" title="Salir (Esc)">✕ Salir</button></div>
@@ -326,6 +329,7 @@ function maximizeWebWindow(id) {
   webMax.querySelector('.webwin-icon').innerHTML = el ? el.querySelector('.webwin-icon').innerHTML : '';
   webMax.querySelector('.webwin-max-title').textContent = (t.web.plugin && t.web.plugin.name) || t.web.title || webHost(t.web.url);
   webMax.hidden = false;
+  syncMaxBarButton(t);
   moveKeepingState(webMax.querySelector('.webwin-max-body'), webFrameFor(t));
   document.body.classList.add('has-webwin-max');
 }
@@ -347,12 +351,26 @@ webMax.addEventListener('click', (e) => {
   if (!btn) return;
   const t = getTexts().find(x => x.id === webMaximizedId);
   if (btn.dataset.maxAct === 'close') restoreWebWindow();
+  if (btn.dataset.maxAct === 'bar') sendBarClick(webMaximizedId);
   if (btn.dataset.maxAct === 'reload') { const f = webFrames.get(webMaximizedId); if (f) f.src = f.dataset.src; }
   if (btn.dataset.maxAct === 'open' && t) window.open(t.web.url, '_blank', 'noopener');
 });
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && webMaximizedId) { e.preventDefault(); e.stopPropagation(); restoreWebWindow(); }
 }, true);
+
+// Botón que el plugin pone en la barra de su ventana, junto a ⟳ (ZenBanPlugin.setBarButton): al tocarlo
+// se le avisa al plugin con zenban:barClick
+function sendBarClick(id) {
+  const f = webFrames.get(id);
+  if (f && f.contentWindow) f.contentWindow.postMessage({ type: 'zenban:barClick' }, '*');
+}
+function syncMaxBarButton(t) {
+  const b = webMax.querySelector('[data-max-act="bar"]');
+  const bb = t && t.web && t.web.barBtn;
+  b.hidden = !bb;
+  if (bb) { b.textContent = bb.label; b.title = bb.title || ''; }
+}
 
 // ----- Plugins: mensajes entre ZenBan y la app del plugin (ver zenban-plugin-sdk.js) -----
 function textIdForSource(source) {
@@ -420,6 +438,17 @@ window.addEventListener('message', (e) => {
     const title = el && el.querySelector('.webwin-title');
     if (title) title.textContent = t.web.title;
     persist();
+  }
+  if (msg.type === 'zenban:setBarButton') {
+    const label = String(msg.label || '').slice(0, 24), title = String(msg.title || '').slice(0, 120);
+    const prev = t.web.barBtn;
+    if (!label) delete t.web.barBtn; else t.web.barBtn = { label, title };
+    if (JSON.stringify(prev) !== JSON.stringify(t.web.barBtn)) {
+      const el = getTextEl(id), b = el && el.querySelector('[data-web-act="bar"]');
+      if (b && label) { b.textContent = label; b.title = title; } else renderTexts();
+      if (webMaximizedId === id) syncMaxBarButton(t);
+      persist();
+    }
   }
   if (msg.type === 'zenban:maximize') maximizeWebWindow(id);
   if (msg.type === 'zenban:exitMaximize' && webMaximizedId === id) restoreWebWindow();

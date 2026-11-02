@@ -8,17 +8,20 @@
 //      ZenBanPlugin.setState({ … });   // se guarda dentro del objeto y se sincroniza con Drive
 //      ZenBanPlugin.setTitle('Título'); // título de la ventana
 //      ZenBanPlugin.maximize();         // abrir a pantalla completa
+//      ZenBanPlugin.setBarButton('🎨 ZenBan', 'Cambiar estilo'); ZenBanPlugin.onBarClick(() => { … }); // botón en la barra de la ventana
 // Fuera de ZenBan (abierta directamente) la app funciona igual: onInit no se llama y setState no hace nada.
 // Esc dentro del plugin también sale de la pantalla completa.
 (function () {
   const inZenBan = window.parent && window.parent !== window;
   const listeners = [];
+  const barListeners = [];
   let initData = null;
   const send = (msg) => { if (inZenBan) window.parent.postMessage(msg, '*'); };
 
   window.addEventListener('message', (e) => {
     if (e.source !== window.parent) return;
     const msg = e.data;
+    if (msg && msg.type === 'zenban:barClick') { barListeners.forEach(fn => { try { fn(); } catch (err) { console.error(err); } }); return; }
     if (!msg || msg.type !== 'zenban:init') return;
     initData = { state: msg.state, theme: msg.theme, readOnly: !!msg.readOnly, id: msg.id };
     listeners.forEach(fn => { try { fn(initData); } catch (err) { console.error(err); } });
@@ -34,6 +37,9 @@
     },
     setState(state) { send({ type: 'zenban:setState', state }); },
     setTitle(title) { send({ type: 'zenban:setTitle', title: String(title || '') }); },
+    // Botón en la barra de la ventana, junto a ⟳ (texto corto, p. ej. '🎨 ZenBan'); label vacío lo quita
+    setBarButton(label, title) { send({ type: 'zenban:setBarButton', label: String(label || ''), title: String(title || '') }); },
+    onBarClick(fn) { barListeners.push(fn); },
     maximize() { send({ type: 'zenban:maximize' }); },
     exitMaximize() { send({ type: 'zenban:exitMaximize' }); }
   };
