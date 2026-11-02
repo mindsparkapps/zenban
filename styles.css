@@ -4570,6 +4570,71 @@ select option:checked {
   position: relative;
 }
 
+/* Selección múltiple en la Biblioteca */
+.image-finder-grid {
+  position: relative; /* el recuadro de selección se ubica dentro de la cuadrícula */
+  user-select: none;
+}
+
+.image-finder-grid.is-selecting {
+  touch-action: none; /* en el celular, arrastrar el dedo dibuja el recuadro (la lista se desplaza sola) */
+}
+
+.image-finder-selbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.image-finder-selbar b {
+  color: var(--text-main);
+  margin-right: 4px;
+}
+
+.image-finder-item .image-finder-check {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 24px;
+  height: 24px;
+  display: none;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: rgba(0, 0, 0, 0.45);
+  color: transparent;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.image-finder-grid.is-selecting .image-finder-item .image-finder-check {
+  display: grid;
+}
+
+.image-finder-item.is-selected {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 16%, var(--bg-surface-hover));
+}
+
+.image-finder-grid .image-finder-item.is-selected .image-finder-check {
+  display: grid;
+  background: var(--accent-primary);
+  color: #fff;
+}
+
+.image-finder-marquee {
+  position: absolute;
+  z-index: 2;
+  border: 1.5px solid var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
 .image-finder-edit {
   position: absolute;
   top: 10px;

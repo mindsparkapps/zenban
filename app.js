@@ -6456,198 +6456,6 @@ window.addEventListener('blur', closeCanvasMenu);
 //     - img-...           -> cada imagen (fondos y tareas)
 // =============================================================================
 
-var SYNC = {
-  token: null,
-  tokenExp: 0,
-  tokenClient: null,
-  fileId: null,
-  remoteVersion: null, // versión del archivo de Drive con la que se sincronizó por última vez
-  imageFiles: null,
-  busy: false,
-  again: false,
-  applying: false,
-  gen: 0,
-  timer: null,
-  status: 'off'
-};
-
-const SYNC_KEYS = {
-  ENABLED: 'zenban_sync_enabled',
-  USER: 'zenban_sync_user',
-  DIRTY: 'zenban_sync_dirty',
-  LAST: 'zenban_sync_last',
-  DELETED: 'zenban_deleted_projects',
-  SWITCH: 'zenban_space_switch',
-  DATA_SPACE: 'zenban_data_space', // espacio al que pertenecen los datos guardados en este navegador
-  CLIENT_ID: 'zenban_google_client_id',
-  STATE: 'zenban_oauth_state',
-  TOKEN: 'zenban_sync_token' // sesión de Google vigente: al abrir la app se sincroniza sin volver a entrar
-};
-
-// ----- Actualización automática -----
-// Cada pocos minutos, y al volver a la app, se mira qué versión está publicada (el ?v= de app.js en
-// index.html). Si hay una más nueva, se deja de subir a Drive y se recarga apenas no se esté editando:
-// así el celular y el PC no quedan con versiones distintas guardando los mismos datos.
-// Los cambios no se pierden: ya están guardados en este navegador y la versión nueva los sube.
-const AppUpdate = { pending: 0, checking: false, lastCheck: 0, timer: null };
-const APP_UPDATE_TRIED_KEY = 'zenban_update_tried';
-
-async function latestPublishedVersion() {
-  const r = await fetch(`./index.html?v=${Date.now()}`, { cache: 'no-store' });
-  if (!r.ok) return 0;
-  const m = (await r.text()).match(/app\.js\?v=(\d+)/);
-  return m ? Number(m[1]) : 0;
-}
-
-async function checkForAppUpdate(force = false) {
-  if (AppUpdate.pending) { applyAppUpdate(); return; }
-  if (AppUpdate.checking || !navigator.onLine) return;
-  if (!force && Date.now() - AppUpdate.lastCheck < 60 * 1000) return;
-  AppUpdate.checking = true;
-  AppUpdate.lastCheck = Date.now();
-  try {
-    const latest = await latestPublishedVersion();
-    if (latest > Number(APP_VERSION)) {
-      AppUpdate.pending = latest;
-      applyAppUpdate();
-    }
-  } catch (e) {
-    // Sin conexión o servidor caído: se vuelve a mirar más tarde
-  } finally {
-    AppUpdate.checking = false;
-  }
-}
-
-// Escribiendo, arrastrando o con una ventana abierta no se recarga (se reintenta en unos segundos)
-function appUpdateBlocked() {
-  if (userIsInteracting() || SYNC.busy) return true;
-  const a = document.activeElement;
-  if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return true;
-  return [...document.querySelectorAll('.modal-backdrop')].some(m => !m.hidden && m.getClientRects().length > 0);
-}
-
-function applyAppUpdate() {
-  clearTimeout(AppUpdate.timer);
-  if (appUpdateBlocked()) {
-    AppUpdate.timer = setTimeout(applyAppUpdate, 3000);
-    return;
-  }
-  // Si ya se recargó por esta versión hace poco y sigue la vieja (el servidor aún no la entrega), no se insiste
-  let tried = null;
-  try { tried = JSON.parse(sessionStorage.getItem(APP_UPDATE_TRIED_KEY) || 'null'); } catch (e) {}
-  if (AppUpdate.failed) return;
-  if (tried && tried.v === AppUpdate.pending && Date.now() - tried.at < 5 * 60 * 1000) {
-    AppUpdate.failed = true;
-    setSyncStatus('error');
-    showToast(`Hay una versión nueva de ZenBan (v${AppUpdate.pending}) pero no se pudo cargar. Cierra y abre la app.`, 'warning');
-    return;
-  }
-  try { sessionStorage.setItem(APP_UPDATE_TRIED_KEY, JSON.stringify({ v: AppUpdate.pending, at: Date.now() })); } catch (e) {}
-  showToast(`Actualizando ZenBan a la v${AppUpdate.pending}…`, 'info');
-  setTimeout(async () => {
-    try {
-      const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
-      if (reg) await reg.update();
-    } catch (e) {}
-    location.reload();
-  }, 1200);
-}
-
-setTimeout(() => checkForAppUpdate(true), 8000);
-setInterval(() => checkForAppUpdate(true), 5 * 60 * 1000);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForAppUpdate(); });
-window.addEventListener('focus', () => checkForAppUpdate());
-
-function saveSyncToken() {
-  try { localStorage.setItem(SYNC_KEYS.TOKEN, JSON.stringify({ token: SYNC.token, exp: SYNC.tokenExp })); } catch (e) {}
-}
-
-function forgetSyncToken() {
-  SYNC.token = null;
-  localStorage.removeItem(SYNC_KEYS.TOKEN);
-}
-
-// Al abrir la app (o en otra ventana): si la sesión guardada sigue vigente, se usa
-function restoreSyncToken() {
-  if (SYNC.token && Date.now() < SYNC.tokenExp) return true;
-  try {
-    const saved = JSON.parse(localStorage.getItem(SYNC_KEYS.TOKEN) || 'null');
-    if (saved && saved.token && Date.now() < saved.exp) {
-      SYNC.token = saved.token;
-      SYNC.tokenExp = saved.exp;
-      return true;
-    }
-  } catch (e) {}
-  return false;
-}
-const DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.appdata openid email profile';
-const DATA_FILE_NAME = 'zenban-data.json';
-
-function googleClientId() {
-  return ((window.ZENBAN_CONFIG && window.ZENBAN_CONFIG.googleClientId) || localStorage.getItem(SYNC_KEYS.CLIENT_ID) || '').trim();
-}
-
-function syncEnabled() {
-  return localStorage.getItem(SYNC_KEYS.ENABLED) === '1';
-}
-
-function savedUser() {
-  try { return JSON.parse(localStorage.getItem(SYNC_KEYS.USER) || 'null'); } catch (e) { return null; }
-}
-
-function isDirty() {
-  return localStorage.getItem(SYNC_KEYS.DIRTY) === '1';
-}
-
-function setDirty(value) {
-  localStorage.setItem(SYNC_KEYS.DIRTY, value ? '1' : '0');
-}
-
-function lastSyncedAt() {
-  return Number(localStorage.getItem(SYNC_KEYS.LAST) || 0);
-}
-
-function recordDeletedProject(id) {
-  let list = [];
-  try { list = JSON.parse(localStorage.getItem(SYNC_KEYS.DELETED) || '[]'); } catch (e) {}
-  list.push({ id, at: Date.now() });
-  localStorage.setItem(SYNC_KEYS.DELETED, JSON.stringify(list.slice(-200)));
-}
-
-function deletedProjects() {
-  try { return JSON.parse(localStorage.getItem(SYNC_KEYS.DELETED) || '[]'); } catch (e) { return []; }
-}
-
-// Se llama cada vez que se guardan proyectos o etiquetas
-function onLocalDataChanged() {
-  if (typeof SYNC === 'undefined' || !SYNC || SYNC.applying) return;
-  SYNC.gen++;
-  setDirty(true);
-  if (!syncEnabled()) return;
-  if (SYNC.token || restoreSyncToken()) scheduleSync(2500);
-  else setSyncStatus('pending');
-}
-
-// ¿El usuario está a mitad de un cambio que aún no se guarda? (un dedo o botón apretado sobre la app:
-// arrastrar, cambiar tamaño, dibujar; o escribiendo un texto del lienzo)
-const pointersDown = new Set();
-document.addEventListener('pointerdown', (e) => pointersDown.add(e.pointerId), true);
-['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, (e) => {
-  pointersDown.delete(e.pointerId);
-  // Al soltar, si había una sincronización esperando, se hace enseguida
-  if (!pointersDown.size && SYNC.again && SYNC.token && !SYNC.busy) scheduleSync(600);
-}, true));
-window.addEventListener('blur', () => pointersDown.clear());
-
-function userIsInteracting() {
-  return pointersDown.size > 0 || !!editingTextId || !!(typeof dragState !== 'undefined' && dragState.active);
-}
-
-function scheduleSync(delay = 2500) {
-  clearTimeout(SYNC.timer);
-  SYNC.timer = setTimeout(syncNow, delay);
-}
-
 // ----- Interfaz de la cuenta -----
 const googleSignInBtn = document.getElementById('googleSignInBtn');
 const accountChip = document.getElementById('accountChip');
@@ -6890,484 +6698,6 @@ function signOutGoogle() {
   showToast('Sesión cerrada. Tus datos siguen en este dispositivo.', 'info');
 }
 
-// ----- Espacio de datos: personal (carpeta oculta de tu Drive) o compartido (carpeta de Drive compartida) -----
-const DRIVE_API = 'https://www.googleapis.com/drive/v3';
-
-function currentSpace() {
-  try { return JSON.parse(localStorage.getItem('zenban_space') || 'null') || { mode: 'personal' }; } catch (e) { return { mode: 'personal' }; }
-}
-
-function inShared() {
-  const s = currentSpace();
-  return s.mode === 'shared' && !!s.folderId;
-}
-
-function spaceKey(s) {
-  return s && s.mode === 'shared' && s.folderId ? `shared:${s.folderId}` : 'personal';
-}
-
-// Otra pestaña de este navegador se cambió a otro espacio (los datos guardados ya son de ese espacio)
-function spaceChangedElsewhere() {
-  return spaceKey(currentSpace()) !== tabSpaceKey;
-}
-
-let reloadingForSpace = false;
-function reloadForSpaceChange() {
-  if (reloadingForSpace) return;
-  reloadingForSpace = true;
-  showToast('Se cambió de espacio en otra pestaña. Recargando…', 'info');
-  setTimeout(() => location.reload(), 800);
-}
-
-window.addEventListener('storage', (e) => {
-  if (e.key === 'zenban_space' && spaceChangedElsewhere()) reloadForSpaceChange();
-});
-
-// Al pasar a otro espacio, la primera sincronización usa los datos de ese espacio tal cual:
-// nunca se combinan con los del espacio anterior (si no, un proyecto quedaría en los dos)
-function markSpaceSwitch() {
-  localStorage.setItem(SYNC_KEYS.LAST, '0');
-  localStorage.setItem(SYNC_KEYS.SWITCH, '1');
-}
-
-// Los datos guardados en este navegador son de otro espacio: se usan los de Drive tal cual, sin combinar.
-// (Si no, un dispositivo que quedó con los proyectos personales en el compartido los vuelve a subir
-// en cada sincronización.) Las versiones anteriores no anotaban el espacio: en un compartido no se confía.
-function localDataOfOtherSpace() {
-  const owner = localStorage.getItem(SYNC_KEYS.DATA_SPACE);
-  return owner ? owner !== tabSpaceKey : inShared();
-}
-
-// Cada proyecto lleva anotado el espacio al que pertenece (p.space). Al sincronizar, un proyecto de otro
-// espacio nunca se sube aquí: aunque lo traiga otro dispositivo (el celular y el PC abiertos a la vez,
-// cada uno en un espacio) o una versión vieja de la app que mezcló los datos.
-function claimProjects(list, key) {
-  let n = 0;
-  (list || []).forEach(p => { if (p && !p.space) { p.space = key; n++; } });
-  return n;
-}
-
-function foreignProjects(list, key) {
-  return (list || []).filter(p => p && p.space && p.space !== key);
-}
-
-function setSpace(space) {
-  tabSpaceKey = spaceKey(space);
-  localStorage.setItem('zenban_space', JSON.stringify(space));
-  SYNC.fileId = null;
-  SYNC.remoteVersion = null;
-  SYNC.imageFiles = null;
-  // Los "otros espacios" leídos antes ya no sirven (incluían este y les faltaba el anterior):
-  // la lista de proyectos los vuelve a leer y mientras tanto usa la copia guardada
-  if (typeof OtherSpaces !== 'undefined') {
-    OtherSpaces.entries = [];
-    OtherSpaces.loadedAt = 0;
-  }
-}
-
-function spaceQuery(cond) {
-  if (inShared()) {
-    const q = `'${currentSpace().folderId}' in parents and trashed=false and ${cond}`;
-    return `q=${encodeURIComponent(q)}&supportsAllDrives=true&includeItemsFromAllDrives=true`;
-  }
-  return `spaces=appDataFolder&q=${encodeURIComponent(cond)}`;
-}
-
-function spaceParent() {
-  return inShared() ? currentSpace().folderId : 'appDataFolder';
-}
-
-// ----- Google Drive -----
-async function driveFetch(url, opts = {}) {
-  if (!SYNC.token || Date.now() > SYNC.tokenExp) {
-    SYNC.token = null;
-    throw new Error('auth');
-  }
-  const r = await fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${SYNC.token}` } });
-  if (r.status === 401) {
-    forgetSyncToken();
-    throw new Error('auth');
-  }
-  if (r.status === 403) {
-    // Puede ser un permiso que falta en la sesión (hay que reconectar) o un archivo sin acceso
-    let reason = '';
-    try { const j = await r.clone().json(); reason = ((j.error && j.error.errors && j.error.errors[0]) || {}).reason || ''; } catch (e) {}
-    if (/scope|auth/i.test(reason)) { SYNC.token = null; throw new Error('auth'); }
-    const err = new Error('forbidden'); err.status = 403; throw err;
-  }
-  if (!r.ok) { const err = new Error(`drive ${r.status}`); err.status = r.status; throw err; }
-  return r;
-}
-
-async function findDataFile() {
-  const r = await driveFetch(`${DRIVE_API}/files?${spaceQuery(`name='${DATA_FILE_NAME}'`)}&orderBy=createdTime&fields=files(id,modifiedTime,version)`);
-  const j = await r.json();
-  return (j.files && j.files[0]) || null;
-}
-
-async function driveUpload(name, blob, existingId = null) {
-  if (existingId) {
-    await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media&supportsAllDrives=true`, { method: 'PATCH', body: blob });
-    return existingId;
-  }
-  const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify({ name, parents: [spaceParent()] })], { type: 'application/json' }));
-  form.append('file', blob);
-  const r = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id', { method: 'POST', body: form });
-  return (await r.json()).id;
-}
-
-async function listDriveImages() {
-  const map = new Map();
-  let pageToken = '';
-  do {
-    const r = await driveFetch(`${DRIVE_API}/files?${spaceQuery("name contains 'img-'")}&pageSize=1000&fields=nextPageToken,files(id,name)${pageToken ? `&pageToken=${pageToken}` : ''}`);
-    const j = await r.json();
-    (j.files || []).forEach(f => map.set(f.name, f.id));
-    pageToken = j.nextPageToken || '';
-  } while (pageToken);
-  return map;
-}
-
-// ----- Copia de la última sincronización: permite combinar los cambios de varias personas -----
-const SyncBase = {
-  db: null,
-  open() {
-    if (this.db) return Promise.resolve(this.db);
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open('zenban_sync', 1);
-      req.onupgradeneeded = () => req.result.createObjectStore('kv');
-      req.onsuccess = () => { this.db = req.result; resolve(this.db); };
-      req.onerror = () => reject(req.error);
-    });
-  },
-  key() { return 'base:' + (inShared() ? currentSpace().folderId : 'personal'); },
-  async get() {
-    try {
-      const db = await this.open();
-      return await new Promise((resolve) => {
-        const q = db.transaction('kv').objectStore('kv').get(this.key());
-        q.onsuccess = () => resolve(q.result || null);
-        q.onerror = () => resolve(null);
-      });
-    } catch (e) { return null; }
-  },
-  async set(value) {
-    try {
-      const db = await this.open();
-      await new Promise((resolve) => {
-        const tx = db.transaction('kv', 'readwrite');
-        tx.objectStore('kv').put(JSON.parse(JSON.stringify(value)), this.key());
-        tx.oncomplete = resolve;
-        tx.onerror = resolve;
-      });
-    } catch (e) {}
-  }
-};
-
-// ----- Datos: empaquetar, combinar y aplicar -----
-function localPayload() {
-  return { version: 1, projects, tags: tagLibrary, deletedProjects: deletedProjects() };
-}
-
-function sameJson(a, b) {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-// Combina listas de objetos con id (tareas, columnas, tableros, dibujos, imágenes):
-// lo que cambió solo aquí se queda, lo que cambió solo en Drive se trae, y si cambió en ambos gana lo de aquí
-function mergeArrays(L, R, B) {
-  L = L || [];
-  R = R || [];
-  const hasIds = arr => arr.every(x => x && typeof x === 'object' && x.id != null);
-  if (!hasIds(L) || !hasIds(R) || (B && !hasIds(B))) return B && sameJson(L, B) ? R : L;
-  const lm = new Map(L.map(x => [x.id, x]));
-  const rm = new Map(R.map(x => [x.id, x]));
-  const bm = new Map((B || []).map(x => [x.id, x]));
-  const out = new Map();
-  for (const id of new Set([...lm.keys(), ...rm.keys(), ...bm.keys()])) {
-    const l = lm.get(id), r = rm.get(id), b = bm.get(id);
-    let v;
-    if (!B || b === undefined) v = l !== undefined ? l : r;
-    else if (sameJson(l, b)) v = r;
-    else if (sameJson(r, b)) v = l;
-    else v = l !== undefined ? l : r; // cambió en ambos lados; si uno lo borró y el otro lo editó, se conserva la edición
-    if (v !== undefined) out.set(id, v);
-  }
-  // Si aquí no se cambió el orden, se respeta el orden que viene de Drive
-  const common = id => lm.has(id) && rm.has(id) && bm.has(id);
-  const localOrderKept = B && sameJson(L.map(x => x.id).filter(common), B.map(x => x.id).filter(common));
-  const order = localOrderKept ? [...R, ...L] : [...L, ...R];
-  const result = [];
-  const seen = new Set();
-  order.forEach(x => {
-    if (out.has(x.id) && !seen.has(x.id)) {
-      seen.add(x.id);
-      result.push(out.get(x.id));
-    }
-  });
-  return result;
-}
-
-function mergeProject(l, r, b) {
-  const out = {};
-  const newer = (l.updatedAt || 0) >= (r.updatedAt || 0) ? l : r;
-  const older = newer === l ? r : l;
-  for (const k of new Set([...Object.keys(l), ...Object.keys(r)])) {
-    if (k === 'updatedAt') continue;
-    if (Array.isArray(l[k]) || Array.isArray(r[k])) out[k] = mergeArrays(l[k], r[k], b ? b[k] : null);
-    else if (b) out[k] = sameJson(l[k], b[k]) ? r[k] : l[k];
-    else out[k] = k in newer ? newer[k] : older[k];
-  }
-  out.updatedAt = Math.max(l.updatedAt || 0, r.updatedAt || 0);
-  return out;
-}
-
-// Etiquetas: combinación en tres vías por id (como las tareas), para que una etiqueta borrada o
-// renombrada en otro dispositivo (o desde el conector de Claude) no reaparezca. Sin ids, unión por nombre.
-function mergeTags(L, R, B) {
-  L = L || [];
-  R = R || [];
-  const withIds = arr => arr.every(t => t && t.id != null);
-  const merged = withIds(L) && withIds(R) && (!B || withIds(B))
-    ? mergeArrays(L, R, B)
-    : [...R, ...L];
-  const seen = new Map();
-  merged.forEach(t => {
-    const key = String(t.name || '').toLowerCase();
-    if (!seen.has(key) || L.includes(t)) seen.set(key, t);
-  });
-  return [...seen.values()];
-}
-
-function mergePayloads(local, remote, base = null) {
-  // Un borrado solo cuenta del lado que ya no tiene el proyecto: si un lado tiene el proyecto y
-  // también su borrado, ese borrado quedó viejo (el proyecto siguió vivo) y se ignora
-  const tombs = new Map();
-  [remote, local].forEach(side => {
-    const alive = new Set((side.projects || []).map(p => p.id));
-    (side.deletedProjects || []).forEach(t => {
-      if (alive.has(t.id)) return;
-      if (!tombs.has(t.id) || tombs.get(t.id) < t.at) tombs.set(t.id, t.at);
-    });
-  });
-  const lm = new Map((local.projects || []).map(p => [p.id, p]));
-  const bm = new Map(((base && base.projects) || []).map(p => [p.id, p]));
-  const merged = [];
-  const seen = new Set();
-  [...(remote.projects || []), ...(local.projects || [])].forEach(p => {
-    if (seen.has(p.id)) return;
-    seen.add(p.id);
-    const l = lm.get(p.id);
-    const r = (remote.projects || []).find(x => x.id === p.id);
-    merged.push(l && r ? mergeProject(l, r, bm.get(p.id) || null) : (l || r));
-  });
-
-  // Un proyecto borrado no vuelve aunque otro dispositivo atrasado lo haya editado después (su copia
-  // queda en las copias de seguridad de ese dispositivo). Solo vuelve si se recuperó a propósito
-  // desde una copia de seguridad (restoredAt) después de borrarlo.
-  const alive = merged.filter(p => !tombs.has(p.id) || (p.restoredAt || 0) > tombs.get(p.id));
-  const kept = new Set(alive.map(p => p.id));
-  return {
-    version: 1,
-    projects: alive,
-    tags: mergeTags(local.tags, remote.tags, base ? base.tags : null),
-    deletedProjects: [...tombs.entries()].filter(([id]) => !kept.has(id)).map(([id, at]) => ({ id, at }))
-  };
-}
-
-function applyPayload(data) {
-  if (!data || !Array.isArray(data.projects) || data.projects.length === 0) return;
-  SYNC.applying = true;
-  try {
-    projects = data.projects;
-    tagLibrary = Array.isArray(data.tags) ? data.tags : tagLibrary;
-    localStorage.setItem(SYNC_KEYS.DELETED, JSON.stringify(data.deletedProjects || []));
-    saveData(STORAGE_KEYS.PROJECTS, projects);
-    saveData(STORAGE_KEYS.TAGS, tagLibrary);
-    if (!projects.some(p => p.id === activeProjectId)) activeProjectId = projects[0].id;
-    const project = getActiveProject();
-    project.columns = project.columns || [];
-    project.tasks = project.tasks || [];
-    columns = project.columns;
-    tasks = project.tasks;
-    selection = new Set();
-    focusedBoardId = null;
-    renderProjectSwitcher();
-    renderBoard();
-    renderBgImages();
-    renderTexts();
-    renderDrawings();
-    resetHistory();
-  } finally {
-    SYNC.applying = false;
-  }
-}
-
-function dataPart(p) {
-  return { projects: p.projects || [], tags: p.tags || [], deletedProjects: p.deletedProjects || [] };
-}
-
-// ----- Ciclo de sincronización -----
-async function syncNow() {
-  if (!syncEnabled()) return;
-  if (!SYNC.token || Date.now() > SYNC.tokenExp) {
-    SYNC.token = null;
-    setSyncStatus(isDirty() ? 'pending' : 'expired');
-    return;
-  }
-  if (!navigator.onLine) {
-    setSyncStatus('offline');
-    return;
-  }
-  if (SYNC.busy) {
-    SYNC.again = true;
-    return;
-  }
-  if (spaceChangedElsewhere()) {
-    reloadForSpaceChange();
-    return;
-  }
-  // Hay una versión más nueva publicada: no se sube nada con esta y se actualiza (sigue al recargar)
-  if (AppUpdate.pending) {
-    applyAppUpdate();
-    return;
-  }
-  SYNC.busy = true;
-  setSyncStatus('syncing');
-  try {
-    // Lo que guardó otra ventana de ZenBan se suma antes de comparar con Drive
-    if (otherWindowSaved()) adoptOtherWindowData();
-    // Los proyectos de este navegador que aún no tienen espacio son de este (si los datos son de aquí)
-    if (localStorage.getItem(SYNC_KEYS.SWITCH) !== '1' && !localDataOfOtherSpace() && claimProjects(projects, tabSpaceKey)) {
-      saveData(STORAGE_KEYS.PROJECTS, projects);
-    }
-    const gen = SYNC.gen;
-    if (inShared() && typeof checkSharedFolder === 'function' && !(await checkSharedFolder())) return;
-    const file = await findDataFile();
-    SYNC.fileId = file ? file.id : null;
-    // Ni Drive ni este dispositivo cambiaron desde la última sincronización: no hay nada que descargar
-    // ni comparar. (Descargar y comparar todo cada 45 s congelaba un momento los toques en el celular.)
-    if (file && SYNC.remoteVersion && String(file.version) === SYNC.remoteVersion && !isDirty() && SYNC.gen === gen && lastSyncedAt() && !localDataOfOtherSpace()) {
-      setSyncStatus('ok');
-      return;
-    }
-    const remote = file ? await (await driveFetch(`${DRIVE_API}/files/${file.id}?alt=media&supportsAllDrives=true`)).json() : null;
-    // Drive lo guardó una versión más nueva de la app: esta no lo toca (podría guardarlo distinto) y se actualiza
-    if (remote && Number(remote.appVersion) > Number(APP_VERSION)) {
-      AppUpdate.pending = Number(remote.appVersion);
-      SYNC.again = true;
-      return;
-    }
-    const remoteText = remote ? JSON.stringify(dataPart(remote)) : null;
-    // Lo que está en el archivo de este espacio es de este espacio
-    if (remote && Array.isArray(remote.projects)) claimProjects(remote.projects, tabSpaceKey);
-    const local = localPayload();
-
-    let result = local;
-    let mergeBase = null; // copia de la última sincronización (para saber qué nunca llegó a Drive)
-    const switching = localStorage.getItem(SYNC_KEYS.SWITCH) === '1' || localDataOfOtherSpace();
-    if (switching && !(remote && Array.isArray(remote.projects) && remote.projects.length)) {
-      // Se entró a un espacio vacío: empieza con un proyecto nuevo, sin copiar los del espacio anterior
-      result = { projects: [blankProject()], tags: local.tags, deletedProjects: [] };
-    } else if (remote && Array.isArray(remote.projects) && remote.projects.length) {
-      if (switching) {
-        result = dataPart(remote);
-      } else if (lastSyncedAt() === 0) {
-        // Primera vez con estos datos en este dispositivo: nunca se pisa nada sin preguntar
-        const where = inShared() ? `la carpeta compartida "${currentSpace().folderName || 'ZenBan'}"` : 'tu Google Drive';
-        const useDrive = await askConfirm({
-          title: 'Ya hay datos de ZenBan',
-          message: `Hay datos guardados en ${where}.\nUsar los de Drive reemplaza lo que hay en este dispositivo. Combinar junta ambos (no se pierde nada).`,
-          confirmText: 'Usar los de Drive', cancelText: 'Combinar con los de aquí', icon: '☁️'
-        });
-        result = useDrive ? dataPart(remote) : mergePayloads(local, remote, null);
-      } else {
-        const base = await SyncBase.get();
-        mergeBase = base;
-        // Sin copia de la última sincronización y sin cambios aquí: Drive manda (evita revivir lo borrado en otro lado)
-        result = !base && !isDirty() ? dataPart(remote) : mergePayloads(local, remote, base);
-      }
-    }
-
-    // Los proyectos de otro espacio se quitan (sin marcarlos como borrados: siguen vivos en el suyo).
-    // Se guarda una copia por si acaso y se avisa.
-    const foreign = foreignProjects(result.projects, tabSpaceKey);
-    if (foreign.length) {
-      const ids = new Set(foreign.map(p => p.id));
-      const kept = result.projects.filter(p => !ids.has(p.id));
-      result = { ...dataPart(result), projects: kept.length ? kept : [blankProject()] };
-      console.warn('Proyectos de otro espacio quitados', foreign.map(p => `${p.name} (${p.space})`));
-      if (typeof Backups !== 'undefined') {
-        await Backups.add('Proyectos de otro espacio quitados', JSON.stringify({ projects: foreign, tags: [], deletedProjects: [] }), foreign.length);
-      }
-      showToast(`Se quitaron ${foreign.length} proyecto(s) que son de otro espacio (siguen en el suyo). Hay una copia en ⚙️ Configuración › Copias de seguridad.`, 'warning');
-    }
-
-    // Si hubo cambios aquí mientras se descargaba, se vuelve a empezar para no perderlos
-    // (o si otra pestaña cambió de espacio mientras tanto)
-    if (spaceChangedElsewhere()) return;
-    if ((SYNC.gen !== gen || otherWindowSaved()) && !switching) {
-      SYNC.again = true;
-      return;
-    }
-    // Si se está arrastrando, cambiando de tamaño, escribiendo un texto o dibujando, ese cambio todavía
-    // no está guardado: aplicar ahora lo que llegó de Drive lo dejaría sobre una copia vieja y se perdería.
-    // Se espera a que termine (se reintenta en unos segundos).
-    if (!switching && !sameJson(dataPart(result), dataPart(local)) && userIsInteracting()) {
-      SYNC.again = true;
-      return;
-    }
-
-    if (!sameJson(dataPart(result), dataPart(local))) {
-      // Si algo de este dispositivo va a dejar de estar, antes se guarda una copia para poder recuperarlo
-      if (typeof backupBeforeReplace === 'function') {
-        // (al cambiar de espacio es normal que se vaya todo lo del espacio anterior: se guarda, sin aviso)
-        await backupBeforeReplace(local, result, switching ? local : mergeBase, switching ? 'Antes de cambiar de espacio' : 'Antes de traer cambios de Drive');
-        if (SYNC.gen !== gen || otherWindowSaved() || userIsInteracting()) { SYNC.again = true; return; }
-      }
-      applyPayload(result);
-    } else localStorage.setItem(SYNC_KEYS.DELETED, JSON.stringify(result.deletedProjects || []));
-
-    // Versión de Drive con la que queda sincronizado (si se sube, la siguiente consulta la obtiene)
-    SYNC.remoteVersion = file ? String(file.version) : null;
-    // (se compara con lo que había en Drive antes de anotarle el espacio, para que las anotaciones se suban)
-    if (!remote || JSON.stringify(dataPart(result)) !== remoteText) {
-      // Si otra persona guardó mientras tanto, se vuelve a combinar antes de subir para no pisar su cambio
-      if (file) {
-        const now = await (await driveFetch(`${DRIVE_API}/files/${file.id}?fields=version&supportsAllDrives=true`)).json();
-        if (String(now.version) !== String(file.version)) {
-          SYNC.remoteVersion = null;
-          SYNC.again = true;
-          return;
-        }
-      }
-      // appVersion: los dispositivos con una versión anterior no tocan este archivo y se actualizan antes
-      const data = { ...dataPart(result), version: 1, appVersion: Number(APP_VERSION), savedAt: Date.now() };
-      SYNC.remoteVersion = null;
-      SYNC.fileId = await driveUpload(DATA_FILE_NAME, new Blob([JSON.stringify(data)], { type: 'application/json' }), SYNC.fileId);
-    }
-    await SyncBase.set(dataPart(result));
-    localStorage.setItem(SYNC_KEYS.LAST, String(Date.now()));
-    localStorage.removeItem(SYNC_KEYS.SWITCH);
-    localStorage.setItem(SYNC_KEYS.DATA_SPACE, tabSpaceKey);
-    if (SYNC.gen === gen || switching) setDirty(false);
-
-    await syncImages();
-    setSyncStatus(isDirty() ? 'syncing' : 'ok');
-  } catch (err) {
-    console.warn('Sincronización', err);
-    if (err.message === 'auth') setSyncStatus(isDirty() ? 'pending' : 'expired');
-    else setSyncStatus(navigator.onLine ? 'error' : 'offline');
-  } finally {
-    SYNC.busy = false;
-    if (SYNC.again || (isDirty() && SYNC.token)) {
-      SYNC.again = false;
-      scheduleSync(2000);
-    }
-  }
-}
-
 function referencedImageIds(list = projects) {
   const ids = new Set();
   list.forEach(p => {
@@ -7393,47 +6723,6 @@ function referencedImageIds(list = projects) {
     });
   });
   return ids;
-}
-
-// Sube las imágenes nuevas y descarga las que falten en este dispositivo.
-// Primero las del proyecto abierto, varias a la vez, y cada una se muestra apenas llega
-// (antes se bajaban de a una, de todos los proyectos, y se veían todas juntas al final).
-const IMAGE_DOWNLOADS_AT_ONCE = 4;
-async function syncImages() {
-  const ids = referencedImageIds();
-  if (ids.size === 0) return;
-  if (!SYNC.imageFiles) SYNC.imageFiles = await listDriveImages();
-  const localKeys = new Set(await ImageStore.keys().catch(() => []));
-  const activeIds = referencedImageIds([getActiveProject()]);
-  const ordered = [...ids].sort((a, b) => Number(activeIds.has(b)) - Number(activeIds.has(a)));
-  const toDownload = ordered.filter(id => !localKeys.has(id) && SYNC.imageFiles.has(id));
-  let downloaded = 0;
-  const worker = async () => {
-    while (toDownload.length) {
-      const id = toDownload.shift();
-      try {
-        const r = await driveFetch(`${DRIVE_API}/files/${SYNC.imageFiles.get(id)}?alt=media&supportsAllDrives=true`);
-        await ImageStore.put(id, await r.blob());
-        downloaded++;
-        imageArrived(id);
-      } catch (e) {
-        console.warn('Imagen no descargada', id, e);
-      }
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(IMAGE_DOWNLOADS_AT_ONCE, toDownload.length) }, worker));
-  for (const id of ordered) {
-    if (!localKeys.has(id) || SYNC.imageFiles.has(id)) continue;
-    const local = await ImageStore.get(id).catch(() => null);
-    if (local) SYNC.imageFiles.set(id, await driveUpload(id, local));
-  }
-  // Las que no están ni aquí ni en Drive (aún no las sube el otro dispositivo) dejan de mostrar la carga
-  bgImageLayer.querySelectorAll('.bg-image.is-loading').forEach(el => {
-    const id = el.dataset.imageRef || el.dataset.imageId;
-    if (!localKeys.has(id) && !SYNC.imageFiles.has(id)) { el.classList.remove('is-loading'); el.classList.add('is-missing'); }
-  });
-  // Las de las tareas (tarjetas) se redibujan una vez al final
-  if (downloaded) renderBoard();
 }
 
 // Una imagen recién descargada: se pone donde ya se estaba esperando, sin redibujar todo
@@ -7510,7 +6799,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '128';
+const APP_VERSION = '129';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -8631,6 +7920,7 @@ function openImageLibrary(point = null) {
           <div class="image-finder-sources"></div>
           <div class="image-folders" aria-label="Carpetas"></div>
           <p class="image-finder-note"></p>
+          <div class="image-finder-selbar"></div>
           <div class="image-finder-grid"></div>
         </div>
       </div>`;
@@ -8667,17 +7957,159 @@ function openImageLibrary(point = null) {
     const f = imageFolderOf(it.ref);
     return current === 'none' ? !f : f === current;
   };
+  // Selección múltiple (por archivo): Ctrl+clic, Mayús+clic, un recuadro arrastrado sobre las imágenes o,
+  // en el celular, el botón Seleccionar (o mantener apretada una imagen) y tocar o arrastrar
+  const picked = new Set();
+  let selectMode = false;
+  let anchorRef = null;
+  let skipClick = false;
+  const selbar = m.querySelector('.image-finder-selbar');
+  const isTouch = window.matchMedia('(pointer: coarse)').matches;
+  const pickedItems = () => items.filter(it => picked.has(it.ref));
+  const visibleRefs = () => [...grid.querySelectorAll('[data-i]')].map(b => items[Number(b.dataset.i)].ref);
+  const markPicked = () => {
+    grid.querySelectorAll('[data-i]').forEach(b => b.classList.toggle('is-selected', picked.has(items[Number(b.dataset.i)].ref)));
+    grid.classList.toggle('is-selecting', selectMode || picked.size > 0);
+    paintSelbar();
+  };
+  const clearPicked = () => { picked.clear(); selectMode = false; anchorRef = null; markPicked(); };
+  const paintSelbar = () => {
+    if (!picked.size) {
+      selbar.innerHTML = selectMode
+        ? `<span>${isTouch ? 'Toca las imágenes o arrastra el dedo sobre ellas para elegir varias.' : 'Haz clic en las imágenes o arrastra un recuadro sobre ellas.'}</span><button type="button" class="btn btn-ghost btn-sm" data-sel="cancel">Listo</button>`
+        : `<button type="button" class="btn btn-ghost btn-sm" data-sel="start" title="${isTouch ? 'Elegir varias imágenes' : 'Elegir varias (también con Ctrl+clic, Mayús+clic o arrastrando un recuadro)'}">☑ Seleccionar</button>`;
+      return;
+    }
+    const own = pickedItems().filter(it => !it.space).length;
+    selbar.innerHTML = `<b>${picked.size} seleccionada${picked.size === 1 ? '' : 's'}</b>
+      <button type="button" class="btn btn-ghost btn-sm" data-sel="folder"${own ? '' : ' disabled'}>📁 Mover a carpeta</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-sel="insert">➕ Insertar</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-sel="all">Todas las visibles</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-sel="cancel">✕ Cancelar</button>`;
+  };
+  const togglePick = (ref) => {
+    if (picked.has(ref)) picked.delete(ref); else picked.add(ref);
+    anchorRef = ref;
+    markPicked();
+  };
+  // Mayús+clic: elige todo lo que hay entre la última imagen tocada y esta
+  const pickRange = (ref) => {
+    const refs = visibleRefs();
+    const a = refs.indexOf(anchorRef), b = refs.indexOf(ref);
+    if (a < 0 || b < 0) { togglePick(ref); return; }
+    refs.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(r => picked.add(r));
+    markPicked();
+  };
+  // Mueve a una carpeta las seleccionadas de este espacio (las de otros espacios se ordenan en el suyo)
+  const moveRefsToFolder = (refs, id) => {
+    refs.forEach(ref => setImageFolder(ref, id));
+    const f = libraryFolders().find(g => g.id === id);
+    showToast(`${refs.length} imagen${refs.length === 1 ? '' : 'es'} ${f ? `en «${f.name}»` : 'sin carpeta'}`, 'success');
+    saveFolders();
+  };
+  const folderPicker = (x, y, refs) => {
+    const now = refs.length === 1 ? imageFolderOf(refs[0]) : null;
+    openLibraryMenu(x, y, [
+      ...libraryFolders().map(f => ({ icon: f.main ? '⭐' : '📁', label: f.name, disabled: f.id === now, run: () => moveRefsToFolder(refs, f.id) })),
+      { icon: '🖼', label: 'Sin carpeta', disabled: now === '', run: () => moveRefsToFolder(refs, '') },
+      { icon: '＋', label: 'Nueva carpeta…', run: () => folderNameInput(foldersEl.querySelector('[data-add-folder]'), '', (name) => { const f = addLibraryFolder(name); current = f.id; moveRefsToFolder(refs, f.id); }) }
+    ]);
+  };
+  // Inserta una o varias imágenes en el lienzo, una al lado de la otra
+  const insertItems = async (list) => {
+    m.style.display = 'none';
+    let failed = 0;
+    for (const [k, it] of list.entries()) {
+      const at = { x: point.x + k * 40, y: point.y + k * 40 };
+      try {
+        const blob = await libraryBlob(it);
+        if (!blob) throw new Error('sin imagen');
+        // De este espacio: se usa la misma imagen (sin copia). De otro espacio se trae una copia, porque
+        // sus archivos están en la carpeta de Drive de ese espacio.
+        if (!it.space && !isRemoteImage(it.ref)) await addBgImageShared(it.ref, blob, at);
+        else await addBgImageFromFile(new File([blob], 'imagen', { type: blob.type || 'image/png' }), null, null, { at, message: 'Imagen insertada desde la biblioteca' });
+      } catch (err) {
+        failed++;
+      }
+    }
+    if (list.length > 1) showToast(`${list.length - failed} imágenes insertadas desde la biblioteca`, 'success');
+    if (failed) showToast(`No se pudieron traer ${failed} imagen(es). Revisa tu conexión e inténtalo de nuevo.`, 'warning');
+  };
+  selbar.onclick = (e) => {
+    const b = e.target.closest('[data-sel]');
+    if (!b) return;
+    const act = b.dataset.sel;
+    if (act === 'start') { selectMode = true; markPicked(); }
+    else if (act === 'cancel') clearPicked();
+    else if (act === 'all') { visibleRefs().forEach(r => picked.add(r)); markPicked(); }
+    else if (act === 'insert') { const list = pickedItems(); clearPicked(); insertItems(list); }
+    else if (act === 'folder') { const r = b.getBoundingClientRect(); folderPicker(r.left, r.bottom + 4, pickedItems().filter(it => !it.space).map(it => it.ref)); }
+  };
+  // Recuadro de selección: con el mouse se arrastra desde un espacio libre de la cuadrícula; en el celular,
+  // con Seleccionar activo, desde cualquier lugar (la lista se desplaza sola cerca de los bordes)
+  grid.onpointerdown = (e) => {
+    if (e.button !== 0 || e.target.closest('input, [data-edit]')) return;
+    const onItem = e.target.closest('[data-i]');
+    if (e.pointerType === 'mouse' ? !!onItem : !(selectMode || picked.size)) return;
+    const sx = e.clientX, sy = e.clientY;
+    const startTop = grid.scrollTop;
+    const keep = (e.ctrlKey || e.metaKey || e.shiftKey || e.pointerType !== 'mouse') ? new Set(picked) : new Set();
+    let box = null;
+    const onMove = (ev) => {
+      if (!box) {
+        if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
+        box = document.createElement('div');
+        box.className = 'image-finder-marquee';
+        grid.appendChild(box);
+      }
+      const r = grid.getBoundingClientRect();
+      if (ev.clientY > r.bottom - 30) grid.scrollTop += 12;
+      else if (ev.clientY < r.top + 30) grid.scrollTop -= 12;
+      const x1 = Math.min(sx, ev.clientX) - r.left, x2 = Math.max(sx, ev.clientX) - r.left;
+      const ya = sy - r.top + startTop, yb = ev.clientY - r.top + grid.scrollTop;
+      const y1 = Math.min(ya, yb), y2 = Math.max(ya, yb);
+      Object.assign(box.style, { left: `${x1}px`, top: `${y1}px`, width: `${x2 - x1}px`, height: `${y2 - y1}px` });
+      picked.clear();
+      keep.forEach(ref => picked.add(ref));
+      grid.querySelectorAll('[data-i]').forEach(b => {
+        const br = b.getBoundingClientRect();
+        const bx1 = br.left - r.left, by1 = br.top - r.top + grid.scrollTop;
+        if (bx1 < x2 && bx1 + br.width > x1 && by1 < y2 && by1 + br.height > y1) picked.add(items[Number(b.dataset.i)].ref);
+      });
+      markPicked();
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      if (!box) return;
+      box.remove();
+      skipClick = true; // el clic que llega al soltar no inserta ni cambia la selección
+      setTimeout(() => { skipClick = false; }, 0);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  };
+  m.onkeydown = (e) => {
+    if (e.target.closest('input')) return;
+    if (e.key === 'Escape' && (picked.size || selectMode)) { e.preventDefault(); e.stopPropagation(); clearPicked(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); visibleRefs().forEach(r => picked.add(r)); markPicked(); }
+  };
   const paint = () => {
     const q = search.value.trim().toLowerCase();
     const list = items.filter(it => inFolder(it) && (!q || `${label(it)} ${it.spaceLabel} ${it.project.name} ${it.where}`.toLowerCase().includes(q)));
     grid.innerHTML = list.length ? list.map(it => `
-      <button type="button" class="image-finder-item" data-i="${items.indexOf(it)}"${it.space ? '' : ' draggable="true"'} title="Insertar «${escapeHtml(label(it))}» · ${escapeHtml(it.spaceLabel)} › ${escapeHtml(it.project.name)} · ${escapeHtml(it.where)}">
+      <button type="button" class="image-finder-item ${picked.has(it.ref) ? 'is-selected' : ''}" data-i="${items.indexOf(it)}"${it.space ? '' : ' draggable="true"'} title="Insertar «${escapeHtml(label(it))}» · ${escapeHtml(it.spaceLabel)} › ${escapeHtml(it.project.name)} · ${escapeHtml(it.where)}">
         <img alt="" loading="lazy" draggable="false">
+        <span class="image-finder-check" aria-hidden="true">✓</span>
         ${it.space ? '' : '<span class="image-finder-edit" role="button" data-edit title="Renombrar" aria-label="Renombrar">✏️</span>'}
         <span><b>${escapeHtml(label(it))}</b><small>${escapeHtml(it.project.name)} · ${escapeHtml(it.where)} · ${escapeHtml(it.spaceLabel)}</small></span>
       </button>`).join('')
       : `<p class="image-finder-empty">${!items.length ? 'Todavía no hay imágenes.' : current !== 'all' && !q ? 'Esta carpeta está vacía. Arrastra imágenes hasta ella o usa clic derecho › Mover a carpeta.' : 'Ninguna imagen coincide.'}</p>`;
     grid.querySelectorAll('[data-i]').forEach(b => libraryThumb(b.querySelector('img'), items[Number(b.dataset.i)]));
+    grid.classList.toggle('is-selecting', selectMode || picked.size > 0);
+    paintSelbar();
   };
   const saveFolders = () => { persist(); paintFolders(); paint(); };
   // Fila de carpetas: Todas · cada carpeta (⭐ la principal) · Sin carpeta · + Carpeta
@@ -8757,10 +8189,12 @@ function openImageLibrary(point = null) {
     if (!b) return;
     const it = items[Number(b.dataset.i)];
     if (it.space) { e.preventDefault(); return; }
-    dragged = { kind: 'img', it };
+    // Si se arrastra una de las seleccionadas, van todas las seleccionadas de este espacio
+    const refs = picked.has(it.ref) ? pickedItems().filter(x => !x.space).map(x => x.ref) : [it.ref];
+    dragged = { kind: 'img', it, refs };
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', label(it));
-    b.classList.add('is-drop-source');
+    e.dataTransfer.setData('text/plain', refs.length > 1 ? `${refs.length} imágenes` : label(it));
+    grid.querySelectorAll('[data-i]').forEach(x => { if (refs.includes(items[Number(x.dataset.i)].ref)) x.classList.add('is-drop-source'); });
   };
   foldersEl.ondragstart = (e) => {
     const chipEl = e.target.closest('[data-folder^="lfolder"]');
@@ -8790,6 +8224,12 @@ function openImageLibrary(point = null) {
     if (!dragged || !chipEl) return;
     e.preventDefault();
     const id = chipEl.dataset.folder;
+    if (dragged.kind === 'img' && dragged.refs.length > 1) {
+      const refs = dragged.refs;
+      endDrag();
+      moveRefsToFolder(refs, id === 'none' ? '' : id);
+      return;
+    }
     if (dragged.kind === 'img') {
       const target = id === 'none' ? '' : id;
       setImageFolder(dragged.it.ref, target);
@@ -8821,8 +8261,14 @@ function openImageLibrary(point = null) {
   grid.onclick = async (e) => {
     const b = e.target.closest('[data-i]');
     if (b && e.target.closest('[data-edit]')) { startRename(b, items[Number(b.dataset.i)]); return; }
-    if (!b || b.classList.contains('is-missing')) return;
+    if (!b || skipClick) return;
     const it = items[Number(b.dataset.i)];
+    // Selección: Ctrl+clic suma o quita, Mayús+clic elige un rango; mientras se está eligiendo, cada toque
+    // suma o quita
+    if (e.ctrlKey || e.metaKey) { togglePick(it.ref); return; }
+    if (e.shiftKey) { pickRange(it.ref); return; }
+    if (selectMode || picked.size) { togglePick(it.ref); return; }
+    if (b.classList.contains('is-missing')) return;
     b.classList.add('is-loading');
     try {
       const blob = await libraryBlob(it);
@@ -8874,9 +8320,21 @@ function openImageLibrary(point = null) {
     if (!b) return;
     e.preventDefault();
     const it = items[Number(b.dataset.i)];
+    // En el celular, mantener apretada una imagen empieza a elegir varias (las opciones van en la barra)
+    if (isTouch && !picked.size) { selectMode = true; togglePick(it.ref); return; }
+    const x = e.clientX, y = e.clientY;
+    // Sobre una de varias seleccionadas: las opciones son para todas
+    if (picked.has(it.ref) && picked.size > 1) {
+      const own = pickedItems().filter(p => !p.space).map(p => p.ref);
+      openLibraryMenu(x, y, [
+        { icon: '📁', label: `Mover ${own.length} a carpeta…`, disabled: !own.length, run: () => folderPicker(x, y, own) },
+        { icon: '➕', label: `Insertar ${picked.size} en el lienzo`, run: () => { const list = pickedItems(); clearPicked(); insertItems(list); } },
+        { icon: '✕', label: 'Quitar la selección', run: clearPicked }
+      ]);
+      return;
+    }
     // Las de otro espacio se nombran en los datos de ese espacio: se renombran abriéndolo
     const other = !!it.space;
-    const x = e.clientX, y = e.clientY;
     openLibraryMenu(x, y, [
       { icon: '✏️', label: 'Renombrar', disabled: other, title: other ? `Es de «${it.spaceLabel}»: ábrelo para renombrarla` : '', run: () => startRename(b, it) },
       { icon: '📁', label: 'Mover a carpeta…', disabled: other, title: other ? `Es de «${it.spaceLabel}»: ábrelo para ordenarla` : '', run: () => {
