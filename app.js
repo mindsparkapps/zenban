@@ -6478,6 +6478,7 @@ const SYNC_KEYS = {
   LAST: 'zenban_sync_last',
   DELETED: 'zenban_deleted_projects',
   SWITCH: 'zenban_space_switch',
+  DATA_SPACE: 'zenban_data_space', // espacio al que pertenecen los datos guardados en este navegador
   CLIENT_ID: 'zenban_google_client_id',
   STATE: 'zenban_oauth_state',
   TOKEN: 'zenban_sync_token' // sesión de Google vigente: al abrir la app se sincroniza sin volver a entrar
@@ -6855,6 +6856,14 @@ function markSpaceSwitch() {
   localStorage.setItem(SYNC_KEYS.SWITCH, '1');
 }
 
+// Los datos guardados en este navegador son de otro espacio: se usan los de Drive tal cual, sin combinar.
+// (Si no, un dispositivo que quedó con los proyectos personales en el compartido los vuelve a subir
+// en cada sincronización.) Las versiones anteriores no anotaban el espacio: en un compartido no se confía.
+function localDataOfOtherSpace() {
+  const owner = localStorage.getItem(SYNC_KEYS.DATA_SPACE);
+  return owner ? owner !== tabSpaceKey : inShared();
+}
+
 function setSpace(space) {
   tabSpaceKey = spaceKey(space);
   localStorage.setItem('zenban_space', JSON.stringify(space));
@@ -7143,7 +7152,7 @@ async function syncNow() {
     SYNC.fileId = file ? file.id : null;
     // Ni Drive ni este dispositivo cambiaron desde la última sincronización: no hay nada que descargar
     // ni comparar. (Descargar y comparar todo cada 45 s congelaba un momento los toques en el celular.)
-    if (file && SYNC.remoteVersion && String(file.version) === SYNC.remoteVersion && !isDirty() && SYNC.gen === gen && lastSyncedAt()) {
+    if (file && SYNC.remoteVersion && String(file.version) === SYNC.remoteVersion && !isDirty() && SYNC.gen === gen && lastSyncedAt() && !localDataOfOtherSpace()) {
       setSyncStatus('ok');
       return;
     }
@@ -7152,7 +7161,7 @@ async function syncNow() {
 
     let result = local;
     let mergeBase = null; // copia de la última sincronización (para saber qué nunca llegó a Drive)
-    const switching = localStorage.getItem(SYNC_KEYS.SWITCH) === '1';
+    const switching = localStorage.getItem(SYNC_KEYS.SWITCH) === '1' || localDataOfOtherSpace();
     if (switching && !(remote && Array.isArray(remote.projects) && remote.projects.length)) {
       // Se entró a un espacio vacío: empieza con un proyecto nuevo, sin copiar los del espacio anterior
       result = { projects: [blankProject()], tags: local.tags, deletedProjects: [] };
@@ -7220,6 +7229,7 @@ async function syncNow() {
     await SyncBase.set(dataPart(result));
     localStorage.setItem(SYNC_KEYS.LAST, String(Date.now()));
     localStorage.removeItem(SYNC_KEYS.SWITCH);
+    localStorage.setItem(SYNC_KEYS.DATA_SPACE, tabSpaceKey);
     if (SYNC.gen === gen || switching) setDirty(false);
 
     await syncImages();
@@ -7377,7 +7387,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '124';
+const APP_VERSION = '125';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
