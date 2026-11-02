@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=81">
+  <link rel="stylesheet" href="styles.css?v=82">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -177,6 +177,7 @@
             <span>Opacidad</span>
             <input type="range" id="ctxImgOpacity" min="10" max="100" step="5" value="100">
           </label>
+          <button type="button" class="ctx-btn " id="ctxImgCrop" title="Recortar la imagen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"></path><path d="M18 22V8a2 2 0 0 0-2-2H2"></path></svg><span>Recortar</span></button>
           <button type="button" class="ctx-btn " id="ctxImgView" title="Ver en grande"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg><span>Ver</span></button>
         </div>
 
@@ -1073,7 +1074,7 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="config.js?v=25"></script>
-  <script src="app.js?v=127"></script>
+  <script src="app.js?v=128"></script>
   <script src="share.js?v=10"></script>
   <script src="transfer.js?v=8"></script>
   <script src="spaces.js?v=9"></script>
@@ -1086,5 +1087,6 @@
   <script src="permissions.js?v=1"></script>
   <script src="webwin.js?v=4"></script>
   <script src="highlight.js?v=2"></script>
+  <script src="crop.js?v=1"></script>
 </body>
 </html>

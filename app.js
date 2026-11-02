@@ -7377,6 +7377,8 @@ function referencedImageIds(list = projects) {
     (p.texts || []).forEach(t => { if (t.web && t.web.image && !isRemoteImage(t.web.image)) ids.add(t.web.image); });
     // Imágenes renombradas de la Biblioteca (se conservan aunque ya no se usen en ningún lugar)
     (Array.isArray(p.imageNames) ? p.imageNames : []).forEach(e => { if (e && e.id && e.name && !isRemoteImage(e.id)) ids.add(e.id); });
+    // Imágenes guardadas en una carpeta de la Biblioteca
+    (Array.isArray(p.imageFolders) ? p.imageFolders : []).forEach(e => { if (e && e.id && !isRemoteImage(e.id)) ids.add(e.id); });
     // Imágenes de las pestañas de los tableros y de los links que se muestran como imagen
     (p.boards || []).forEach(b => { if (b.image && !isRemoteImage(b.image)) ids.add(b.image); });
     (p.frames || []).forEach(f => { if (f.image && !isRemoteImage(f.image)) ids.add(f.image); });
@@ -7508,7 +7510,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '127';
+const APP_VERSION = '128';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -8288,6 +8290,8 @@ function imagesOfProjects(list, spaceLabel, space) {
     (p.bgImages || []).forEach(i => add(bgImageRef(i), p, 'Lienzo', i.name || ''));
     // Imágenes renombradas: siguen en la Biblioteca con su nombre aunque ya no se usen en ningún lugar
     (Array.isArray(p.imageNames) ? p.imageNames : []).forEach(e => { if (e && e.id && e.name) add(e.id, p, 'Biblioteca', e.name, true); });
+    // Las guardadas en una carpeta siguen en la Biblioteca aunque ya no se usen en ningún lugar
+    (Array.isArray(p.imageFolders) ? p.imageFolders : []).forEach(e => { if (e && e.id) add(e.id, p, 'Biblioteca'); });
     (p.texts || []).forEach(t => { if (t.web && t.web.image) add(t.web.image, p, `Ventana: ${t.web.title || t.text || ''}`); });
     (p.tasks || []).forEach(t => (t.images || []).forEach(i => add(i.id, p, `Tarea: ${t.title}`)));
     (p.boards || []).forEach(b => { if (b.image) add(b.image, p, `Tablero: ${b.title}`); });
@@ -8336,6 +8340,76 @@ function setSavedImageName(ref, name) {
   const p = getActiveProject();
   if (!Array.isArray(p.imageNames)) p.imageNames = [];
   p.imageNames.push({ id: ref, name });
+}
+
+// ----- Carpetas de la Biblioteca -----
+// project.libraryFolders = [{ id, name, order, main }] y project.imageFolders = [{ id: archivo, folder }].
+// Son listas con ids: se combinan bien entre dispositivos y viajan a Drive con el resto de los datos del
+// espacio. Se leen juntando las de todos los proyectos; lo nuevo se guarda en el proyecto abierto.
+// La carpeta "principal" (main) es la que se muestra al abrir la Biblioteca.
+function libraryFolders(list = projects) {
+  const byId = new Map();
+  list.forEach(p => (Array.isArray(p.libraryFolders) ? p.libraryFolders : []).forEach(f => {
+    if (f && f.id && f.name && !byId.has(f.id)) byId.set(f.id, f);
+  }));
+  return [...byId.values()].sort((a, b) => ((a.order ?? 0) - (b.order ?? 0)) || a.name.localeCompare(b.name, 'es'));
+}
+
+function imageFolderOf(ref, list = projects) {
+  for (const p of list) {
+    const e = (Array.isArray(p.imageFolders) ? p.imageFolders : []).find(x => x && x.id === ref);
+    if (e) return e.folder;
+  }
+  return '';
+}
+
+function setImageFolder(ref, folderId) {
+  projects.forEach(p => { if (Array.isArray(p.imageFolders)) p.imageFolders = p.imageFolders.filter(x => x && x.id !== ref); });
+  if (!folderId) return;
+  const p = getActiveProject();
+  if (!Array.isArray(p.imageFolders)) p.imageFolders = [];
+  p.imageFolders.push({ id: ref, folder: folderId });
+}
+
+function addLibraryFolder(name) {
+  const order = libraryFolders().reduce((max, f) => Math.max(max, f.order ?? 0), -1) + 1;
+  const folder = { id: generateId('lfolder'), name, order };
+  const p = getActiveProject();
+  if (!Array.isArray(p.libraryFolders)) p.libraryFolders = [];
+  p.libraryFolders.push(folder);
+  return folder;
+}
+
+// Cambia una carpeta donde esté guardada (se reemplaza el objeto, así la combinación ve el cambio)
+function updateLibraryFolder(id, changes) {
+  projects.forEach(p => {
+    if (!Array.isArray(p.libraryFolders)) return;
+    p.libraryFolders = p.libraryFolders.map(f => f && f.id === id ? { ...f, ...changes } : f);
+  });
+}
+
+function deleteLibraryFolder(id) {
+  projects.forEach(p => {
+    if (Array.isArray(p.libraryFolders)) p.libraryFolders = p.libraryFolders.filter(f => f && f.id !== id);
+    if (Array.isArray(p.imageFolders)) p.imageFolders = p.imageFolders.filter(x => x && x.folder !== id);
+  });
+}
+
+// Una sola carpeta principal: marcar una desmarca las demás (y tocar la principal la desmarca)
+function setMainLibraryFolder(id) {
+  libraryFolders().forEach(f => {
+    const main = f.id === id;
+    if (!!f.main !== main) updateLibraryFolder(f.id, main ? { main: true } : { main: false });
+  });
+}
+
+function moveLibraryFolder(id, delta) {
+  const list = libraryFolders();
+  const i = list.findIndex(f => f.id === id);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  list.forEach((f, k) => { if ((f.order ?? 0) !== k) updateLibraryFolder(f.id, { order: k }); });
 }
 
 function imageNumberFrom(name) {
@@ -8555,6 +8629,7 @@ function openImageLibrary(point = null) {
         <div class="image-finder-body">
           <input type="search" class="image-finder-search" placeholder="Filtrar por nombre, espacio, proyecto, tablero o tarea…" autocomplete="off">
           <div class="image-finder-sources"></div>
+          <div class="image-folders" aria-label="Carpetas"></div>
           <p class="image-finder-note"></p>
           <div class="image-finder-grid"></div>
         </div>
@@ -8580,18 +8655,157 @@ function openImageLibrary(point = null) {
   // una): se comparan por contenido y se muestra una sola
   const dedupe = async () => {
     const unique = await dedupeLibraryByContent(items);
-    if (unique.length !== items.length) { items = unique; numberItems(); paint(); }
+    if (unique.length !== items.length) { items = unique; numberItems(); paintFolders(); paint(); }
+  };
+  // Carpeta que se muestra: al abrir, la principal (si hay); 'all' = todas, 'none' = sin carpeta
+  const foldersEl = m.querySelector('.image-folders');
+  let current = (libraryFolders().find(f => f.main) || {}).id || 'all';
+  if (current !== 'all' && !libraryFolders().some(f => f.id === current)) current = 'all';
+  const inFolder = (it) => {
+    if (current === 'all') return true;
+    if (it.space) return false; // las de otros espacios se ordenan en su propio espacio
+    const f = imageFolderOf(it.ref);
+    return current === 'none' ? !f : f === current;
   };
   const paint = () => {
     const q = search.value.trim().toLowerCase();
-    const list = items.filter(it => !q || `${label(it)} ${it.spaceLabel} ${it.project.name} ${it.where}`.toLowerCase().includes(q));
+    const list = items.filter(it => inFolder(it) && (!q || `${label(it)} ${it.spaceLabel} ${it.project.name} ${it.where}`.toLowerCase().includes(q)));
     grid.innerHTML = list.length ? list.map(it => `
-      <button type="button" class="image-finder-item" data-i="${items.indexOf(it)}" title="Insertar «${escapeHtml(label(it))}» · ${escapeHtml(it.spaceLabel)} › ${escapeHtml(it.project.name)} · ${escapeHtml(it.where)}">
-        <img alt="" loading="lazy">
+      <button type="button" class="image-finder-item" data-i="${items.indexOf(it)}"${it.space ? '' : ' draggable="true"'} title="Insertar «${escapeHtml(label(it))}» · ${escapeHtml(it.spaceLabel)} › ${escapeHtml(it.project.name)} · ${escapeHtml(it.where)}">
+        <img alt="" loading="lazy" draggable="false">
+        ${it.space ? '' : '<span class="image-finder-edit" role="button" data-edit title="Renombrar" aria-label="Renombrar">✏️</span>'}
         <span><b>${escapeHtml(label(it))}</b><small>${escapeHtml(it.project.name)} · ${escapeHtml(it.where)} · ${escapeHtml(it.spaceLabel)}</small></span>
       </button>`).join('')
-      : `<p class="image-finder-empty">${items.length ? 'Ninguna imagen coincide.' : 'Todavía no hay imágenes.'}</p>`;
+      : `<p class="image-finder-empty">${!items.length ? 'Todavía no hay imágenes.' : current !== 'all' && !q ? 'Esta carpeta está vacía. Arrastra imágenes hasta ella o usa clic derecho › Mover a carpeta.' : 'Ninguna imagen coincide.'}</p>`;
     grid.querySelectorAll('[data-i]').forEach(b => libraryThumb(b.querySelector('img'), items[Number(b.dataset.i)]));
+  };
+  const saveFolders = () => { persist(); paintFolders(); paint(); };
+  // Fila de carpetas: Todas · cada carpeta (⭐ la principal) · Sin carpeta · + Carpeta
+  const paintFolders = () => {
+    const folders = libraryFolders();
+    const own = items.filter(it => !it.space);
+    const count = (id) => own.filter(it => imageFolderOf(it.ref) === id).length;
+    const chip = (id, text, n, extra = '') => `<button type="button" class="image-folder-chip ${current === id ? 'is-active' : ''} ${extra}" data-folder="${id}"${id.startsWith('lfolder') ? ' draggable="true"' : ''}>${text}${n === null ? '' : ` <small>${n}</small>`}${current === id && id.startsWith('lfolder') ? '<span class="image-folder-more" data-more title="Opciones de la carpeta">⋯</span>' : ''}</button>`;
+    foldersEl.innerHTML = chip('all', '🖼 Todas', items.length) +
+      folders.map(f => chip(f.id, `${f.main ? '⭐' : '📁'} ${escapeHtml(f.name)}`, count(f.id))).join('') +
+      (folders.length ? chip('none', 'Sin carpeta', own.filter(it => !imageFolderOf(it.ref)).length) : '') +
+      `<button type="button" class="image-folder-chip is-add" data-add-folder title="Crear una carpeta">＋ Carpeta</button>`;
+  };
+  // Nombre de una carpeta (nueva o existente) escrito en la misma fila
+  const folderNameInput = (chipEl, initial, onDone) => {
+    chipEl.innerHTML = '<input type="text" maxlength="40" placeholder="Nombre de la carpeta">';
+    const input = chipEl.querySelector('input');
+    input.value = initial;
+    let done = false;
+    const finish = (save) => {
+      if (done) return;
+      done = true;
+      const name = input.value.trim();
+      if (save && name) onDone(name); else paintFolders();
+    };
+    ['click', 'pointerdown'].forEach(ev => input.addEventListener(ev, (e) => e.stopPropagation()));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+    input.focus();
+    input.select();
+  };
+  const folderMenu = (x, y, f) => {
+    const list = libraryFolders();
+    const i = list.findIndex(g => g.id === f.id);
+    openLibraryMenu(x, y, [
+      { icon: '✏️', label: 'Renombrar carpeta', run: () => folderNameInput(foldersEl.querySelector(`[data-folder="${f.id}"]`), f.name, (name) => { updateLibraryFolder(f.id, { name }); saveFolders(); }) },
+      { icon: '⭐', label: f.main ? 'Quitar como principal' : 'Principal (se abre con la Biblioteca)', run: () => { setMainLibraryFolder(f.main ? null : f.id); saveFolders(); showToast(f.main ? 'La Biblioteca se abrirá en Todas' : `La Biblioteca se abrirá en «${f.name}»`, 'success'); } },
+      { icon: '◀', label: 'Mover a la izquierda', disabled: i <= 0, run: () => { moveLibraryFolder(f.id, -1); saveFolders(); } },
+      { icon: '▶', label: 'Mover a la derecha', disabled: i >= list.length - 1, run: () => { moveLibraryFolder(f.id, 1); saveFolders(); } },
+      { icon: '🗑️', label: 'Eliminar carpeta (las imágenes quedan en Todas)', run: async () => {
+        if (!await askConfirm({ title: `¿Eliminar la carpeta «${f.name}»?`, message: 'Las imágenes no se borran: siguen en Todas.', confirmText: 'Eliminar', danger: true })) return;
+        deleteLibraryFolder(f.id);
+        if (current === f.id) current = 'all';
+        saveFolders();
+      } }
+    ]);
+  };
+  foldersEl.onclick = (e) => {
+    if (e.target.closest('input')) return;
+    const add = e.target.closest('[data-add-folder]');
+    if (add) {
+      folderNameInput(add, '', (name) => { const f = addLibraryFolder(name); current = f.id; saveFolders(); showToast(`Carpeta «${name}» creada. Arrastra imágenes hasta ella.`, 'success'); });
+      return;
+    }
+    const chipEl = e.target.closest('[data-folder]');
+    if (!chipEl) return;
+    const f = libraryFolders().find(g => g.id === chipEl.dataset.folder);
+    if (e.target.closest('[data-more]') && f) { const r = e.target.getBoundingClientRect(); folderMenu(r.left, r.bottom + 4, f); return; }
+    current = chipEl.dataset.folder;
+    paintFolders();
+    paint();
+  };
+  foldersEl.oncontextmenu = (e) => {
+    const chipEl = e.target.closest('[data-folder]');
+    const f = chipEl && libraryFolders().find(g => g.id === chipEl.dataset.folder);
+    if (!f) return;
+    e.preventDefault();
+    folderMenu(e.clientX, e.clientY, f);
+  };
+  // Arrastrar: una imagen hasta una carpeta (la guarda ahí) o una carpeta hasta otra (cambia el orden)
+  let dragged = null; // { kind: 'img', it } | { kind: 'folder', id }
+  grid.ondragstart = (e) => {
+    const b = e.target.closest('[data-i]');
+    if (!b) return;
+    const it = items[Number(b.dataset.i)];
+    if (it.space) { e.preventDefault(); return; }
+    dragged = { kind: 'img', it };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', label(it));
+    b.classList.add('is-drop-source');
+  };
+  foldersEl.ondragstart = (e) => {
+    const chipEl = e.target.closest('[data-folder^="lfolder"]');
+    if (!chipEl) return;
+    dragged = { kind: 'folder', id: chipEl.dataset.folder };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', chipEl.textContent);
+  };
+  const endDrag = () => {
+    dragged = null;
+    m.querySelectorAll('.is-drop, .is-drop-source').forEach(x => x.classList.remove('is-drop', 'is-drop-source'));
+  };
+  grid.ondragend = endDrag;
+  foldersEl.ondragend = endDrag;
+  foldersEl.ondragover = (e) => {
+    const chipEl = e.target.closest('[data-folder]');
+    foldersEl.querySelectorAll('.is-drop').forEach(x => { if (x !== chipEl) x.classList.remove('is-drop'); });
+    if (!dragged || !chipEl) return;
+    const id = chipEl.dataset.folder;
+    const ok = dragged.kind === 'img' ? (id !== 'all') : (id.startsWith('lfolder') && id !== dragged.id);
+    if (!ok) return;
+    e.preventDefault();
+    chipEl.classList.add('is-drop');
+  };
+  foldersEl.ondrop = (e) => {
+    const chipEl = e.target.closest('[data-folder]');
+    if (!dragged || !chipEl) return;
+    e.preventDefault();
+    const id = chipEl.dataset.folder;
+    if (dragged.kind === 'img') {
+      const target = id === 'none' ? '' : id;
+      setImageFolder(dragged.it.ref, target);
+      const f = libraryFolders().find(g => g.id === target);
+      showToast(f ? `«${label(dragged.it)}» ahora está en «${f.name}»` : `«${label(dragged.it)}» quedó sin carpeta`, 'success');
+    } else {
+      // La carpeta arrastrada queda en el lugar de la que recibe
+      const list = libraryFolders();
+      const from = list.findIndex(f => f.id === dragged.id);
+      const to = list.findIndex(f => f.id === id);
+      const [moved] = list.splice(from, 1);
+      list.splice(to, 0, moved);
+      list.forEach((f, k) => { if ((f.order ?? 0) !== k) updateLibraryFolder(f.id, { order: k }); });
+    }
+    endDrag();
+    saveFolders();
   };
   search.value = '';
   search.oninput = paint;
@@ -8606,6 +8820,7 @@ function openImageLibrary(point = null) {
   };
   grid.onclick = async (e) => {
     const b = e.target.closest('[data-i]');
+    if (b && e.target.closest('[data-edit]')) { startRename(b, items[Number(b.dataset.i)]); return; }
     if (!b || b.classList.contains('is-missing')) return;
     const it = items[Number(b.dataset.i)];
     b.classList.add('is-loading');
@@ -8661,8 +8876,18 @@ function openImageLibrary(point = null) {
     const it = items[Number(b.dataset.i)];
     // Las de otro espacio se nombran en los datos de ese espacio: se renombran abriéndolo
     const other = !!it.space;
-    openLibraryMenu(e.clientX, e.clientY, [
+    const x = e.clientX, y = e.clientY;
+    openLibraryMenu(x, y, [
       { icon: '✏️', label: 'Renombrar', disabled: other, title: other ? `Es de «${it.spaceLabel}»: ábrelo para renombrarla` : '', run: () => startRename(b, it) },
+      { icon: '📁', label: 'Mover a carpeta…', disabled: other, title: other ? `Es de «${it.spaceLabel}»: ábrelo para ordenarla` : '', run: () => {
+        const now = imageFolderOf(it.ref);
+        const move = (id) => { setImageFolder(it.ref, id); saveFolders(); };
+        openLibraryMenu(x, y, [
+          ...libraryFolders().map(f => ({ icon: f.main ? '⭐' : '📁', label: f.name, disabled: f.id === now, run: () => move(f.id) })),
+          { icon: '🖼', label: 'Sin carpeta', disabled: !now, run: () => move('') },
+          { icon: '＋', label: 'Nueva carpeta…', run: () => folderNameInput(foldersEl.querySelector('[data-add-folder]'), '', (name) => { const f = addLibraryFolder(name); setImageFolder(it.ref, f.id); current = f.id; saveFolders(); }) }
+        ]);
+      } },
       { icon: '➕', label: 'Insertar en el lienzo', disabled: b.classList.contains('is-missing'), run: () => b.click() }
     ]);
   };
@@ -8670,8 +8895,9 @@ function openImageLibrary(point = null) {
   const signed = syncEnabled() && SYNC.token && Date.now() < SYNC.tokenExp;
   note.textContent = signed ? 'Buscando también en tus otros espacios…' : 'Inicia sesión con Google para ver también las imágenes de tus otros espacios.';
   if (signed && typeof loadOtherSpaces === 'function') {
-    loadOtherSpaces().then(() => { items = libraryItems(); numberItems(); note.textContent = ''; paint(); dedupe(); }).catch(() => { note.textContent = 'No se pudieron leer tus otros espacios.'; });
+    loadOtherSpaces().then(() => { items = libraryItems(); numberItems(); note.textContent = ''; paintFolders(); paint(); dedupe(); }).catch(() => { note.textContent = 'No se pudieron leer tus otros espacios.'; });
   }
+  paintFolders();
   paint();
   dedupe();
   m.style.display = 'flex';
