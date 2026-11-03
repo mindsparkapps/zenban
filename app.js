@@ -530,38 +530,28 @@ function scheduleInvZoom() {
   if (invZoomApplied === null) applyInvZoom();
 }
 
-// Alejamiento adicional (0 a 90 %) bajo el mínimo que da "Ajustar tablero a pantalla"
+// Alejamiento adicional (en %) bajo el mínimo que da "Ajustar tablero a pantalla"
+const ZOOM_EXTRA_OUT_PERCENT = 50;
 function zoomExtraPercent() {
-  const v = Number(appSettings.zoomExtra);
-  return Number.isFinite(v) ? Math.min(90, Math.max(0, v)) : 0;
-}
-
-const zoomExtraInput = document.getElementById('zoomExtraInput');
-if (zoomExtraInput) {
-  zoomExtraInput.value = zoomExtraPercent();
-  zoomExtraInput.addEventListener('change', () => {
-    appSettings.zoomExtra = Math.min(90, Math.max(0, Math.round(Number(zoomExtraInput.value) || 0)));
-    zoomExtraInput.value = appSettings.zoomExtra;
-    saveData(SETTINGS_KEY, appSettings);
-    showToast(`Zoom mínimo: ajustar a pantalla + ${appSettings.zoomExtra}% más lejos`, 'info');
-  });
+  return ZOOM_EXTRA_OUT_PERCENT;
 }
 
 // Señal al llegar al zoom mínimo o máximo: el porcentaje late y dice "Mínimo"/"Máximo" un instante
 let zoomHintTimer = null;
 let zoomRingAt = 0;
 function zoomLimitHint(text, x, y) {
-  // Un aro que se expande en el puntero (con el mouse y con el dedo), sin repetirse más de ~3 veces por segundo
+  // Un pequeño popup "Mínimo"/"Máximo" junto al puntero (con el mouse y con el dedo), que late como el porcentaje
+  // de zoom; no se repite más de ~3 veces por segundo
   if (typeof x === 'number' && Date.now() - zoomRingAt > 300) {
     zoomRingAt = Date.now();
-    const ring = document.createElement('div');
-    ring.className = 'zoom-limit-ring';
-    ring.dataset.kind = text === 'Mínimo' ? 'min' : 'max';
-    ring.style.left = `${x}px`;
-    ring.style.top = `${y}px`;
-    document.body.appendChild(ring);
-    ring.addEventListener('animationend', () => ring.remove());
-    setTimeout(() => ring.remove(), 900);
+    const pop = document.createElement('div');
+    pop.className = 'zoom-limit-popup';
+    pop.textContent = text;
+    pop.style.left = `${x}px`;
+    pop.style.top = `${y}px`;
+    document.body.appendChild(pop);
+    pop.addEventListener('animationend', () => pop.remove());
+    setTimeout(() => pop.remove(), 1200);
   }
   zoomPercentLabel.textContent = text;
   zoomPercentLabel.classList.remove('zoom-limit-hit');
@@ -6866,7 +6856,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '142';
+const APP_VERSION = '143';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

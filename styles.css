@@ -4274,28 +4274,6 @@ select option:checked {
   font-weight: 600;
 }
 .frame-canvas-bar[hidden] { display: none; }
-/* Porcentaje adicional de alejamiento del zoom mínimo (barra superior) */
-.zoom-extra-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  font-size: 12px;
-  color: var(--text-muted);
-  border: 1px solid var(--border-medium);
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-}
-.zoom-extra-field input {
-  width: 46px;
-  padding: 2px 4px;
-  font-size: 12px;
-  text-align: right;
-  color: var(--text-main, inherit);
-  background: transparent;
-  border: none;
-  outline: none;
-}
 /* El frame abierto como lienzo no se ve ni toma clics: solo su contenido */
 .canvas-frame.is-opened {
   background: transparent !important;
@@ -4310,27 +4288,28 @@ select option:checked {
   font-weight: 700;
   animation: zoomLimitPulse 0.45s ease-out;
 }
-.zoom-limit-ring {
+.zoom-limit-popup {
   position: fixed;
   z-index: 5000;
-  width: 56px;
-  height: 56px;
-  margin: -28px 0 0 -28px;
-  border-radius: 50%;
-  border: 3px solid var(--accent-primary);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
   pointer-events: none;
-  animation: zoomLimitRing 0.55s ease-out forwards;
+  box-shadow: var(--shadow-md);
+  transform: translate(-50%, -190%);
+  animation: zoomLimitPopup 1s ease-out forwards;
 }
-.zoom-limit-ring[data-kind="min"] { animation-name: zoomLimitRingIn; }
-@keyframes zoomLimitRing {
-  0% { transform: scale(0.5); opacity: 0.85; }
-  100% { transform: scale(1.5); opacity: 0; }
-}
-/* En el mínimo el aro se cierra hacia el puntero (el lienzo no puede alejarse más) */
-@keyframes zoomLimitRingIn {
-  0% { transform: scale(1.5); opacity: 0; }
-  30% { opacity: 0.85; }
-  100% { transform: scale(0.5); opacity: 0; }
+/* Late como el porcentaje del zoom (crece y vuelve) y se desvanece */
+@keyframes zoomLimitPopup {
+  0% { transform: translate(-50%, -150%) scale(0.8); opacity: 0; }
+  15% { transform: translate(-50%, -190%) scale(1.25); opacity: 1; }
+  30% { transform: translate(-50%, -190%) scale(1); opacity: 1; }
+  75% { transform: translate(-50%, -190%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -220%) scale(1); opacity: 0; }
 }
 @keyframes zoomLimitPulse {
   0% { transform: scale(1); }
