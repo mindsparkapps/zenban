@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=91">
+  <link rel="stylesheet" href="styles.css?v=92">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -312,6 +312,12 @@
             <button type="button" id="signOutBtn" class="account-menu-btn is-danger">Cerrar sesión</button>
           </div>
         </div>
+
+        <label class="zoom-extra-field" title="Zoom mínimo = Ajustar tablero a pantalla + este porcentaje más lejos (0 a 90)">
+          <span>Alejar +</span>
+          <input type="number" id="zoomExtraInput" min="0" max="90" step="5" value="0" inputmode="numeric" aria-label="Porcentaje adicional de alejamiento del zoom mínimo">
+          <span>%</span>
+        </label>
 
         <button id="installAppBtn" class="btn btn-install" title="Instalar ZenBan como App en celular o PC">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
@@ -1080,7 +1086,7 @@
   <script src="sync-drive.js?v=1"></script>
   <script src="sync.js?v=3"></script>
   <script src="appupdate.js?v=1"></script>
-  <script src="app.js?v=141"></script>
+  <script src="app.js?v=142"></script>
   <script src="share.js?v=10"></script>
   <script src="transfer.js?v=8"></script>
   <script src="spaces.js?v=9"></script>

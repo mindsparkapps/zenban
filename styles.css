@@ -4274,6 +4274,28 @@ select option:checked {
   font-weight: 600;
 }
 .frame-canvas-bar[hidden] { display: none; }
+/* Porcentaje adicional de alejamiento del zoom mínimo (barra superior) */
+.zoom-extra-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.zoom-extra-field input {
+  width: 46px;
+  padding: 2px 4px;
+  font-size: 12px;
+  text-align: right;
+  color: var(--text-main, inherit);
+  background: transparent;
+  border: none;
+  outline: none;
+}
 /* El frame abierto como lienzo no se ve ni toma clics: solo su contenido */
 .canvas-frame.is-opened {
   background: transparent !important;
