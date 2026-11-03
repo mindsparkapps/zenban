@@ -4640,7 +4640,8 @@ function getContentBounds() {
     const el = getTextEl(t.id);
     extend(t.x, t.y, el ? el.offsetWidth : t.w, el ? el.offsetHeight : t.size * 1.3);
   });
-  if (typeof getFrames === 'function') getFrames().forEach(f => extend(f.x, f.y, f.w, f.h));
+  // En el lienzo de un frame abierto, el frame mismo no se ve: se ajusta a sus objetos
+  if (typeof getFrames === 'function') getFrames().forEach(f => { if (typeof openedFrameId === 'undefined' || openedFrameId !== f.id) extend(f.x, f.y, f.w, f.h); });
   getDrawings().forEach(s => s.points.forEach(([x, y]) => extend(x, y, 0, 0)));
   if (minX === Infinity) return { minX: 0, minY: 0, maxX: 500, maxY: 300 };
   return { minX, minY, maxX, maxY };
@@ -6814,7 +6815,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '136';
+const APP_VERSION = '137';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
