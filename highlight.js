@@ -106,6 +106,7 @@ function startMarkDrag(e, img, m, mk, mode) {
   const sx = e.clientX, sy = e.clientY;
   const o = { x: m.x, y: m.y, w: m.w, h: m.h };
   mk.setPointerCapture(e.pointerId);
+  if (mode === 'move') mk.classList.add('is-dragging');
   const onMove = (ev) => {
     const dx = (ev.clientX - sx) / zoom / img.w;
     const dy = (ev.clientY - sy) / zoom / img.h;
@@ -122,6 +123,7 @@ function startMarkDrag(e, img, m, mk, mode) {
     styleMarkEl(mk, m);
   };
   const onUp = () => {
+    mk.classList.remove('is-dragging');
     mk.removeEventListener('pointermove', onMove);
     mk.removeEventListener('pointerup', onUp);
     mk.removeEventListener('pointercancel', onUp);

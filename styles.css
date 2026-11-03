@@ -4274,6 +4274,21 @@ select option:checked {
   font-weight: 600;
 }
 .frame-canvas-bar[hidden] { display: none; }
+/* El frame abierto como lienzo no se ve ni toma clics: solo su contenido */
+.canvas-frame.is-opened {
+  background: transparent !important;
+  border-color: transparent !important;
+  pointer-events: none !important;
+}
+.canvas-frame.is-opened > * { display: none !important; }
+/* Destacador: cruz para dibujar y ajustar en las esquinas, mano sobre el rectángulo para moverlo */
+.viewport-area.tool-highlight .img-mark,
+.img-mark.is-selected { cursor: grab !important; }
+.viewport-area.tool-highlight .img-mark .img-mark-handle,
+.img-mark.is-selected .img-mark-handle { cursor: crosshair !important; }
+.viewport-area.tool-highlight .img-mark-toolbar,
+.viewport-area.tool-highlight .img-mark-toolbar * { cursor: default !important; }
+.img-mark.is-dragging, .viewport-area.tool-highlight .img-mark.is-dragging { cursor: grabbing !important; }
 .img-mark.is-selected .img-mark-handle {
   display: block;
   position: absolute;

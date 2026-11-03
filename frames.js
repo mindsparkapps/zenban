@@ -910,17 +910,55 @@ frameCanvasBar.innerHTML = '<span class="frame-canvas-name"></span><button type=
 viewportArea.appendChild(frameCanvasBar);
 frameCanvasBar.querySelector('button').addEventListener('click', () => closeFrameCanvas());
 
+// Objetos que ya estaban dentro del frame al abrirlo; con los que se agregan después forman el contenido
+let openedFrameKeys = new Set();
+let openedFrameAll = new Set();
+
+function openedContentRect(key) {
+  if (key.startsWith('stroke:')) {
+    const s = getDrawings().find(o => o.id === key.slice(7));
+    if (!s || !s.points.length) return null;
+    const xs = s.points.map(p => p[0]), ys = s.points.map(p => p[1]);
+    const pad = (s.size || 4) / 2;
+    return { x: Math.min(...xs) - pad, y: Math.min(...ys) - pad, w: Math.max(...xs) - Math.min(...xs) + pad * 2, h: Math.max(...ys) - Math.min(...ys) + pad * 2 };
+  }
+  return key.startsWith('conn:') ? null : objectRectByKey(key);
+}
+
+// Rectángulo del frame ampliado para que quepa todo lo que se agregó o movió fuera de él
+function openedUnionRect(f, pad = 0) {
+  let x1 = f.x, y1 = f.y, x2 = f.x + f.w, y2 = f.y + f.h;
+  [...canvasObjectsByKey().keys()].forEach(k => {
+    if (k === `frame:${f.id}` || !openedFrameKeys.has(k)) return;
+    const r = openedContentRect(k);
+    if (!r) return;
+    x1 = Math.min(x1, r.x - pad); y1 = Math.min(y1, r.y - pad);
+    x2 = Math.max(x2, r.x + r.w + pad); y2 = Math.max(y2, r.y + r.h + pad);
+  });
+  return { x: Math.round(x1), y: Math.round(y1), w: Math.round(x2 - x1), h: Math.round(y2 - y1) };
+}
+
+// Se ve lo de adentro (y lo nuevo que se agregue), no el frame ni lo de afuera
 function clipToOpenedFrame() {
   const f = openedFrameId && frameRect(openedFrameId);
   if (!f) { zoomCanvas.style.clipPath = ''; return; }
-  const x1 = f.x, y1 = f.y, x2 = f.x + f.w, y2 = f.y + f.h;
+  const known = new Set(openedFrameKeys);
+  // Todo lo que aparece después de abrir pertenece a este lienzo
+  canvasObjectsByKey().forEach((o, k) => { if (!openedFrameAll.has(k)) known.add(k); });
+  openedFrameKeys = known;
+  const r = openedUnionRect(f);
+  const x1 = r.x, y1 = r.y, x2 = r.x + r.w, y2 = r.y + r.h;
   zoomCanvas.style.clipPath = `polygon(${x1}px ${y1}px, ${x2}px ${y1}px, ${x2}px ${y2}px, ${x1}px ${y2}px)`;
+  const el = getFrameEl(f.id);
+  if (el) el.classList.add('is-opened');
 }
 
 function openFrameCanvas(f) {
   if (!f) return;
   if (!openedFrameId) openedFrameView = { zoom, panX, panY };
   openedFrameId = f.id;
+  openedFrameAll = new Set(canvasObjectsByKey().keys());
+  openedFrameKeys = new Set(objectsInsideFrame(f));
   frameCanvasBar.hidden = false;
   frameCanvasBar.querySelector('.frame-canvas-name').textContent = f.title || 'Frame';
   setSelection([]);
@@ -932,11 +970,27 @@ function openFrameCanvas(f) {
 
 function closeFrameCanvas() {
   if (!openedFrameId) return;
+  const f = frameRect(openedFrameId);
   openedFrameId = null;
   frameCanvasBar.hidden = true;
   zoomCanvas.style.clipPath = '';
-  if (openedFrameView) animateViewTo(openedFrameView.zoom, openedFrameView.panX, openedFrameView.panY);
   openedFrameView = null;
+  if (!f) return;
+  // El frame se ajusta para abarcar lo que se agregó dentro, y la vista se centra en él
+  const r = openedUnionRect(f, 16);
+  const grew = r.x < f.x || r.y < f.y || r.x + r.w > f.x + f.w || r.y + r.h > f.y + f.h;
+  if (grew) {
+    const u = openedUnionRect(f, 16);
+    f.x = Math.min(f.x, u.x); f.y = Math.min(f.y, u.y);
+    f.w = Math.max(f.x + f.w, u.x + u.w) - f.x; f.h = Math.max(f.y + f.h, u.y + u.h) - f.y;
+    persist();
+  }
+  openedFrameKeys = new Set();
+  renderFrames();
+  setSelection([`frame:${f.id}`]);
+  const vr = viewportArea.getBoundingClientRect();
+  const z = Math.min(ZOOM_CONFIG.MAX, Math.max(ZOOM_CONFIG.MIN, Math.min((vr.width - 80) / f.w, (vr.height - 140) / f.h)));
+  animateViewTo(z, vr.width / 2 - (f.x + f.w / 2) * z, vr.height / 2 - (f.y + f.h / 2) * z);
 }
 
 document.getElementById('ctxFrameOpen').addEventListener('click', () => openFrameCanvas(selectedFrames()[0]));
@@ -946,6 +1000,10 @@ renderFrames = function () {
   baseRenderFramesForOpen.apply(this, arguments);
   if (openedFrameId && !frameRect(openedFrameId)) closeFrameCanvas(); else clipToOpenedFrame();
 };
+// Lo que se dibuja, escribe o mueve en este lienzo amplía lo que se ve
+['pointerup', 'keyup'].forEach(ev => window.addEventListener(ev, () => {
+  if (openedFrameId) setTimeout(clipToOpenedFrame, 80);
+}));
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && openedFrameId && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && !selection.size) closeFrameCanvas();
 });
