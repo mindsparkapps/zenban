@@ -666,19 +666,20 @@ function goToNextObject(step = 1) {
   const from = current >= 0 ? current : objectTourIndex;
   objectTourIndex = ((from + step) % list.length + list.length) % list.length;
   const o = list[objectTourIndex];
-  fitRectToScreen(o.x, o.y, o.w, o.h);
+  fitRectToScreen(o.x, o.y, o.w, o.h, o.key.startsWith('frame:'));
   setSelection([o.key]);
   showToast(`${objectTourIndex + 1} de ${list.length} · ${o.name}`, 'info');
 }
 
 // Acerca la vista hasta que un objeto (imagen, texto o tablero) llene la pantalla, centrado
-function fitRectToScreen(x, y, w, h) {
+function fitRectToScreen(x, y, w, h, whole = false) {
   // Solo la parte del lienzo que se ve (sin barras ni lo que tapa el navegador en el celular)
   const vis = visibleCanvasRect();
   const padding = vis.width < 600 ? 12 : 24;
   const scaleX = (vis.width - padding * 2) / Math.max(1, w);
   const scaleY = (vis.height - padding * 2) / Math.max(1, h);
-  const z = Math.min(Math.max(Math.min(scaleX, scaleY), ZOOM_CONFIG.MIN), ZOOM_CONFIG.MAX);
+  // Un frame se muestra completo aunque haga falta alejarse más que el zoom mínimo (como "Ajustar vista")
+  const z = Math.min(Math.max(Math.min(scaleX, scaleY), whole ? 0.001 : ZOOM_CONFIG.MIN), ZOOM_CONFIG.MAX);
   // Si ni con el zoom mínimo cabe (p. ej. un tablero ancho en el celular), se muestra desde su esquina
   animateViewTo(z,
     vis.offX + (w * z > vis.width - padding * 2 ? padding - x * z : (vis.width - w * z) / 2 - x * z),
@@ -705,7 +706,7 @@ function objectRectAt(target) {
   const frameEl = target.closest('.canvas-frame');
   if (frameEl && typeof getFrames === 'function') {
     const f = getFrames().find(x => x.id === frameEl.dataset.frameId);
-    if (f) return { x: f.x, y: f.y, w: f.w, h: f.h };
+    if (f) return { x: f.x, y: f.y, w: f.w, h: f.h, whole: true };
   }
   return null;
 }
@@ -5462,7 +5463,7 @@ viewportArea.addEventListener('dblclick', (e) => {
   const rect = objectRectAt(top);
   if (rect) {
     e.preventDefault();
-    fitRectToScreen(rect.x, rect.y, rect.w, rect.h);
+    fitRectToScreen(rect.x, rect.y, rect.w, rect.h, rect.whole);
     return;
   }
   if (hitStroke(e.clientX, e.clientY)) return;
@@ -6371,7 +6372,7 @@ viewportArea.addEventListener('pointerup', (e) => {
   if (lastTap && now - lastTap.time < 400 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
     lastTap = null;
     const rect = objectRectAt(start.target);
-    if (rect) fitRectToScreen(rect.x, rect.y, rect.w, rect.h);
+    if (rect) fitRectToScreen(rect.x, rect.y, rect.w, rect.h, rect.whole);
     else openCanvasMenu(e.clientX, e.clientY, start.target);
     return;
   }
@@ -6813,7 +6814,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '133';
+const APP_VERSION = '134';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

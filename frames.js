@@ -930,9 +930,58 @@ function openedContentKeys(f) {
   const keys = [];
   canvasObjectsByKey().forEach((o, k) => {
     if (k === `frame:${f.id}` || k.startsWith('conn:')) return;
-    if (openedFrameKeys.has(k) || !openedFrameAll.has(k)) keys.push(k);
+    keys.push(k);
   });
   return keys;
+}
+
+// ----- Aislar el lienzo hijo -----
+// Al abrir un frame, todo lo del lienzo padre (objetos, tableros con sus columnas y tareas, flechas) se saca
+// del proyecto y se guarda aparte en project.frameCanvasStash; al salir se devuelve. Así nada del padre
+// puede verse, tocarse ni borrarse desde el hijo. Si la app se cierra con un frame abierto, el contenido
+// guardado vuelve solo al abrirla (ver restoreAllFrameStashes).
+function rebindProjectArrays(p) {
+  if (p !== getActiveProject()) return;
+  columns = p.columns;
+  tasks = p.tasks;
+  boards = p.boards || [];
+}
+
+function stashOutsideFrame(p, f, insideKeys) {
+  const inside = new Set(insideKeys);
+  const stash = { frameId: f.id };
+  const split = (list, keyOf) => {
+    const keep = [], out = [];
+    (list || []).forEach(o => (keyOf(o) ? keep : out).push(o));
+    return [keep, out];
+  };
+  [p.texts, stash.texts] = split(p.texts, o => inside.has(`text:${o.id}`));
+  [p.bgImages, stash.bgImages] = split(p.bgImages, o => inside.has(`img:${o.id}`));
+  [p.drawings, stash.drawings] = split(p.drawings, o => inside.has(`stroke:${o.id}`));
+  [p.frames, stash.frames] = split(p.frames, o => o.id === f.id || inside.has(`frame:${o.id}`));
+  [p.boards, stash.boards] = split(p.boards, o => inside.has(`board:${o.id}`));
+  const gone = new Set(stash.boards.map(b => b.id));
+  [p.columns, stash.columns] = split(p.columns, o => !gone.has(o.boardId));
+  const goneCols = new Set(stash.columns.map(c => c.id));
+  [p.tasks, stash.tasks] = split(p.tasks, o => !goneCols.has(o.columnId));
+  const keptKeys = new Set([...inside, `frame:${f.id}`]);
+  [p.connectors, stash.connectors] = split(p.connectors, c => keptKeys.has(endpointKey(c.from)) && keptKeys.has(endpointKey(c.to)));
+  p.frameCanvasStash = stash;
+  rebindProjectArrays(p);
+}
+
+function restoreFrameStash(p) {
+  const st = p.frameCanvasStash;
+  if (!st) return;
+  ['texts', 'bgImages', 'drawings', 'frames', 'boards', 'columns', 'tasks', 'connectors'].forEach(k => {
+    p[k] = (p[k] || []).concat(st[k] || []);
+  });
+  delete p.frameCanvasStash;
+  rebindProjectArrays(p);
+}
+
+function restoreAllFrameStashes() {
+  projects.forEach(p => { if (p.frameCanvasStash) restoreFrameStash(p); });
 }
 
 // Caja que abarca todo el contenido (null si no hay nada)
@@ -953,19 +1002,6 @@ document.head.appendChild(openedFrameStyle);
 function hideOutsideOpenedFrame() {
   const f = openedFrameId && frameRect(openedFrameId);
   if (!f) { openedFrameStyle.textContent = ''; return; }
-  const keep = new Set(openedContentKeys(f));
-  const sel = { board: '.board-frame[data-board-id', text: '.canvas-text[data-text-id', img: '.bg-image[data-image-id', stroke: '[data-stroke-id', frame: '.canvas-frame[data-frame-id', conn: '.connector[data-conn-id' };
-  const rules = [];
-  openedFrameAll.forEach(k => {
-    if (keep.has(k) || k === `frame:${f.id}` || !frameRect(f.id)) return;
-    if (k.startsWith('conn:')) {
-      const c = getConnectors().find(o => o.id === k.slice(5));
-      if (c && keep.has(endpointKey(c.from)) && keep.has(endpointKey(c.to))) return;
-    }
-    const [type, id] = k.split(':');
-    if (sel[type]) rules.push(`${sel[type]}="${id}"]`);
-  });
-  openedFrameStyle.textContent = rules.length ? `${rules.join(',')}{display:none !important}` : '';
   const el = getFrameEl(f.id);
   if (el) el.classList.add('is-opened');
 }
@@ -975,11 +1011,13 @@ function openFrameCanvas(f) {
   if (!f) return;
   if (!openedFrameId) openedFrameView = { zoom, panX, panY };
   openedFrameId = f.id;
-  openedFrameAll = new Set(canvasObjectsByKey().keys());
-  openedFrameKeys = new Set(objectsInsideFrame(f));
+  if (!getActiveProject().frameCanvasStash) stashOutsideFrame(getActiveProject(), f, objectsInsideFrame(f));
+  resetHistory();
   frameCanvasBar.hidden = false;
   frameCanvasBar.querySelector('.frame-canvas-name').textContent = f.title || 'Frame';
   setSelection([]);
+  persist();
+  renderBoard(); renderBgImages(); renderTexts(); renderDrawings(); renderFrames();
   clipToOpenedFrame();
   const r = viewportArea.getBoundingClientRect();
   const z = Math.min(ZOOM_CONFIG.MAX, Math.max(ZOOM_CONFIG.MIN, Math.min((r.width - 80) / f.w, (r.height - 140) / f.h)));
@@ -992,7 +1030,13 @@ function closeFrameCanvas() {
   openedFrameId = null;
   frameCanvasBar.hidden = true;
   openedFrameView = null;
-  if (!f) { openedFrameStyle.textContent = ''; return; }
+  const giveBack = () => {
+    restoreFrameStash(getActiveProject());
+    resetHistory();
+    persist();
+    renderBoard(); renderBgImages(); renderTexts(); renderDrawings(); renderFrames();
+  };
+  if (!f) { giveBack(); return; }
   // El frame no cambia: si el contenido se sale de él, se achica y se acomoda para que quepa adentro
   const keys = openedContentKeys(f);
   const box = openedContentBox(f);
@@ -1008,15 +1052,8 @@ function closeFrameCanvas() {
     getDrawings().filter(o => has(`stroke:${o.id}`)).forEach(o => { o.points = o.points.map(([x, y]) => [x + dx, y + dy]); });
     const k = Math.min(1, (f.w - m * 2) / box.w, (f.h - m * 2) / box.h);
     if (k < 1) createScaler(keys, f.x + f.w / 2, f.y + f.h / 2).commit(k);
-    persist();
-    renderTexts();
-    renderBgImages();
-    renderDrawings();
-    renderBoard();
   }
-  openedFrameStyle.textContent = '';
-  openedFrameKeys = new Set();
-  renderFrames();
+  giveBack();
   setSelection([`frame:${f.id}`]);
   const vr = viewportArea.getBoundingClientRect();
   const z = Math.min(ZOOM_CONFIG.MAX, Math.max(ZOOM_CONFIG.MIN, Math.min((vr.width - 80) / f.w, (vr.height - 140) / f.h)));
@@ -1047,5 +1084,18 @@ setSelection = function (keys) {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && openedFrameId && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && !selection.size) closeFrameCanvas();
 });
+
+// Cambiar de proyecto cierra el lienzo del frame abierto (devuelve lo guardado aparte)
+const baseSwitchProjectForOpen = switchProject;
+switchProject = function () {
+  closeFrameCanvas();
+  return baseSwitchProjectForOpen.apply(this, arguments);
+};
+// Si la app se cerró con un frame abierto, lo del lienzo padre vuelve solo
+if (projects.some(p => p.frameCanvasStash)) {
+  restoreAllFrameStashes();
+  persist();
+  renderBoard(); renderBgImages(); renderTexts(); renderDrawings();
+}
 
 renderFrames();

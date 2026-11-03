@@ -4281,6 +4281,18 @@ select option:checked {
   pointer-events: none !important;
 }
 .canvas-frame.is-opened > * { display: none !important; }
+/* Capa de destacados de textos, tableros y frames (highlight.js): no toma toques salvo con el Destacador o si el destacado está elegido */
+.mark-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.mark-layer .img-mark { pointer-events: none; }
+.viewport-area.tool-highlight .mark-layer .img-mark,
+.mark-layer .img-mark.is-selected { pointer-events: auto; }
 /* Destacador: cruz para dibujar y ajustar en las esquinas, mano sobre el rectángulo para moverlo */
 .viewport-area.tool-highlight .img-mark,
 .img-mark.is-selected { cursor: grab !important; }

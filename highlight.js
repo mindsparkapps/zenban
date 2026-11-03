@@ -1,20 +1,27 @@
-// ===== ZenBan - Destacador de imágenes =====
-// Un destacado es un rectángulo de color que se dibuja sobre una imagen del lienzo (herramienta Destacador,
-// atajo M). Vive dentro de la imagen: se mueve y se agranda con ella. Al tocarlo se puede mover, cambiar su
-// tamaño con la manija de la esquina, cambiar su color y su transparencia, o eliminarlo.
-// Datos: imagen.marks = [{ id, x, y, w, h, color, opacity }]  (x, y, w, h: fracciones de 0 a 1 de la imagen)
+// ===== ZenBan - Destacador =====
+// Un destacado es un rectángulo de color que se dibuja sobre un objeto del lienzo (herramienta Destacador,
+// atajo M): imágenes, textos y notas (con sus links), tableros y frames. Vive dentro del objeto: se mueve y se
+// agranda con él. Al tocarlo se puede mover (mano), cambiar su tamaño desde las esquinas (cruz), cambiar su
+// color y su transparencia, o eliminarlo.
+// Datos: objeto.marks = [{ id, x, y, w, h, color, opacity }]  (x, y, w, h: fracciones de 0 a 1 del objeto)
+// Las imágenes dibujan sus destacados dentro de su propio elemento; los demás objetos los dibujan en una capa
+// aparte (markLayer) que sigue al objeto en cada cuadro.
 
 const HIGHLIGHT_PREFS_KEY = 'zenban_highlight_prefs_v1';
 const HIGHLIGHT_COLORS = ['#facc15', '#4ade80', '#38bdf8', '#f472b6', '#fb923c', '#a78bfa'];
-const HIGHLIGHT_MIN = 0.02; // tamaño mínimo (fracción de la imagen)
+const HIGHLIGHT_MIN = 0.02; // tamaño mínimo (fracción del objeto)
 let highlightPrefs = { color: HIGHLIGHT_COLORS[0], opacity: 0.4, ...loadData(HIGHLIGHT_PREFS_KEY, {}) };
-let selectedMark = null; // { imgId, markId }
+let selectedMark = null; // { key, markId }  (key: "img:id", "text:id", "board:id" o "frame:id")
 
 const highlightOptions = document.getElementById('highlightOptions');
 const highlightColorsEl = document.getElementById('highlightColors');
 const highlightCustomColor = document.getElementById('highlightCustomColor');
 const highlightOpacity = document.getElementById('highlightOpacity');
 const highlightOpacityLabel = document.getElementById('highlightOpacityLabel');
+
+const markLayer = document.createElement('div');
+markLayer.className = 'mark-layer';
+zoomCanvas.appendChild(markLayer);
 
 function markRgba(hex, alpha) {
   const n = parseInt(String(hex || HIGHLIGHT_COLORS[0]).slice(1), 16) || 0;
@@ -31,25 +38,57 @@ function bgImageElById(id) {
   return bgImageLayer.querySelector(`.bg-image[data-image-id="${id}"]`);
 }
 
-function isMarkSelected(imgId, markId) {
-  return !!selectedMark && selectedMark.imgId === imgId && selectedMark.markId === markId;
+// Objeto dueño de los destacados y su rectángulo en el lienzo
+function markOwnerData(key) {
+  const [type, id] = String(key).split(':');
+  if (type === 'img') return bgImageData(id);
+  if (type === 'text') return getTexts().find(x => x.id === id) || null;
+  if (type === 'board') return boards.find(x => x.id === id) || null;
+  if (type === 'frame') return getFrames().find(x => x.id === id) || null;
+  return null;
 }
 
-// ----- Dibujar los destacados de una imagen -----
+function markOwnerRect(key) {
+  if (String(key).startsWith('img:')) {
+    const i = markOwnerData(key);
+    return i ? { x: i.x, y: i.y, w: i.w, h: i.h } : null;
+  }
+  return objectRectByKey(key);
+}
+
+function isMarkSelected(key, markId) {
+  return !!selectedMark && selectedMark.key === key && selectedMark.markId === markId;
+}
+
+// ----- Dibujar los destacados -----
+// Imagen: en porcentajes dentro de su elemento. Demás objetos: en píxeles del lienzo sobre el objeto.
 function styleMarkEl(mk, m) {
-  mk.style.left = `${m.x * 100}%`;
-  mk.style.top = `${m.y * 100}%`;
-  mk.style.width = `${m.w * 100}%`;
-  mk.style.height = `${m.h * 100}%`;
+  const key = mk.dataset.ownerKey;
+  if (mk.dataset.overlay) {
+    const r = markOwnerRect(key);
+    if (!r || !r.w || !r.h) { mk.style.display = 'none'; return; }
+    mk.style.display = '';
+    mk.style.left = `${r.x + m.x * r.w}px`;
+    mk.style.top = `${r.y + m.y * r.h}px`;
+    mk.style.width = `${m.w * r.w}px`;
+    mk.style.height = `${m.h * r.h}px`;
+  } else {
+    mk.style.left = `${m.x * 100}%`;
+    mk.style.top = `${m.y * 100}%`;
+    mk.style.width = `${m.w * 100}%`;
+    mk.style.height = `${m.h * 100}%`;
+  }
   mk.style.background = markRgba(m.color, m.opacity ?? highlightPrefs.opacity);
 }
 
-function createMarkEl(img, m) {
+function createMarkEl(key, m, overlay) {
   const mk = document.createElement('div');
   mk.className = 'img-mark';
   mk.dataset.markId = m.id;
+  mk.dataset.ownerKey = key;
+  if (overlay) mk.dataset.overlay = '1';
   styleMarkEl(mk, m);
-  mk.classList.toggle('is-selected', isMarkSelected(img.id, m.id));
+  mk.classList.toggle('is-selected', isMarkSelected(key, m.id));
   mk.innerHTML = `
     <div class="img-mark-toolbar">
       <input type="color" class="img-mark-color" title="Color del destacado">
@@ -78,19 +117,19 @@ function createMarkEl(img, m) {
   color.addEventListener('input', () => { m.color = color.value; styleMarkEl(mk, m); });
   opacity.addEventListener('input', () => { m.opacity = opacity.value / 100; pct.textContent = `${opacity.value}%`; styleMarkEl(mk, m); });
   [color, opacity].forEach(inp => inp.addEventListener('change', () => persist()));
-  mk.querySelector('.img-mark-delete').addEventListener('click', (e) => { e.stopPropagation(); deleteMark(img.id, m.id); });
+  mk.querySelector('.img-mark-delete').addEventListener('click', (e) => { e.stopPropagation(); deleteMark(key, m.id); });
 
   mk.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || isSpacePressed || isPanModeActive) return;
     if (currentTool !== 'select' && currentTool !== 'highlight') return;
     const handle = e.target.closest('.img-mark-handle');
     const resize = !!handle;
-    // Con Seleccionar, un destacado sin elegir deja arrastrar la imagen (ver el pointerdown de document)
-    if (!resize && !isMarkSelected(img.id, m.id) && currentTool === 'select') return;
+    // Con Seleccionar, un destacado sin elegir deja arrastrar el objeto (ver el pointerdown de document)
+    if (!resize && !isMarkSelected(key, m.id) && currentTool === 'select') return;
     e.preventDefault();
     e.stopPropagation();
-    selectMark(img.id, m.id);
-    startMarkDrag(e, img, m, mk, resize ? handle.dataset.corner : 'move');
+    selectMark(key, m.id);
+    startMarkDrag(e, key, m, mk, resize ? handle.dataset.corner : 'move');
   });
   return mk;
 }
@@ -98,18 +137,72 @@ function createMarkEl(img, m) {
 // Llamada desde renderBgImages (app.js) cada vez que se dibuja una imagen
 function renderImageMarks(el, data) {
   el.querySelectorAll('.img-mark').forEach(n => n.remove());
-  (data.marks || []).forEach(m => el.appendChild(createMarkEl(data, m)));
+  (data.marks || []).forEach(m => el.appendChild(createMarkEl(`img:${data.id}`, m, false)));
+}
+
+// ----- Capa de destacados de textos, tableros y frames: sigue al objeto en cada cuadro -----
+function overlayMarkEntries() {
+  const list = [];
+  const add = (prefix, arr) => (arr || []).forEach(o => (o.marks || []).forEach(m => list.push({ key: `${prefix}:${o.id}`, m })));
+  add('text', getTexts());
+  add('board', boards);
+  add('frame', getFrames());
+  return list;
+}
+
+function syncOverlayMarks() {
+  const entries = overlayMarkEntries();
+  if (!entries.length && !markLayer.firstChild) return;
+  const have = new Map();
+  markLayer.querySelectorAll('.img-mark').forEach(el => have.set(`${el.dataset.ownerKey}|${el.dataset.markId}`, el));
+  const wanted = new Set();
+  entries.forEach(({ key, m }) => {
+    const id = `${key}|${m.id}`;
+    wanted.add(id);
+    let el = have.get(id);
+    if (el && el._m !== m) { el.remove(); el = null; }
+    if (!el) {
+      el = createMarkEl(key, m, true);
+      el._m = m;
+      markLayer.appendChild(el);
+    } else if (!el.classList.contains('is-dragging')) {
+      styleMarkEl(el, m);
+    }
+  });
+  have.forEach((el, id) => { if (!wanted.has(id)) el.remove(); });
+}
+
+(function markLoop() {
+  try { syncOverlayMarks(); } catch (e) {}
+  requestAnimationFrame(markLoop);
+})();
+
+function ownerMarkEls(key) {
+  return key.startsWith('img:')
+    ? (bgImageElById(key.slice(4)) ? [...bgImageElById(key.slice(4)).querySelectorAll('.img-mark')] : [])
+    : [...markLayer.querySelectorAll('.img-mark')].filter(el => el.dataset.ownerKey === key);
+}
+
+function refreshOwnerMarks(key) {
+  if (key.startsWith('img:')) {
+    const el = bgImageElById(key.slice(4)), data = markOwnerData(key);
+    if (el && data) renderImageMarks(el, data);
+  } else {
+    syncOverlayMarks();
+  }
 }
 
 // ----- Mover y cambiar el tamaño -----
-function startMarkDrag(e, img, m, mk, mode) {
+function startMarkDrag(e, key, m, mk, mode) {
   const sx = e.clientX, sy = e.clientY;
   const o = { x: m.x, y: m.y, w: m.w, h: m.h };
+  const rect = markOwnerRect(key);
+  if (!rect) return;
   mk.setPointerCapture(e.pointerId);
   if (mode === 'move') mk.classList.add('is-dragging');
   const onMove = (ev) => {
-    const dx = (ev.clientX - sx) / zoom / img.w;
-    const dy = (ev.clientY - sy) / zoom / img.h;
+    const dx = (ev.clientX - sx) / zoom / rect.w;
+    const dy = (ev.clientY - sy) / zoom / rect.h;
     if (mode !== 'move') {
       // Cada esquina mueve sus dos lados; el lado opuesto se queda fijo
       if (mode.includes('e')) m.w = markClamp(o.w + dx, HIGHLIGHT_MIN, 1 - o.x);
@@ -136,14 +229,13 @@ function startMarkDrag(e, img, m, mk, mode) {
 
 // ----- Selección y eliminación -----
 function applyMarkSelection() {
-  bgImageLayer.querySelectorAll('.img-mark').forEach(mk => {
-    const imgEl = mk.closest('.bg-image');
-    mk.classList.toggle('is-selected', !!imgEl && isMarkSelected(imgEl.dataset.imageId, mk.dataset.markId));
+  document.querySelectorAll('.img-mark').forEach(mk => {
+    mk.classList.toggle('is-selected', isMarkSelected(mk.dataset.ownerKey, mk.dataset.markId));
   });
 }
 
-function selectMark(imgId, markId) {
-  selectedMark = { imgId, markId };
+function selectMark(key, markId) {
+  selectedMark = { key, markId };
   applyMarkSelection();
 }
 
@@ -153,31 +245,41 @@ function clearSelectedMark() {
   applyMarkSelection();
 }
 
-function deleteMark(imgId, markId) {
-  const img = bgImageData(imgId);
-  if (!img) return;
-  img.marks = (img.marks || []).filter(m => m.id !== markId);
-  if (!img.marks.length) delete img.marks;
+function deleteMark(key, markId) {
+  const data = markOwnerData(key);
+  if (!data) return;
+  data.marks = (data.marks || []).filter(m => m.id !== markId);
+  if (!data.marks.length) delete data.marks;
   if (selectedMark && selectedMark.markId === markId) selectedMark = null;
   persist();
-  const el = bgImageElById(imgId);
-  if (el) renderImageMarks(el, img);
+  refreshOwnerMarks(key);
   showToast('Destacado eliminado', 'info');
 }
 
+// Destacado de un texto, tablero o frame bajo el puntero aunque la capa deje pasar los toques (el más nuevo)
+function overlayMarkAtPoint(x, y) {
+  const els = [...markLayer.querySelectorAll('.img-mark')].reverse();
+  return els.find(el => {
+    const r = el.getBoundingClientRect();
+    return r.width && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }) || null;
+}
+
 // Tocar fuera del destacado elegido lo suelta. Con Seleccionar, un toque simple sobre un destacado sin
-// elegir lo elige (arrastrar mueve la imagen, como siempre): se escucha en document para ir antes que la
+// elegir lo elige (arrastrar mueve el objeto, como siempre): se escucha en document para ir antes que la
 // selección del lienzo (app.js), que se queda con ese toque.
 document.addEventListener('pointerdown', (e) => {
-  const mk = e.target.closest('.img-mark');
+  let mk = e.target.closest('.img-mark');
+  if (!mk && currentTool === 'select' && e.button === 0 && !e.target.closest('.toolbox, .zoom-hud, .context-bar, .mobile-fab, button, input, select, textarea')) {
+    mk = overlayMarkAtPoint(e.clientX, e.clientY);
+  }
   if (!mk) { clearSelectedMark(); return; }
-  const imgEl = mk.closest('.bg-image');
-  if (!imgEl || currentTool !== 'select' || e.button !== 0 || mk.classList.contains('is-selected')) return;
-  const imgId = imgEl.dataset.imageId, markId = mk.dataset.markId;
+  if (currentTool !== 'select' || e.button !== 0 || mk.classList.contains('is-selected')) return;
+  const key = mk.dataset.ownerKey, markId = mk.dataset.markId;
   const sx = e.clientX, sy = e.clientY;
   const up = (ev) => {
     document.removeEventListener('pointerup', up, true);
-    if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) selectMark(imgId, markId);
+    if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) selectMark(key, markId);
   };
   document.addEventListener('pointerup', up, true);
 }, true);
@@ -187,16 +289,26 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
     e.stopPropagation();
-    deleteMark(selectedMark.imgId, selectedMark.markId);
+    deleteMark(selectedMark.key, selectedMark.markId);
   } else if (e.key === 'Escape') {
     clearSelectedMark();
   }
 }, true);
 
-// ----- Herramienta Destacador: arrastrar sobre una imagen dibuja el rectángulo -----
-function imageElUnder(clientX, clientY) {
+// ----- Herramienta Destacador: arrastrar sobre un objeto dibuja el rectángulo -----
+// Objeto bajo el puntero: imagen, texto o nota, tablero o frame (el que esté más arriba)
+function markTargetAt(clientX, clientY) {
   for (const n of document.elementsFromPoint(clientX, clientY)) {
-    if (n instanceof Element && n.classList.contains('bg-image')) return n;
+    if (!(n instanceof Element) || n.closest('.img-mark, .mark-layer')) continue;
+    const text = n.closest('.canvas-text');
+    const img = n.closest('.bg-image');
+    const board = n.closest('.board-frame');
+    const frame = n.closest('.canvas-frame');
+    const found = text ? [`text:${text.dataset.textId}`, text]
+      : img ? [`img:${img.dataset.imageId}`, img]
+      : board ? [`board:${board.dataset.boardId}`, board]
+      : frame ? [`frame:${frame.dataset.frameId}`, frame] : null;
+    if (found && markOwnerData(found[0])) return { key: found[0], el: found[1] };
   }
   return null;
 }
@@ -215,21 +327,25 @@ viewportArea.addEventListener('pointerdown', (e) => {
   }
   e.preventDefault();
   e.stopPropagation();
-  const imgEl = imageElUnder(e.clientX, e.clientY);
-  const img = imgEl && bgImageData(imgEl.dataset.imageId);
-  if (!img) {
-    if (!highlightHintShown) { highlightHintShown = true; showToast('Arrastra sobre una imagen para destacar una parte', 'info'); }
+  const target = markTargetAt(e.clientX, e.clientY);
+  const data = target && markOwnerData(target.key);
+  if (!data) {
+    if (!highlightHintShown) { highlightHintShown = true; showToast('Arrastra sobre un objeto (imagen, texto, tablero, frame) para destacar una parte', 'info'); }
     return;
   }
   clearSelectedMark();
   if (selection.size) setSelection([]);
-  const rect = imgEl.getBoundingClientRect();
+  const key = target.key;
+  const rect = target.el.getBoundingClientRect(); // en pantalla: sirve también con tableros escalados
   const fx = (cx) => markClamp((cx - rect.left) / rect.width, 0, 1);
   const fy = (cy) => markClamp((cy - rect.top) / rect.height, 0, 1);
   const preview = document.createElement('div');
   preview.className = 'img-mark';
-  imgEl.appendChild(preview);
-  highlightGesture = { pointerId: e.pointerId, img, imgEl, rect, preview, x0: fx(e.clientX), y0: fy(e.clientY), box: null };
+  preview.dataset.ownerKey = key;
+  preview.dataset.overlay = '1';
+  preview.style.pointerEvents = 'none';
+  markLayer.appendChild(preview);
+  highlightGesture = { pointerId: e.pointerId, preview, x0: fx(e.clientX), y0: fy(e.clientY), box: null };
   viewportArea.setPointerCapture(e.pointerId);
   const g = highlightGesture;
   const boxAt = (ev) => {
@@ -252,10 +368,10 @@ viewportArea.addEventListener('pointerdown', (e) => {
     // Un toque sin arrastrar (menos de 6 px) no crea nada
     if (!b || b.w * rect.width < 6 || b.h * rect.height < 6) return;
     const m = { id: generateId('mark'), ...b, color: highlightPrefs.color, opacity: highlightPrefs.opacity };
-    img.marks = [...(img.marks || []), m];
+    data.marks = [...(data.marks || []), m];
     persist();
-    renderImageMarks(imgEl, img);
-    selectMark(img.id, m.id);
+    refreshOwnerMarks(key);
+    selectMark(key, m.id);
   };
   viewportArea.addEventListener('pointermove', onMove);
   viewportArea.addEventListener('pointerup', onUp);
