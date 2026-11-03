@@ -1043,8 +1043,8 @@ function closeFrameCanvas() {
   const keys = openedContentKeys(f);
   const box = openedContentBox(f);
   const m = 16;
-  const outside = box && (box.x < f.x || box.y < f.y || box.x + box.w > f.x + f.w || box.y + box.h > f.y + f.h);
-  if (outside) {
+  // Siempre se ajusta, como "Ajustar tablero a pantalla": el contenido se centra y llena el frame (sin pasar de 1,2x)
+  if (box) {
     const dx = Math.round(f.x + f.w / 2 - (box.x + box.w / 2)), dy = Math.round(f.y + f.h / 2 - (box.y + box.h / 2));
     const has = (k) => keys.includes(k);
     getTexts().filter(o => has(`text:${o.id}`)).forEach(o => { o.x += dx; o.y += dy; });
@@ -1052,8 +1052,8 @@ function closeFrameCanvas() {
     getFrames().filter(o => has(`frame:${o.id}`)).forEach(o => { o.x += dx; o.y += dy; });
     boards.filter(o => has(`board:${o.id}`)).forEach(o => { o.x += dx; o.y += dy; });
     getDrawings().filter(o => has(`stroke:${o.id}`)).forEach(o => { o.points = o.points.map(([x, y]) => [x + dx, y + dy]); });
-    const k = Math.min(1, (f.w - m * 2) / box.w, (f.h - m * 2) / box.h);
-    if (k < 1) createScaler(keys, f.x + f.w / 2, f.y + f.h / 2).commit(k);
+    const k = Math.min(1.2, (f.w - m * 2) / Math.max(1, box.w), (f.h - m * 2) / Math.max(1, box.h));
+    if (k !== 1) createScaler(keys, f.x + f.w / 2, f.y + f.h / 2).commit(k);
   }
   giveBack();
   setSelection([`frame:${f.id}`]);
