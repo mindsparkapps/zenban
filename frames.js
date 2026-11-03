@@ -114,10 +114,14 @@ function renderFrames() {
       ${f.image && !hides.tab ? `<div class="board-image-tab frame-image-tab" title="Arrastra para mover el frame"><img data-board-img="${escapeHtml(f.image)}" alt="" draggable="false"></div>` : ''}
       ${f.title && !hides.title ? `<div class="frame-title">${escapeHtml(f.title)}</div>` : ''}
       ${f.locked ? '<button type="button" class="frame-lock-badge" title="Volver a mover el frame">✋ Trabajando dentro · <b>Listo</b></button>' : ''}
+      <button type="button" class="frame-open-btn" title="Abrir como lienzo aparte" aria-label="Abrir como lienzo aparte">⛶</button>
       <div class="frame-handle" title="Arrastra para agrandar o achicar el frame (lo de adentro no cambia)"></div>
       <div class="frame-scale-handle" title="Arrastra para agrandar o achicar el frame con todo lo de adentro"></div>`;
     el.querySelector('.frame-handle').addEventListener('pointerdown', (e) => startFrameResize(e, f, el));
     el.querySelector('.frame-scale-handle').addEventListener('pointerdown', (e) => startFrameScale(e, f, el));
+    const openBtn = el.querySelector('.frame-open-btn');
+    openBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    openBtn.addEventListener('click', (e) => { e.stopPropagation(); openFrameCanvas(f); });
     const badge = el.querySelector('.frame-lock-badge');
     if (badge) {
       badge.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -1019,9 +1023,7 @@ function openFrameCanvas(f) {
   persist();
   renderBoard(); renderBgImages(); renderTexts(); renderDrawings(); renderFrames();
   clipToOpenedFrame();
-  const r = viewportArea.getBoundingClientRect();
-  const z = Math.min(ZOOM_CONFIG.MAX, Math.max(ZOOM_CONFIG.MIN, Math.min((r.width - 80) / f.w, (r.height - 140) / f.h)));
-  animateViewTo(z, r.width / 2 - (f.x + f.w / 2) * z, r.height / 2 - (f.y + f.h / 2) * z);
+  fitRectToScreen(f.x, f.y, f.w, f.h, true); // igual que el doble clic sobre el frame
 }
 
 function closeFrameCanvas() {
@@ -1055,9 +1057,7 @@ function closeFrameCanvas() {
   }
   giveBack();
   setSelection([`frame:${f.id}`]);
-  const vr = viewportArea.getBoundingClientRect();
-  const z = Math.min(ZOOM_CONFIG.MAX, Math.max(ZOOM_CONFIG.MIN, Math.min((vr.width - 80) / f.w, (vr.height - 140) / f.h)));
-  animateViewTo(z, vr.width / 2 - (f.x + f.w / 2) * z, vr.height / 2 - (f.y + f.h / 2) * z);
+  fitRectToScreen(f.x, f.y, f.w, f.h, true); // el frame queda centrado, como con el doble clic
 }
 
 document.getElementById('ctxFrameOpen').addEventListener('click', () => openFrameCanvas(selectedFrames()[0]));

@@ -154,7 +154,7 @@ function syncOverlayMarks() {
   const entries = overlayMarkEntries();
   if (!entries.length && !markLayer.firstChild) return;
   const have = new Map();
-  markLayer.querySelectorAll('.img-mark').forEach(el => have.set(`${el.dataset.ownerKey}|${el.dataset.markId}`, el));
+  markLayer.querySelectorAll('.img-mark:not(.is-preview)').forEach(el => have.set(`${el.dataset.ownerKey}|${el.dataset.markId}`, el));
   const wanted = new Set();
   entries.forEach(({ key, m }) => {
     const id = `${key}|${m.id}`;
@@ -340,7 +340,7 @@ viewportArea.addEventListener('pointerdown', (e) => {
   const fx = (cx) => markClamp((cx - rect.left) / rect.width, 0, 1);
   const fy = (cy) => markClamp((cy - rect.top) / rect.height, 0, 1);
   const preview = document.createElement('div');
-  preview.className = 'img-mark';
+  preview.className = 'img-mark is-preview';
   preview.dataset.ownerKey = key;
   preview.dataset.overlay = '1';
   preview.style.pointerEvents = 'none';

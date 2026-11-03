@@ -4281,6 +4281,27 @@ select option:checked {
   pointer-events: none !important;
 }
 .canvas-frame.is-opened > * { display: none !important; }
+/* Botón de la esquina inferior izquierda del frame elegido: abrirlo como lienzo aparte */
+.frame-open-btn {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, 50%) scale(var(--inv-zoom, 1));
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent-primary);
+  border: 2px solid var(--accent-primary);
+  font-size: 15px;
+  line-height: 20px;
+  padding: 0;
+  cursor: pointer;
+  display: none;
+  touch-action: none;
+  pointer-events: auto;
+}
+.canvas-frame.is-solo .frame-open-btn { display: block; }
 /* Capa de destacados de textos, tableros y frames (highlight.js): no toma toques salvo con el Destacador o si el destacado está elegido */
 .mark-layer {
   position: absolute;
