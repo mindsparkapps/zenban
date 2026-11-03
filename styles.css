@@ -3921,6 +3921,36 @@ select option:checked {
   box-shadow: var(--shadow-sm);
 }
 
+.sel-merge-btn {
+  position: absolute;
+  z-index: 60;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  transform: translate(-50%, -50%) scale(var(--inv-zoom, 1));
+  background: var(--accent-primary);
+  color: #fff;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  touch-action: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.sel-merge-btn svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+@media (pointer: coarse) {
+  .sel-merge-btn {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+.sel-merge-btn[hidden],
 .sel-scale-box[hidden],
 .sel-scale-handle[hidden] {
   display: none;

@@ -409,6 +409,42 @@ selScaleHandle.hidden = true;
 zoomCanvas.appendChild(selScaleBox);
 zoomCanvas.appendChild(selScaleHandle);
 
+// Fusionar varios textos en uno: botón en la esquina superior derecha del recuadro de selección
+const selMergeBtn = document.createElement('button');
+selMergeBtn.type = 'button';
+selMergeBtn.className = 'sel-merge-btn';
+selMergeBtn.title = 'Fusionar los textos seleccionados en uno';
+selMergeBtn.setAttribute('aria-label', 'Fusionar textos');
+selMergeBtn.hidden = true;
+selMergeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v6a4 4 0 0 0 4 4h4a4 4 0 0 1 4 4v4"></path><path d="M18 3v6a4 4 0 0 1-4 4"></path><path d="M15 18l3 3 3-3"></path></svg>';
+zoomCanvas.appendChild(selMergeBtn);
+
+// Textos normales seleccionados (sin ventanas web ni widgets), de arriba hacia abajo y de izquierda a derecha
+function mergeableTexts() {
+  return selectedTexts().filter(t => !t.web && !Array.isArray(t.ytLists))
+    .sort((a, b) => (a.y - b.y) || (a.x - b.x));
+}
+
+function mergeSelectedTexts() {
+  const list = mergeableTexts();
+  if (list.length < 2) return;
+  if (editingTextId) commitEditingText();
+  const first = list[0];
+  first.text = list.map(t => t.text.trim()).filter(Boolean).join('\n\n');
+  const names = Object.assign({}, ...list.map(t => t.linkNames || {}));
+  if (Object.keys(names).length) first.linkNames = names;
+  const gone = new Set(list.slice(1).map(t => t.id));
+  getActiveProject().texts = getTexts().filter(t => !gone.has(t.id));
+  [...selection].forEach(k => { if (k.startsWith('text:') && gone.has(k.slice(5))) selection.delete(k); });
+  selection.add(`text:${first.id}`);
+  persist();
+  renderTexts();
+  showToast(`${list.length} textos fusionados en uno`, 'success');
+}
+
+selMergeBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+selMergeBtn.addEventListener('click', (e) => { e.stopPropagation(); mergeSelectedTexts(); });
+
 // Lo que se escala con la selección: lo seleccionado y lo que está dentro de los frames seleccionados
 function selectionScaleKeys() {
   const keys = new Set([...selection].filter(k => !k.startsWith('conn:')));
@@ -438,6 +474,8 @@ function placeSelScale(r) {
   selScaleBox.style.height = `${r.h}px`;
   selScaleHandle.style.left = `${r.x + r.w}px`;
   selScaleHandle.style.top = `${r.y + r.h}px`;
+  selMergeBtn.style.left = `${r.x + r.w}px`;
+  selMergeBtn.style.top = `${r.y}px`;
 }
 
 // Un tablero solo también usa esta manija (se agranda entero, con sus columnas y tareas); su propio borde
@@ -448,6 +486,7 @@ function updateSelScaleHandle() {
   selScaleBox.hidden = selScaleHandle.hidden = !r || r.w < 1 || r.h < 1;
   if (soloBoard) selScaleBox.hidden = true;
   if (!selScaleHandle.hidden) placeSelScale(r);
+  selMergeBtn.hidden = selScaleHandle.hidden || mergeableTexts().length < 2;
 }
 
 selScaleHandle.addEventListener('pointerdown', (e) => {

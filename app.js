@@ -4823,7 +4823,7 @@ function startGroupDrag(e) {
   // Las manijas (conector y progreso de listas) acompañan al objeto: se corren lo mismo que él, sin
   // volver a medirlo en cada cuadro (eso trababa el celular)
   const handles = [typeof connectHandle !== 'undefined' && connectHandle, typeof ytListHandle !== 'undefined' && ytListHandle,
-    typeof selScaleHandle !== 'undefined' && selScaleHandle, typeof selScaleBox !== 'undefined' && selScaleBox]
+    typeof selScaleHandle !== 'undefined' && selScaleHandle, typeof selMergeBtn !== 'undefined' && selMergeBtn, typeof selScaleBox !== 'undefined' && selScaleBox]
     .filter(h => h && !h.hidden).map(h => ({ h, x: parseFloat(h.style.left) || 0, y: parseFloat(h.style.top) || 0 }));
 
   selectGestureActive = true;
@@ -6856,7 +6856,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '143';
+const APP_VERSION = '144';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
