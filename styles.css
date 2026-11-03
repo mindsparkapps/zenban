@@ -4256,20 +4256,41 @@ select option:checked {
 }
 .img-mark-delete:hover { background: var(--accent-danger-light); color: var(--accent-danger); }
 .img-mark-delete svg { width: 16px; height: 16px; }
+/* Frame abierto como lienzo aparte (frames.js) */
+.frame-canvas-bar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 14px;
+  background: var(--bg-glass-heavy);
+  border: 1px solid var(--border-medium);
+  border-radius: 999px;
+  box-shadow: var(--shadow-md);
+  font-weight: 600;
+}
+.frame-canvas-bar[hidden] { display: none; }
 .img-mark.is-selected .img-mark-handle {
   display: block;
   position: absolute;
-  right: 0;
-  bottom: 0;
   width: 14px;
   height: 14px;
   background: var(--accent-primary);
   border: 2px solid #fff;
   border-radius: 50%;
-  cursor: nwse-resize;
-  transform: translate(50%, 50%) scale(var(--inv-zoom, 1));
   box-shadow: var(--shadow-sm);
 }
+@media (pointer: coarse) {
+  .img-mark.is-selected .img-mark-handle { width: 22px; height: 22px; }
+}
+.img-mark-handle[data-corner="se"] { right: 0; bottom: 0; cursor: nwse-resize; transform: translate(50%, 50%) scale(var(--inv-zoom, 1)); }
+.img-mark-handle[data-corner="nw"] { left: 0; top: 0; cursor: nwse-resize; transform: translate(-50%, -50%) scale(var(--inv-zoom, 1)); }
+.img-mark-handle[data-corner="ne"] { right: 0; top: 0; cursor: nesw-resize; transform: translate(50%, -50%) scale(var(--inv-zoom, 1)); }
+.img-mark-handle[data-corner="sw"] { left: 0; bottom: 0; cursor: nesw-resize; transform: translate(-50%, 50%) scale(var(--inv-zoom, 1)); }
 #highlightCustomColor {
   width: 28px;
   height: 28px;

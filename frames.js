@@ -898,4 +898,56 @@ renderBgImages = function () {
   renderConnectors();
 };
 
+// ----- Abrir un frame como lienzo aparte -----
+// Sin crear otro proyecto: la vista se ajusta al frame y todo lo que queda fuera se oculta. Se trabaja igual
+// que siempre (lo que se agrega dentro del frame queda en el frame). "Volver" muestra de nuevo todo el lienzo.
+let openedFrameId = null;
+let openedFrameView = null;
+const frameCanvasBar = document.createElement('div');
+frameCanvasBar.className = 'frame-canvas-bar';
+frameCanvasBar.hidden = true;
+frameCanvasBar.innerHTML = '<span class="frame-canvas-name"></span><button type="button" class="btn btn-primary btn-sm">← Volver al lienzo</button>';
+viewportArea.appendChild(frameCanvasBar);
+frameCanvasBar.querySelector('button').addEventListener('click', () => closeFrameCanvas());
+
+function clipToOpenedFrame() {
+  const f = openedFrameId && frameRect(openedFrameId);
+  if (!f) { zoomCanvas.style.clipPath = ''; return; }
+  const x1 = f.x, y1 = f.y, x2 = f.x + f.w, y2 = f.y + f.h;
+  zoomCanvas.style.clipPath = `polygon(${x1}px ${y1}px, ${x2}px ${y1}px, ${x2}px ${y2}px, ${x1}px ${y2}px)`;
+}
+
+function openFrameCanvas(f) {
+  if (!f) return;
+  if (!openedFrameId) openedFrameView = { zoom, panX, panY };
+  openedFrameId = f.id;
+  frameCanvasBar.hidden = false;
+  frameCanvasBar.querySelector('.frame-canvas-name').textContent = f.title || 'Frame';
+  setSelection([]);
+  clipToOpenedFrame();
+  const r = viewportArea.getBoundingClientRect();
+  const z = Math.min(ZOOM_CONFIG.MAX, Math.max(ZOOM_CONFIG.MIN, Math.min((r.width - 80) / f.w, (r.height - 140) / f.h)));
+  animateViewTo(z, r.width / 2 - (f.x + f.w / 2) * z, r.height / 2 - (f.y + f.h / 2) * z);
+}
+
+function closeFrameCanvas() {
+  if (!openedFrameId) return;
+  openedFrameId = null;
+  frameCanvasBar.hidden = true;
+  zoomCanvas.style.clipPath = '';
+  if (openedFrameView) animateViewTo(openedFrameView.zoom, openedFrameView.panX, openedFrameView.panY);
+  openedFrameView = null;
+}
+
+document.getElementById('ctxFrameOpen').addEventListener('click', () => openFrameCanvas(selectedFrames()[0]));
+// Al redibujar los frames (agrandar, borrar) el recorte sigue al frame abierto
+const baseRenderFramesForOpen = renderFrames;
+renderFrames = function () {
+  baseRenderFramesForOpen.apply(this, arguments);
+  if (openedFrameId && !frameRect(openedFrameId)) closeFrameCanvas(); else clipToOpenedFrame();
+};
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && openedFrameId && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && !selection.size) closeFrameCanvas();
+});
+
 renderFrames();

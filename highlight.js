@@ -59,7 +59,10 @@ function createMarkEl(img, m) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
       </button>
     </div>
-    <div class="img-mark-handle" title="Arrastra para cambiar el tamaño"></div>`;
+    <div class="img-mark-handle" data-corner="se" title="Arrastra para cambiar el tamaño"></div>
+    <div class="img-mark-handle" data-corner="sw" title="Arrastra para cambiar el tamaño"></div>
+    <div class="img-mark-handle" data-corner="ne" title="Arrastra para cambiar el tamaño"></div>
+    <div class="img-mark-handle" data-corner="nw" title="Arrastra para cambiar el tamaño"></div>`;
 
   const toolbar = mk.querySelector('.img-mark-toolbar');
   const color = mk.querySelector('.img-mark-color');
@@ -80,13 +83,14 @@ function createMarkEl(img, m) {
   mk.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || isSpacePressed || isPanModeActive) return;
     if (currentTool !== 'select' && currentTool !== 'highlight') return;
-    const resize = !!e.target.closest('.img-mark-handle');
+    const handle = e.target.closest('.img-mark-handle');
+    const resize = !!handle;
     // Con Seleccionar, un destacado sin elegir deja arrastrar la imagen (ver el pointerdown de document)
     if (!resize && !isMarkSelected(img.id, m.id) && currentTool === 'select') return;
     e.preventDefault();
     e.stopPropagation();
     selectMark(img.id, m.id);
-    startMarkDrag(e, img, m, mk, resize ? 'resize' : 'move');
+    startMarkDrag(e, img, m, mk, resize ? handle.dataset.corner : 'move');
   });
   return mk;
 }
@@ -105,9 +109,12 @@ function startMarkDrag(e, img, m, mk, mode) {
   const onMove = (ev) => {
     const dx = (ev.clientX - sx) / zoom / img.w;
     const dy = (ev.clientY - sy) / zoom / img.h;
-    if (mode === 'resize') {
-      m.w = markClamp(o.w + dx, HIGHLIGHT_MIN, 1 - o.x);
-      m.h = markClamp(o.h + dy, HIGHLIGHT_MIN, 1 - o.y);
+    if (mode !== 'move') {
+      // Cada esquina mueve sus dos lados; el lado opuesto se queda fijo
+      if (mode.includes('e')) m.w = markClamp(o.w + dx, HIGHLIGHT_MIN, 1 - o.x);
+      else { m.x = markClamp(o.x + dx, 0, o.x + o.w - HIGHLIGHT_MIN); m.w = o.x + o.w - m.x; }
+      if (mode.includes('s')) m.h = markClamp(o.h + dy, HIGHLIGHT_MIN, 1 - o.y);
+      else { m.y = markClamp(o.y + dy, 0, o.y + o.h - HIGHLIGHT_MIN); m.h = o.y + o.h - m.y; }
     } else {
       m.x = markClamp(o.x + dx, 0, 1 - o.w);
       m.y = markClamp(o.y + dy, 0, 1 - o.h);

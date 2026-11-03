@@ -2268,8 +2268,21 @@ function closeTaskModal() {
   modalAddedImageIds = [];
 }
 
-closeModalBtn.addEventListener('click', closeTaskModal);
-cancelTaskBtn.addEventListener('click', closeTaskModal);
+// Cerrar sin guardar: si quedó una subtarea escrita sin añadir, se agrega a la tarea existente
+function dismissTaskModal() {
+  const text = newSubtaskInput.value.trim();
+  const task = text && taskIdInput.value ? tasks.find(t => t.id === taskIdInput.value) : null;
+  if (task) {
+    task.subtasks = [...(task.subtasks || []), { id: 'st-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4), text, completed: false }];
+    persist();
+    renderBoard();
+    showToast('Subtarea añadida', 'info');
+  }
+  closeTaskModal();
+}
+
+closeModalBtn.addEventListener('click', dismissTaskModal);
+cancelTaskBtn.addEventListener('click', dismissTaskModal);
 quickAddBtn.addEventListener('click', () => openTaskModal(null, defaultColumnForNewTask()));
 if (fabNewTask) fabNewTask.addEventListener('click', () => openTaskModal(null, defaultColumnForNewTask()));
 
@@ -2412,6 +2425,7 @@ taskForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const title = taskTitleInput.value.trim();
   if (!title) return;
+  addSubtaskFromInput(); // una subtarea escrita y sin añadir también se guarda
 
   const id = taskIdInput.value;
   const colId = taskColumnSelect.value;
@@ -6799,7 +6813,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '130';
+const APP_VERSION = '131';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
