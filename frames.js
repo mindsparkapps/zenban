@@ -925,33 +925,51 @@ function openedContentRect(key) {
   return key.startsWith('conn:') ? null : objectRectByKey(key);
 }
 
-// Rectángulo del frame ampliado para que quepa todo lo que se agregó o movió fuera de él
-function openedUnionRect(f, pad = 0) {
-  let x1 = f.x, y1 = f.y, x2 = f.x + f.w, y2 = f.y + f.h;
-  [...canvasObjectsByKey().keys()].forEach(k => {
-    if (k === `frame:${f.id}` || !openedFrameKeys.has(k)) return;
-    const r = openedContentRect(k);
-    if (!r) return;
-    x1 = Math.min(x1, r.x - pad); y1 = Math.min(y1, r.y - pad);
-    x2 = Math.max(x2, r.x + r.w + pad); y2 = Math.max(y2, r.y + r.h + pad);
+// Contenido de este lienzo: lo que ya estaba dentro del frame y todo lo que se agrega después
+function openedContentKeys(f) {
+  const keys = [];
+  canvasObjectsByKey().forEach((o, k) => {
+    if (k === `frame:${f.id}` || k.startsWith('conn:')) return;
+    if (openedFrameKeys.has(k) || !openedFrameAll.has(k)) keys.push(k);
   });
-  return { x: Math.round(x1), y: Math.round(y1), w: Math.round(x2 - x1), h: Math.round(y2 - y1) };
+  return keys;
 }
 
-// Se ve lo de adentro (y lo nuevo que se agregue), no el frame ni lo de afuera
-function clipToOpenedFrame() {
+// Caja que abarca todo el contenido (null si no hay nada)
+function openedContentBox(f) {
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  openedContentKeys(f).forEach(k => {
+    const r = openedContentRect(k);
+    if (!r) return;
+    x1 = Math.min(x1, r.x); y1 = Math.min(y1, r.y);
+    x2 = Math.max(x2, r.x + r.w); y2 = Math.max(y2, r.y + r.h);
+  });
+  return x1 === Infinity ? null : { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+
+// Se ve solo el contenido del frame (y lo nuevo que se agregue): lo del lienzo padre se oculta, esté donde esté
+const openedFrameStyle = document.createElement('style');
+document.head.appendChild(openedFrameStyle);
+function hideOutsideOpenedFrame() {
   const f = openedFrameId && frameRect(openedFrameId);
-  if (!f) { zoomCanvas.style.clipPath = ''; return; }
-  const known = new Set(openedFrameKeys);
-  // Todo lo que aparece después de abrir pertenece a este lienzo
-  canvasObjectsByKey().forEach((o, k) => { if (!openedFrameAll.has(k)) known.add(k); });
-  openedFrameKeys = known;
-  const r = openedUnionRect(f);
-  const x1 = r.x, y1 = r.y, x2 = r.x + r.w, y2 = r.y + r.h;
-  zoomCanvas.style.clipPath = `polygon(${x1}px ${y1}px, ${x2}px ${y1}px, ${x2}px ${y2}px, ${x1}px ${y2}px)`;
+  if (!f) { openedFrameStyle.textContent = ''; return; }
+  const keep = new Set(openedContentKeys(f));
+  const sel = { board: '.board-frame[data-board-id', text: '.canvas-text[data-text-id', img: '.bg-image[data-image-id', stroke: '[data-stroke-id', frame: '.canvas-frame[data-frame-id', conn: '.connector[data-conn-id' };
+  const rules = [];
+  openedFrameAll.forEach(k => {
+    if (keep.has(k) || k === `frame:${f.id}` || !frameRect(f.id)) return;
+    if (k.startsWith('conn:')) {
+      const c = getConnectors().find(o => o.id === k.slice(5));
+      if (c && keep.has(endpointKey(c.from)) && keep.has(endpointKey(c.to))) return;
+    }
+    const [type, id] = k.split(':');
+    if (sel[type]) rules.push(`${sel[type]}="${id}"]`);
+  });
+  openedFrameStyle.textContent = rules.length ? `${rules.join(',')}{display:none !important}` : '';
   const el = getFrameEl(f.id);
   if (el) el.classList.add('is-opened');
 }
+const clipToOpenedFrame = hideOutsideOpenedFrame;
 
 function openFrameCanvas(f) {
   if (!f) return;
@@ -973,18 +991,30 @@ function closeFrameCanvas() {
   const f = frameRect(openedFrameId);
   openedFrameId = null;
   frameCanvasBar.hidden = true;
-  zoomCanvas.style.clipPath = '';
   openedFrameView = null;
-  if (!f) return;
-  // El frame se ajusta para abarcar lo que se agregó dentro, y la vista se centra en él
-  const r = openedUnionRect(f, 16);
-  const grew = r.x < f.x || r.y < f.y || r.x + r.w > f.x + f.w || r.y + r.h > f.y + f.h;
-  if (grew) {
-    const u = openedUnionRect(f, 16);
-    f.x = Math.min(f.x, u.x); f.y = Math.min(f.y, u.y);
-    f.w = Math.max(f.x + f.w, u.x + u.w) - f.x; f.h = Math.max(f.y + f.h, u.y + u.h) - f.y;
+  if (!f) { openedFrameStyle.textContent = ''; return; }
+  // El frame no cambia: si el contenido se sale de él, se achica y se acomoda para que quepa adentro
+  const keys = openedContentKeys(f);
+  const box = openedContentBox(f);
+  const m = 16;
+  const outside = box && (box.x < f.x || box.y < f.y || box.x + box.w > f.x + f.w || box.y + box.h > f.y + f.h);
+  if (outside) {
+    const dx = Math.round(f.x + f.w / 2 - (box.x + box.w / 2)), dy = Math.round(f.y + f.h / 2 - (box.y + box.h / 2));
+    const has = (k) => keys.includes(k);
+    getTexts().filter(o => has(`text:${o.id}`)).forEach(o => { o.x += dx; o.y += dy; });
+    getBgImages().filter(o => has(`img:${o.id}`)).forEach(o => { o.x += dx; o.y += dy; });
+    getFrames().filter(o => has(`frame:${o.id}`)).forEach(o => { o.x += dx; o.y += dy; });
+    boards.filter(o => has(`board:${o.id}`)).forEach(o => { o.x += dx; o.y += dy; });
+    getDrawings().filter(o => has(`stroke:${o.id}`)).forEach(o => { o.points = o.points.map(([x, y]) => [x + dx, y + dy]); });
+    const k = Math.min(1, (f.w - m * 2) / box.w, (f.h - m * 2) / box.h);
+    if (k < 1) createScaler(keys, f.x + f.w / 2, f.y + f.h / 2).commit(k);
     persist();
+    renderTexts();
+    renderBgImages();
+    renderDrawings();
+    renderBoard();
   }
+  openedFrameStyle.textContent = '';
   openedFrameKeys = new Set();
   renderFrames();
   setSelection([`frame:${f.id}`]);
@@ -1000,7 +1030,17 @@ renderFrames = function () {
   baseRenderFramesForOpen.apply(this, arguments);
   if (openedFrameId && !frameRect(openedFrameId)) closeFrameCanvas(); else clipToOpenedFrame();
 };
-// Lo que se dibuja, escribe o mueve en este lienzo amplía lo que se ve
+// Lo del lienzo padre (oculto) no se puede seleccionar
+const baseSetSelectionForOpen = setSelection;
+setSelection = function (keys) {
+  if (openedFrameId) {
+    const f = frameRect(openedFrameId);
+    const keep = f ? new Set(openedContentKeys(f)) : null;
+    if (keep) keys = [...keys].filter(k => keep.has(k) || k.startsWith('conn:') || (openedFrameAll.size && !openedFrameAll.has(k)));
+  }
+  return baseSetSelectionForOpen.call(this, keys);
+};
+// Lo que se dibuja, escribe o mueve en este lienzo se reconoce como parte de él
 ['pointerup', 'keyup'].forEach(ev => window.addEventListener(ev, () => {
   if (openedFrameId) setTimeout(clipToOpenedFrame, 80);
 }));
