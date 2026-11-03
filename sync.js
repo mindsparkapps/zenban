@@ -41,7 +41,8 @@ function scheduleSync(delay = 2500) {
 
 // ----- Datos: empaquetar, combinar y aplicar -----
 function localPayload() {
-  return { version: 1, projects, tags: tagLibrary, deletedProjects: deletedProjects() };
+  // (con un frame abierto como lienzo, lo del lienzo padre está aparte en memoria: se envía completo)
+  return { version: 1, projects: typeof completeProjects === 'function' ? completeProjects(projects) : projects, tags: tagLibrary, deletedProjects: deletedProjects() };
 }
 
 function applyPayload(data) {

@@ -239,6 +239,8 @@ function saveData(key, value) {
     adoptOtherWindowData();
     value = key === STORAGE_KEYS.PROJECTS ? projects : tagLibrary;
   }
+  // Con un frame abierto como lienzo, lo del lienzo padre está guardado aparte en memoria: se guarda completo
+  if (key === STORAGE_KEYS.PROJECTS && typeof completeProjects === 'function') value = completeProjects(value);
   const text = JSON.stringify(value);
   try {
     localStorage.setItem(key, text);
@@ -6815,7 +6817,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '138';
+const APP_VERSION = '139';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

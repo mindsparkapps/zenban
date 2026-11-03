@@ -970,17 +970,35 @@ function stashOutsideFrame(p, f, insideKeys) {
   [p.tasks, stash.tasks] = split(p.tasks, o => !goneCols.has(o.columnId));
   const keptKeys = new Set([...inside, `frame:${f.id}`]);
   [p.connectors, stash.connectors] = split(p.connectors, c => keptKeys.has(endpointKey(c.from)) && keptKeys.has(endpointKey(c.to)));
-  p.frameCanvasStash = stash;
+  // Solo en memoria: lo guardado, lo que se sincroniza y lo que ve otra ventana siempre lleva el proyecto completo
+  frameStash = { projectId: p.id, stash };
   rebindProjectArrays(p);
 }
 
+const FRAME_STASH_KEYS = ['texts', 'bgImages', 'drawings', 'frames', 'boards', 'columns', 'tasks', 'connectors'];
+let frameStash = null;
+
+// Copia de la lista de proyectos con lo guardado aparte puesto de nuevo en su proyecto (para guardar y sincronizar)
+function completeProjects(list) {
+  if (!frameStash) return list;
+  return list.map(p => {
+    if (p.id !== frameStash.projectId) return p;
+    const copy = { ...p };
+    FRAME_STASH_KEYS.forEach(k => { copy[k] = (p[k] || []).concat(frameStash.stash[k] || []); });
+    return copy;
+  });
+}
+
 function restoreFrameStash(p) {
-  const st = p.frameCanvasStash;
+  // Versiones 134 a 138 dejaban lo guardado aparte dentro del proyecto: se devuelve igual
+  const st = p.frameCanvasStash || (frameStash && frameStash.projectId === p.id ? frameStash.stash : null);
   if (!st) return;
-  ['texts', 'bgImages', 'drawings', 'frames', 'boards', 'columns', 'tasks', 'connectors'].forEach(k => {
-    p[k] = (p[k] || []).concat(st[k] || []);
+  FRAME_STASH_KEYS.forEach(k => {
+    const have = new Set((p[k] || []).map(o => o.id));
+    p[k] = (p[k] || []).concat((st[k] || []).filter(o => !have.has(o.id)));
   });
   delete p.frameCanvasStash;
+  if (frameStash && frameStash.projectId === p.id) frameStash = null;
   rebindProjectArrays(p);
 }
 
@@ -1015,7 +1033,7 @@ function openFrameCanvas(f) {
   if (!f) return;
   if (!openedFrameId) openedFrameView = { zoom, panX, panY };
   openedFrameId = f.id;
-  if (!getActiveProject().frameCanvasStash) stashOutsideFrame(getActiveProject(), f, objectsInsideFrame(f));
+  if (!frameStash) stashOutsideFrame(getActiveProject(), f, objectsInsideFrame(f));
   resetHistory();
   frameCanvasBar.hidden = false;
   frameCanvasBar.querySelector('.frame-canvas-name').textContent = f.title || 'Frame';
@@ -1064,6 +1082,11 @@ document.getElementById('ctxFrameOpen').addEventListener('click', () => openFram
 // Al redibujar los frames (agrandar, borrar) el recorte sigue al frame abierto
 const baseRenderFramesForOpen = renderFrames;
 renderFrames = function () {
+  // Red de seguridad: si quedó algo guardado aparte sin un frame abierto, vuelve a su lugar
+  if (!openedFrameId && frameStash) {
+    restoreFrameStash(getActiveProject());
+    frameStash = null;
+  }
   baseRenderFramesForOpen.apply(this, arguments);
   if (openedFrameId && !frameRect(openedFrameId)) closeFrameCanvas(); else clipToOpenedFrame();
 };
@@ -1091,7 +1114,19 @@ switchProject = function () {
   closeFrameCanvas();
   return baseSwitchProjectForOpen.apply(this, arguments);
 };
-// Si la app se cerró con un frame abierto, lo del lienzo padre vuelve solo
+// Si llegan datos nuevos (sincronización u otra ventana) con un frame abierto, ya vienen completos (lo guardado
+// aparte siempre se incluye): se sale del lienzo del frame sin devolver nada, para no duplicar ni esconder objetos
+const baseApplyPayloadForOpen = applyPayload;
+applyPayload = function () {
+  if (openedFrameId || frameStash) {
+    openedFrameId = null;
+    openedFrameView = null;
+    frameStash = null;
+    frameCanvasBar.hidden = true;
+  }
+  return baseApplyPayloadForOpen.apply(this, arguments);
+};
+// Si la app se cerró con un frame abierto (versiones 134 a 138), lo del lienzo padre vuelve solo
 if (projects.some(p => p.frameCanvasStash)) {
   restoreAllFrameStashes();
   persist();
