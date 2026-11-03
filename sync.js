@@ -9,7 +9,11 @@ function onLocalDataChanged() {
   setDirty(true);
   if (!syncEnabled()) return;
   if (SYNC.token || restoreSyncToken()) scheduleSync(2500);
-  else setSyncStatus('pending');
+  else {
+    // Al cargar, las etiquetas se guardan antes de que app.js defina el indicador de estado: si aún no existe,
+    // solo se anota el estado (antes esto detenía toda la app para quien tenía la sesión vencida)
+    try { setSyncStatus('pending'); } catch (e) { SYNC.status = 'pending'; }
+  }
 }
 
 // ¿El usuario está a mitad de un cambio que aún no se guarda? (un dedo o botón apretado sobre la app:
