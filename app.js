@@ -530,11 +530,28 @@ function scheduleInvZoom() {
   if (invZoomApplied === null) applyInvZoom();
 }
 
+// Señal al llegar al zoom mínimo o máximo: el porcentaje late y dice "Mínimo"/"Máximo" un instante
+let zoomHintTimer = null;
+function zoomLimitHint(text) {
+  zoomPercentLabel.textContent = text;
+  zoomPercentLabel.classList.remove('zoom-limit-hit');
+  void zoomPercentLabel.offsetWidth; // reinicia la animación
+  zoomPercentLabel.classList.add('zoom-limit-hit');
+  clearTimeout(zoomHintTimer);
+  zoomHintTimer = setTimeout(() => {
+    zoomPercentLabel.classList.remove('zoom-limit-hit');
+    zoomPercentLabel.textContent = formatZoomPct(zoom);
+  }, 800);
+}
+
 // Zoom towards a specific screen coordinate (cursor or pinch midpoint)
 function zoomAtPoint(clientX, clientY, newZoom) {
   // Si "Ajustar a pantalla" alejó más que el mínimo, desde ahí se puede acercar sin saltos
   // El mínimo nunca es mayor que lo que alcanza "Ajustar a pantalla": se puede alejar hasta ver todo
   const clampedZoom = Math.min(Math.max(newZoom, Math.min(ZOOM_CONFIG.MIN, fitZoomValue(), zoom)), ZOOM_CONFIG.MAX);
+  // Llegó al límite: una pequeña señal para que no parezca que falla
+  if (newZoom < clampedZoom - 1e-9) zoomLimitHint('Mínimo');
+  else if (newZoom > clampedZoom + 1e-9) zoomLimitHint('Máximo');
   if (clampedZoom === zoom) return;
 
   const rect = viewportArea.getBoundingClientRect();
@@ -6817,7 +6834,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '139';
+const APP_VERSION = '140';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
