@@ -6856,7 +6856,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '144';
+const APP_VERSION = '145';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -6978,6 +6978,8 @@ function openSettings() {
   settingToolsAutoHide.checked = !!appSettings.toolsAutoHide;
   settingToolsOpacity.value = String(appSettings.toolsHiddenOpacity);
   syncToolsOpacityField();
+  document.getElementById('settingDailyOn').checked = !!appSettings.dailyOn;
+  document.getElementById('settingDailyText').value = appSettings.dailyText || '';
   settingsModal.style.display = 'flex';
 }
 
@@ -7184,8 +7186,11 @@ document.getElementById('settingsForm').addEventListener('submit', (e) => {
   appSettings.imageSources = document.getElementById('settingImageSources').value.trim();
   appSettings.ytCheckScale = Number(document.getElementById('settingYtCheckSize').value);
   appSettings.ytCheckColor = document.getElementById('settingYtCheckColor').value;
+  appSettings.dailyOn = document.getElementById('settingDailyOn').checked;
+  appSettings.dailyText = document.getElementById('settingDailyText').value.trim();
   applyYtCheckStyle();
   saveData(SETTINGS_KEY, appSettings);
+  if (typeof refreshDailyReminder === 'function') refreshDailyReminder();
   applyModalBackdrop();
   renderProjectSwitcher();
   ZOOM_CONFIG.MIN = appSettings.zoomMin;

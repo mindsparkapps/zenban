@@ -6644,3 +6644,52 @@ html .webwin-resize {
 .canvas-menu button[hidden] {
   display: none !important;
 }
+
+/* ==========================================================================
+   Recordatorio diario
+   ========================================================================== */
+.daily-bar {
+  position: absolute;
+  left: 50%;
+  top: 72px;
+  transform: translateX(-50%);
+  width: 33.333vw;
+  min-width: 320px;
+  max-width: 96vw;
+  z-index: 95;
+  box-sizing: border-box;
+  padding: 0.55rem 0.8rem 0.65rem;
+  border-radius: 16px;
+  background: rgba(127, 29, 29, 0.92);
+  border: 2px solid #ef4444;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.daily-bar[hidden] { display: none; }
+.daily-bar.is-done { background: rgba(20, 83, 45, 0.92); border-color: #22c55e; }
+.daily-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.45rem; }
+.daily-text { flex: 1; font-weight: 700; font-size: 0.95rem; overflow-wrap: anywhere; }
+.daily-close {
+  border: 0; background: rgba(255, 255, 255, 0.15); color: #fff;
+  width: 26px; height: 26px; border-radius: 50%; font-size: 1.1rem; line-height: 1; cursor: pointer;
+}
+.daily-close:hover { background: rgba(255, 255, 255, 0.3); }
+.daily-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem; }
+.daily-day {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 0.3rem 0.1rem; border: 1px solid transparent; border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22); color: inherit; cursor: pointer; font: inherit;
+}
+.daily-day.is-today { border-color: #fff; background: rgba(255, 255, 255, 0.12); }
+.daily-day.is-future { opacity: 0.5; cursor: default; }
+.daily-day-name { font-size: 0.72rem; font-weight: 700; }
+.daily-day-date { font-size: 0.66rem; opacity: 0.85; }
+.daily-box {
+  width: 20px; height: 20px; border-radius: 6px; margin-top: 2px;
+  display: flex; align-items: center; justify-content: center;
+  background: #dc2626; border: 2px solid #fecaca; color: #fff; font-size: 0.8rem; font-weight: 800;
+}
+.daily-day.is-checked .daily-box { background: #16a34a; border-color: #bbf7d0; }
+.daily-day.is-future .daily-box { background: #6b7280; border-color: #d1d5db; }

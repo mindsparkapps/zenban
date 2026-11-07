@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=94">
+  <link rel="stylesheet" href="styles.css?v=95">
 </head>
 <body class="theme-dark">
   <!-- Main Application Wrapper -->
@@ -340,6 +340,15 @@
         </button>
       </div>
     </header>
+
+    <!-- Recordatorio diario (se activa en Configuración) -->
+    <div class="daily-bar" id="dailyBar" hidden>
+      <div class="daily-head">
+        <span class="daily-text" id="dailyText"></span>
+        <button type="button" class="daily-close" id="dailyCloseBtn" aria-label="Cerrar hasta mañana" title="Cerrar hasta mañana a las 6:00" hidden>&times;</button>
+      </div>
+      <div class="daily-days" id="dailyDays"></div>
+    </div>
 
     <!-- Main Workspace Viewport (For Pan & Zoom) -->
     <main class="viewport-area" id="viewportArea">
@@ -1054,6 +1063,14 @@
             <input type="range" id="settingToolsOpacity" min="0" max="100" step="5" value="20">
             <p class="setup-text">La barra de herramientas y la de zoom se ven así mientras no pasas el mouse; al acercarlo vuelven a verse completas. 0% las oculta del todo. En el celular aparecen al tocarlas.</p>
           </div>
+          <div class="form-group">
+            <label class="settings-check" for="settingDailyOn">
+              <input type="checkbox" id="settingDailyOn">
+              <span>Recordatorio diario</span>
+            </label>
+            <input type="text" id="settingDailyText" placeholder="Ej.: Tomar la medicina" maxlength="120" autocomplete="off">
+            <p class="setup-text">Muestra una barra bajo la cabecera con los siete días de la semana. No se puede cerrar hasta marcar el día de hoy; después se cierra y vuelve cada día a las 6:00. Sin texto no aparece.</p>
+          </div>
           <details class="settings-diag" id="settingsDiag">
             <summary>Diagnóstico de este proyecto</summary>
             <pre id="diagOutput">Calculando…</pre>
@@ -1080,7 +1097,7 @@
   <script src="sync-drive.js?v=1"></script>
   <script src="sync.js?v=3"></script>
   <script src="appupdate.js?v=1"></script>
-  <script src="app.js?v=144"></script>
+  <script src="app.js?v=145"></script>
   <script src="share.js?v=10"></script>
   <script src="transfer.js?v=8"></script>
   <script src="spaces.js?v=9"></script>
@@ -1094,5 +1111,6 @@
   <script src="webwin.js?v=5"></script>
   <script src="highlight.js?v=6"></script>
   <script src="crop.js?v=1"></script>
+  <script src="daily.js?v=1"></script>
 </body>
 </html>
