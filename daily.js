@@ -48,6 +48,8 @@
 
   function render() {
     const enabled = !!appSettings.dailyOn && !!(appSettings.dailyText || '').trim();
+    const reopenBtn = document.getElementById('ctxDaily');
+    if (reopenBtn) reopenBtn.hidden = true;
     if (!enabled) { bar.hidden = true; return; }
 
     const checks = readJson(CHECKS_KEY, {});
@@ -55,7 +57,11 @@
     const todayKey = dayKey(today);
     const doneToday = !!checks[todayKey];
 
-    if (doneToday && localStorage.getItem(DISMISS_KEY) === todayKey) { bar.hidden = true; return; }
+    if (doneToday && localStorage.getItem(DISMISS_KEY) === todayKey) {
+      bar.hidden = true;
+      if (reopenBtn) reopenBtn.hidden = false; // se puede volver a abrir desde la barra del lienzo
+      return;
+    }
 
     bar.hidden = false;
     bar.classList.toggle('is-done', doneToday);
@@ -95,6 +101,9 @@
     write(DISMISS_KEY, dayKey(reminderToday()));
     render();
   });
+
+  const reopen = document.getElementById('ctxDaily');
+  if (reopen) reopen.addEventListener('click', () => { localStorage.removeItem(DISMISS_KEY); render(); });
 
   window.addEventListener('resize', placeBar);
   // Al pasar de las 5:59 a las 6:00 la barra reaparece sola
