@@ -3769,6 +3769,7 @@ document.getElementById('taskInternalLinkBtn').addEventListener('click', () => {
   const start = taskDescInput.selectionStart ?? taskDescInput.value.length;
   const end = taskDescInput.selectionEnd ?? start;
   openInternalLinkPicker(url => {
+    createBackLink(url, { kind: 'k', id: taskIdInput.value });
     const v = taskDescInput.value;
     const before = v.slice(0, start);
     const insert = `${before && !/\s$/.test(before) ? ' ' : ''}${url} `;
@@ -5629,6 +5630,7 @@ document.getElementById('ctxTextInternal').addEventListener('click', () => {
   const t = selectedTexts()[0];
   if (!t) return;
   openInternalLinkPicker(url => {
+    createBackLink(url, { kind: 't', id: t.id });
     t.text = t.text ? `${t.text}\n${url}` : url;
     persist();
     renderTexts();
@@ -6511,7 +6513,10 @@ canvasMenu.addEventListener('click', async (e) => {
   if (cmd === 'findImage') openImageLibrary(menuCanvasPoint);
   if (cmd === 'internalLink') {
     const point = menuCanvasPoint;
-    openInternalLinkPicker(url => addText(url, point));
+    openInternalLinkPicker(url => {
+      const nt = addText(url, point);
+      createBackLink(url, { kind: 't', id: nt.id });
+    });
   }
   if (cmd === 'copyInternalLink') {
     // Link al objeto seleccionado (tablero, texto o imagen) o, si no hay, al proyecto
@@ -7646,6 +7651,29 @@ function internalLinkLabel(url) {
   return label;
 }
 
+// Al crear un link a otro proyecto, en el destino queda el link de regreso (un texto junto al tablero
+// al que apunta). origin = { kind, id } del objeto de este proyecto donde se puso el link (o null).
+function createBackLink(url, origin = null) {
+  const ref = parseInternalLink(url);
+  const dest = ref && projects.find(p => p.id === ref.projectId);
+  if (!dest || dest.id === activeProjectId) return;
+  if (!Array.isArray(dest.texts)) dest.texts = [];
+  if (dest.texts.some(t => t.backFor && t.backFor.projectId === activeProjectId && t.backFor.url === url)) return;
+  const board = ref.kind === 'b' ? (dest.boards || []).find(b => b.id === ref.id) : null;
+  const back = origin && origin.id ? internalLinkUrl(activeProjectId, origin.kind, origin.id) : internalLinkUrl(activeProjectId);
+  dest.texts.push({
+    id: generateId('text'),
+    x: board ? Math.round(board.x) : 0,
+    y: board ? Math.round(board.y) - 70 : -100,
+    w: 480,
+    size: 22,
+    color: null,
+    text: back,
+    backFor: { projectId: activeProjectId, url }
+  });
+  persist();
+}
+
 async function openInternalLink(url) {
   const ref = parseInternalLink(url);
   const found = ref && findAnyProject(ref.projectId);
@@ -7653,13 +7681,20 @@ async function openInternalLink(url) {
     showToast('No encontré ese proyecto (puede que se haya borrado o esté en otro espacio)', 'warning');
     return;
   }
+  const fromProjectId = activeProjectId;
   if (found.space) {
     // Está en otro espacio (personal o compartido): se cambia de espacio y se abre
     if (typeof switchToSpace !== 'function' || !(await switchToSpace(found.space, ref.projectId))) return;
   } else if (ref.projectId !== activeProjectId) {
     switchProject(ref.projectId);
   }
-  setTimeout(() => focusInternalTarget(ref), 60);
+  // Si ese link tiene su link de regreso en el destino, la vista se enfoca en él
+  setTimeout(() => {
+    const back = ref.projectId !== fromProjectId && getTexts().find(t => t.backFor && t.backFor.projectId === fromProjectId && t.backFor.url === url);
+    const el = back && getTextEl(back.id);
+    if (back && el) { fitRectToScreen(back.x, back.y, el.offsetWidth, el.offsetHeight); setSelection([`text:${back.id}`]); return; }
+    focusInternalTarget(ref);
+  }, 60);
 }
 
 function focusInternalTarget(ref) {
@@ -8626,10 +8661,12 @@ function hydrateLinkImages(root = document) {
   root.querySelectorAll('img[data-link-img]:not([src])').forEach(img => {
     const id = img.dataset.linkImg;
     if (isRemoteImage(id)) { img.src = id; return; }
-    const cached = cachedImageVariant(id, 480);
+    // En el lienzo la imagen puede verse grande (texto agrandado): versión de más resolución
+    const max = img.closest('.canvas-text') ? 1200 : 480;
+    const cached = cachedImageVariant(id, max);
     if (cached) { img.src = cached; return; }
     img.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-    getImageVariantUrl(id, 480).then(url => { if (url) img.src = url; });
+    getImageVariantUrl(id, max).then(url => { if (url) img.src = url; });
   });
 }
 

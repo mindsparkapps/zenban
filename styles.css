@@ -1429,8 +1429,11 @@ body.theme-light .moon-icon { display: none; }
 
 .auto-link.link-image img {
   display: block;
-  max-width: min(100%, 14em);
-  max-height: 10em;
+  /* El tamaño sigue a la letra (em): si se agranda el texto, la imagen crece con él */
+  width: 14em;
+  max-width: 100%;
+  height: auto;
+  max-height: 14em;
   border-radius: 8px;
   object-fit: cover;
 }
