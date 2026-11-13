@@ -6718,12 +6718,12 @@ html .webwin-resize {
   .canvas-text-wysiwyg { width: 34px; height: 34px; }
 }
 
-/* Texto en formato de hoja (editor WYSIWYG): fondo blanco, borde negro delgado */
+/* Texto en formato de hoja (editor WYSIWYG): páginas blancas con borde negro delgado, separadas como en Word */
 .canvas-text.is-page {
   padding: 0;
-  background: #fff;
+  background: #b4bcc8;
   color: #111;
-  border: 1px solid #000;
+  border: none;
   border-radius: 2px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
@@ -6737,18 +6737,24 @@ html .webwin-resize {
   -webkit-user-select: text;
   overflow: visible;
 }
-/* Cuerpo de la hoja: alto de una página y scroll para las demás; una línea tenue marca cada salto de página */
+/* Cuerpo de la hoja: alto de una página y scroll (siempre visible, al lado derecho) para las demás */
 .canvas-text.is-page .page-body,
 .canvas-text.is-page .wz-surface {
+  position: relative;
+  isolation: isolate;
   height: 100%;
-  padding: 0.7em 0.9em;
+  padding: var(--page-m, 20px) var(--page-m, 20px) 0;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: scroll;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--page-h, 100%) - 2px), rgba(99, 102, 241, 0.45) calc(var(--page-h, 100%) - 2px), rgba(99, 102, 241, 0.45) var(--page-h, 100%));
-  background-attachment: local;
+  scrollbar-color: #6366f1 #dfe3ea;
 }
+.canvas-text.is-page .page-body::-webkit-scrollbar,
+.canvas-text.is-page .wz-surface::-webkit-scrollbar { width: 14px; }
+.canvas-text.is-page .page-body::-webkit-scrollbar-track,
+.canvas-text.is-page .wz-surface::-webkit-scrollbar-track { background: #dfe3ea; }
+.canvas-text.is-page .page-body::-webkit-scrollbar-thumb,
+.canvas-text.is-page .wz-surface::-webkit-scrollbar-thumb { background: #6366f1; border-radius: 7px; border: 2px solid #dfe3ea; }
 .canvas-text.is-page .wz-surface {
   outline: none;
   white-space: pre-wrap;
@@ -6756,10 +6762,39 @@ html .webwin-resize {
   user-select: text;
   -webkit-user-select: text;
 }
+/* Piezas de la paginación (se generan solas): hojas de fondo y topes que parten el texto entre páginas */
+.wz-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid #000;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
 .canvas-text.is-page .wz-surface h1 { font-size: 1.5em; font-weight: 800; margin: 0.2em 0; }
 .canvas-text.is-page .wz-surface h2 { font-size: 1.25em; font-weight: 800; margin: 0.2em 0; }
 .canvas-text.is-page .wz-surface blockquote { margin: 0.2em 0; padding-left: 0.8em; border-left: 3px solid #6366f1; }
 .canvas-text.is-page a { color: #2563eb; }
+
+/* Debajo de la hoja: página actual, total y avance */
+.page-info {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 6px;
+  text-align: center;
+  font: 600 12px 'Plus Jakarta Sans', sans-serif;
+  color: var(--text-muted);
+  white-space: nowrap;
+  pointer-events: none;
+  transform: scale(var(--inv-zoom, 1));
+  transform-origin: top center;
+}
 
 /* Barra de herramientas sobre la hoja */
 .wz-bar {

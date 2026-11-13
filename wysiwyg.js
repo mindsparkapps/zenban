@@ -70,7 +70,7 @@ function wysiwygToMarks(root) {
 
   function nodeMd(n) {
     if (n.nodeType === 3) return n.nodeValue.replace(/ /g, ' ');
-    if (n.nodeType !== 1) return '';
+    if (n.nodeType !== 1 || n.classList.contains('wz-aux')) return '';
     const tag = n.tagName;
     const cls = n.classList;
     switch (tag) {
@@ -121,11 +121,91 @@ function wysiwygToMarks(root) {
   // Los bloques (div, h1, listas…) arrancan en línea nueva
   let md = '';
   Array.from(root.childNodes).forEach(c => {
+    if (c.nodeType === 1 && c.classList.contains('wz-aux')) return; // piezas de la paginación
     const s = nodeMd(c);
     const isBlock = c.nodeType === 1 && /^(DIV|P|H[1-6]|UL|OL|BLOCKQUOTE|TABLE|HR|PRE)$/.test(c.tagName);
     md += isBlock && md && !endsNl(md) ? '\n' + s : s;
   });
   return md.replace(/[ \t]+\n/g, '\n').replace(/\s+$/, '');
+}
+
+// ---- Paginación estilo Word ----
+// Cada página es una hoja blanca de fondo; entre una y otra hay un hueco gris. El texto no cruza ese hueco:
+// unos "topes" flotantes (float) invisibles obligan a las líneas a saltar a la página siguiente.
+function wzGeometry(t) {
+  const P = Math.round(t.w * 1.414); // alto de la página (proporción A4)
+  const M = Math.round(t.w * 0.07); // margen
+  const G = Math.max(10, Math.round(t.w * 0.04)); // hueco entre páginas
+  return { P, M, G };
+}
+
+function wzPaginate(el, t) {
+  const body = el && el.querySelector('.page-body, .wz-surface');
+  if (!body || !el.isConnected) return;
+  const { P, M, G } = wzGeometry(t);
+  const A = P - 2 * M; // alto útil de cada página
+  const aux = (tag, cls, css) => {
+    const d = document.createElement(tag);
+    d.className = `wz-aux ${cls}`;
+    d.contentEditable = 'false';
+    d.setAttribute('aria-hidden', 'true');
+    d.style.cssText = css;
+    return d;
+  };
+  // Monta K páginas de topes, mide dónde termina el texto y devuelve cuántas páginas ocupa
+  const build = (K) => {
+    body.querySelectorAll(':scope > .wz-aux').forEach(n => n.remove());
+    const frag = document.createDocumentFragment();
+    for (let k = 0; k < K; k++) {
+      frag.appendChild(aux('div', 'wz-pb', `float:left;clear:left;width:0;height:${A}px`));
+      frag.appendChild(aux('div', 'wz-pb', `float:left;clear:left;width:100%;height:${2 * M + G}px`));
+    }
+    body.insertBefore(frag, body.firstChild);
+    const end = aux('span', 'wz-end', 'display:inline-block;width:0;height:0');
+    body.appendChild(end);
+    return Math.floor(end.offsetTop / (P + G)) + 1;
+  };
+  let K = Math.max(1, body._wzPages || 1);
+  for (let i = 0; i < 12; i++) {
+    const N = build(K);
+    if (N === K) break;
+    K = N;
+  }
+  // Sin el tope final no queda hueco de más debajo de la última página
+  const pbs = body.querySelectorAll(':scope > .wz-pb');
+  if (pbs.length) pbs[pbs.length - 1].remove();
+  for (let i = 0; i < K; i++) {
+    const s = aux('div', 'wz-sheet', `top:${i * (P + G)}px;height:${P}px`);
+    body.insertBefore(s, body.firstChild);
+  }
+  body._wzPages = K;
+  el._wzGeom = { P, G, pages: K };
+  wzUpdatePageInfo(el);
+}
+
+// "Página X de N · avance %" debajo de la hoja
+function wzUpdatePageInfo(el) {
+  const body = el.querySelector('.page-body, .wz-surface');
+  const g = el._wzGeom;
+  if (!body || !g) return;
+  let info = el.querySelector(':scope > .page-info');
+  if (!info) {
+    info = document.createElement('div');
+    info.className = 'page-info';
+    el.appendChild(info);
+  }
+  const cur = Math.max(1, Math.min(g.pages, Math.floor((body.scrollTop + body.clientHeight / 2) / (g.P + g.G)) + 1));
+  const max = body.scrollHeight - body.clientHeight;
+  const pct = max > 0 ? Math.round(body.scrollTop / max * 100) : 100;
+  info.textContent = `Página ${cur} de ${g.pages} · ${pct}%`;
+}
+
+// Prepara una hoja ya dibujada: pagina y sigue el scroll
+function wzSetupPage(el, t) {
+  const body = el.querySelector('.page-body, .wz-surface');
+  if (!body) return;
+  body.addEventListener('scroll', () => wzUpdatePageInfo(el), { passive: true });
+  wzPaginate(el, t);
 }
 
 let wysiwygRange = null;
@@ -342,6 +422,13 @@ function openWysiwyg(textId) {
     e.stopPropagation();
     const txt = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
     if (txt) document.execCommand('insertText', false, txt);
+  });
+
+  wzSetupPage(el, t);
+  let pagRaf = 0;
+  surface.addEventListener('input', () => {
+    cancelAnimationFrame(pagRaf);
+    pagRaf = requestAnimationFrame(() => wzPaginate(el, t));
   });
 
   wysiwygRange = null;

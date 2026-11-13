@@ -5160,12 +5160,11 @@ function applyTextStyle(el, t) {
   el.classList.toggle('is-page', !!t.page);
   // Hoja de tamaño de página (proporción A4): si el texto es más largo, se recorre con scroll
   if (t.page) {
-    const pageH = Math.round(t.w * 1.414);
-    el.style.height = `${pageH}px`;
-    el.style.setProperty('--page-h', `${pageH - 2}px`);
+    el.style.height = `${Math.round(t.w * 1.414)}px`;
+    el.style.setProperty('--page-m', `${Math.round(t.w * 0.07)}px`);
   } else {
     el.style.height = '';
-    el.style.removeProperty('--page-h');
+    el.style.removeProperty('--page-m');
   }
   el.classList.toggle('is-sticky', !!t.sticky && !t.page);
   el.style.background = t.page ? '' : (t.sticky || '');
@@ -5461,6 +5460,8 @@ function renderTexts() {
       el.appendChild(wz);
     }
     textLayer.appendChild(el);
+    // Páginas de la hoja (necesita el elemento ya en el documento para medir)
+    if (t.page && !isWeb && !isWidget && typeof wzSetupPage === 'function') wzSetupPage(el, t);
   });
   applySelectionVisuals();
 }
@@ -5478,6 +5479,7 @@ function startTextResize(e, t, el) {
     t.fixedWidth = true;
     t.w = Math.max(40, Math.round(startWidth + (ev.clientX - startX) / zoom));
     applyTextStyle(el, t);
+    if (t.page && typeof wzPaginate === 'function') wzPaginate(el, t);
     if (typeof followResize === 'function') followResize(`text:${t.id}`);
   };
   const onUp = () => {
@@ -5497,6 +5499,7 @@ function scaleSelectedTexts(factor) {
     t.size = Math.max(4, +(t.size * factor).toFixed(1));
     const el = getTextEl(t.id);
     if (el) applyTextStyle(el, t);
+    if (el && t.page && typeof wzPaginate === 'function') wzPaginate(el, t);
   });
   persist();
 }
@@ -5532,6 +5535,15 @@ viewportArea.addEventListener('dblclick', (e) => {
   const textEl = under.find(n => n.classList && n.classList.contains('canvas-text'));
   // Un plugin no se escribe: el doble clic acerca la vista a él, como con los demás objetos
   const textObj = textEl && getTexts().find(x => x.id === textEl.dataset.textId);
+  // Una hoja (editor WYSIWYG): el doble clic acerca la vista a ella; para editarla está el botón del lápiz
+  if (textEl && textObj && textObj.page && !textEl.classList.contains('is-wz-editing')) {
+    e.preventDefault();
+    setSelection([`text:${textObj.id}`]);
+    const rect = objectRectAt(textEl);
+    if (rect) fitRectToScreen(rect.x, rect.y, rect.w, rect.h + 24, rect.whole);
+    return;
+  }
+  if (textEl && textEl.classList.contains('is-wz-editing')) return; // dentro de la hoja en edición: selecciona la palabra
   if (textEl && !(textObj && textObj.web && textObj.web.plugin)) {
     e.preventDefault();
     editText(textEl.dataset.textId);
@@ -6894,7 +6906,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '151';
+const APP_VERSION = '152';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
