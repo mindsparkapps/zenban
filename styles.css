@@ -6893,3 +6893,13 @@ html .webwin-resize {
   .wz-bar button { min-width: 36px; height: 36px; }
   .wz-size, .wz-color { height: 36px; }
 }
+
+.internal-link-search {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+}

@@ -3255,6 +3255,15 @@ function releaseImageFile(ref, list = projects) {
   bgImageUrls.delete(ref);
 }
 
+// Una imagen quitada del lienzo no se borra de la Biblioteca aunque ya nada la use: queda guardada con su
+// nombre (y aparece en la carpeta "Sin referencias")
+function keepImageInLibrary(img) {
+  const ref = bgImageRef(img);
+  if (!ref) return;
+  if (isRemoteImage(ref)) { releaseImageFile(ref); return; }
+  if (!imageNameEntries().some(e => e.id === ref)) setSavedImageName(ref, (img && img.name) || nextImageName());
+}
+
 // Reduce imágenes muy grandes para no llenar el almacenamiento
 function prepareImageBlob(file) {
   return new Promise((resolve, reject) => {
@@ -3289,14 +3298,24 @@ function screenToCanvas(clientX, clientY) {
 
 // opts.at: punto del lienzo donde va el centro (si no, el punto de pantalla o el centro de la vista);
 // opts.focus: acerca la vista a la imagen; opts.message: aviso al terminar
+// Tamaño inicial de una imagen nueva en el lienzo: proporcional al zoom, para que se vea siempre de un
+// buen tamaño en pantalla (aprox. la mitad del lado menor de la vista), sin importar su tamaño original
+function newImageSize(w, h) {
+  w = w || 600; h = h || 400;
+  const rect = viewportArea.getBoundingClientRect();
+  const target = Math.max(240, Math.min(rect.width * 0.5, rect.height * 0.6, 640)); // píxeles en pantalla
+  let width = target / zoom;
+  if (width * (h / w) > (rect.height * 0.6) / zoom) width = ((rect.height * 0.6) / zoom) * (w / h);
+  width = Math.max(40, Math.round(width));
+  return { width, height: Math.round(width * (h / w)) };
+}
+
 async function addBgImageFromFile(file, clientX = null, clientY = null, opts = {}) {
   if (!file || !file.type.startsWith('image/')) return;
   try {
     const { id, w, h } = await storeImageFile(file);
 
-    // Tamaño inicial: como máximo 600px de ancho en el lienzo
-    const width = Math.min(600, w);
-    const height = Math.round(width * (h / w));
+    const { width, height } = newImageSize(w, h);
     let center;
     if (opts.at) {
       center = opts.at;
@@ -3323,13 +3342,8 @@ async function addBgImageFromFile(file, clientX = null, clientY = null, opts = {
 function deleteBgImage(id) {
   const project = getActiveProject();
   const removed = getBgImages().find(img => img.id === id);
-  const ref = bgImageRef(removed);
   project.bgImages = getBgImages().filter(img => img.id !== id);
-  // La imagen no se borra de la Biblioteca aunque ya nada la use: queda guardada con su nombre
-  // (y aparece en la carpeta "Sin referencias")
-  if (ref && !isRemoteImage(ref)) {
-    if (!imageNameEntries().some(e => e.id === ref)) setSavedImageName(ref, (removed && removed.name) || nextImageName());
-  } else releaseImageFile(ref);
+  keepImageInLibrary(removed);
   selection.delete(`img:${id}`);
   persist();
   renderBgImages();
@@ -6077,9 +6091,9 @@ function deleteSelection({ skipConfirm = false, confirmed = false } = {}) {
   }
   imageIds.forEach(id => {
     const project = getActiveProject();
-    const ref = bgImageRef(getBgImages().find(img => img.id === id));
+    const removed = getBgImages().find(img => img.id === id);
     project.bgImages = getBgImages().filter(img => img.id !== id);
-    if (!skipConfirm) releaseImageFile(ref); // al cortar, la imagen sigue disponible para pegar
+    if (!skipConfirm) keepImageInLibrary(removed); // al cortar, la imagen sigue disponible para pegar
   });
   if (textIds.length) getActiveProject().texts = getTexts().filter(t => !textIds.includes(t.id));
   // Frames y conectores: también se quitan las flechas que unían algún objeto borrado
@@ -6924,7 +6938,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '154';
+const APP_VERSION = '157';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -7664,14 +7678,27 @@ function createBackLink(url, origin = null) {
   if (!dest || dest.id === activeProjectId) return;
   if (!Array.isArray(dest.texts)) dest.texts = [];
   if (dest.texts.some(t => t.backFor && t.backFor.projectId === activeProjectId && t.backFor.url === url)) return;
-  const board = ref.kind === 'b' ? (dest.boards || []).find(b => b.id === ref.id) : null;
   const back = origin && origin.id ? internalLinkUrl(activeProjectId, origin.kind, origin.id) : internalLinkUrl(activeProjectId);
+  // Se crea grande y por encima de todo lo que hay en el destino, para que se vea en la vista "ajustar
+  // tablero a pantalla" (que muestra todo el contenido)
+  let minX = Infinity, minY = Infinity, maxX = -Infinity;
+  const extend = (x, y, w) => {
+    if (![x, y, w].every(Number.isFinite)) return;
+    minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x + w);
+  };
+  (dest.boards || []).forEach(b => extend(b.x, b.y, 600 * (b.scale || 1)));
+  (dest.bgImages || []).forEach(i => extend(i.x, i.y, i.w));
+  (dest.texts || []).forEach(t => extend(t.x, t.y, t.w));
+  (dest.frames || []).forEach(f => extend(f.x, f.y, f.w));
+  if (minX === Infinity) { minX = 0; minY = 0; maxX = 1200; }
+  const span = Math.max(600, maxX - minX);
+  const size = Math.round(Math.min(900, Math.max(40, span / 14)));
   dest.texts.push({
     id: generateId('text'),
-    x: board ? Math.round(board.x) : 0,
-    y: board ? Math.round(board.y) - 70 : -100,
-    w: 480,
-    size: 22,
+    x: Math.round(minX),
+    y: Math.round(minY - size * 2.5),
+    w: Math.round(span * 0.8),
+    size,
     color: null,
     text: back,
     backFor: { projectId: activeProjectId, url }
@@ -8009,8 +8036,7 @@ async function addBgImageShared(ref, blob, point) {
     const same = projects.flatMap(p => p.bgImages || []).find(i => bgImageRef(i) === ref);
     w = same ? same.w : 600; h = same ? same.h : 400;
   }
-  const width = Math.min(600, w);
-  const height = Math.round(width * (h / w));
+  const { width, height } = newImageSize(w, h);
   // La misma imagen conserva su nombre en todos los lugares donde se usa
   const saved = imageNameEntries().find(e => e.id === ref);
   const named = saved || projects.flatMap(p => p.bgImages || []).find(i => bgImageRef(i) === ref && i.name);
@@ -8543,6 +8569,7 @@ function openInternalLinkPicker(onPick) {
         </div>
         <div class="internal-link-body">
           <p class="link-names-help">Elige a dónde salta el link. Después puedes cambiar su texto o ponerle una imagen en "Links".</p>
+          <input type="search" class="internal-link-search" placeholder="Buscar proyecto o tablero…" autocomplete="off">
           <div class="internal-link-list"></div>
         </div>
       </div>`;
@@ -8564,6 +8591,17 @@ function openInternalLinkPicker(onPick) {
   }
   const list = m.querySelector('.internal-link-list');
   list.innerHTML = html;
+  const search = m.querySelector('.internal-link-search');
+  search.value = '';
+  search.oninput = () => {
+    const q = search.value.trim().toLowerCase();
+    list.querySelectorAll('.internal-link-item').forEach(b => { b.hidden = !!q && !b.textContent.toLowerCase().includes(q); });
+    list.querySelectorAll('.internal-link-section').forEach(s => {
+      let n = s.nextElementSibling, any = false;
+      while (n && !n.classList.contains('internal-link-section')) { if (!n.hidden) any = true; n = n.nextElementSibling; }
+      s.hidden = !!q && !any;
+    });
+  };
   list.onclick = (e) => {
     const b = e.target.closest('[data-url]');
     if (!b) return;
@@ -8571,6 +8609,7 @@ function openInternalLinkPicker(onPick) {
     onPick(b.dataset.url);
   };
   m.style.display = 'flex';
+  if (!window.matchMedia('(pointer: coarse)').matches) setTimeout(() => search.focus(), 50);
 }
 // Marcas ligeras (Markdown) de los textos del lienzo: **negrita**, *cursiva*, ~~tachado~~, `código`,
 // ```bloques de código```, # títulos, - listas y > citas (como lo que copia el botón Copiar de Claude)
