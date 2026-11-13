@@ -5394,7 +5394,10 @@ function commitEditingText() {
 
 function finishTextEdit() {
   if (!editingTextId) return;
+  const wasSheet = document.body.classList.contains('wz-mode');
   commitEditingText();
+  // Una hoja editada se guarda como un solo cambio que Ctrl+Z puede revertir
+  if (wasSheet) lastHistoryPush = 0;
   persist();
   renderTexts();
 }
@@ -5454,6 +5457,7 @@ function editText(id) {
 function renderTexts() {
   if (editingTextId) commitEditingText();
   document.querySelectorAll('.wz-bar').forEach(b => b.remove());
+  document.body.classList.remove('wz-mode');
   textLayer.innerHTML = '';
   getTexts().forEach(t => {
     const el = document.createElement('div');
@@ -6550,6 +6554,10 @@ canvasMenu.addEventListener('click', async (e) => {
       createBackLink(url, { kind: 't', id: nt.id });
     });
   }
+  if (cmd === 'internalLinkNoBack') {
+    const point = menuCanvasPoint;
+    openInternalLinkPicker(url => { addText(url, point); });
+  }
   if (cmd === 'copyInternalLink') {
     // Link al objeto seleccionado (tablero, texto o imagen) o, si no hay, al proyecto
     const key = selection.size === 1 ? [...selection][0] : '';
@@ -6951,7 +6959,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '159';
+const APP_VERSION = '160';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

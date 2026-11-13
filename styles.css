@@ -6821,15 +6821,17 @@ html .webwin-resize {
 /* Barra de herramientas sobre la hoja */
 .wz-bar {
   position: fixed;
-  left: 1rem;
-  top: 76px;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  justify-content: center;
   z-index: 300;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   width: max-content;
-  max-width: min(640px, 90vw);
+  max-width: min(900px, 96vw);
   padding: 6px;
   background: var(--bg-surface);
   color: var(--text-main);
@@ -6863,7 +6865,13 @@ html .webwin-resize {
   border: 2px solid #fff;
   border-radius: 50%;
 }
-.wz-bar .wz-done { background: var(--accent-primary); border-color: var(--accent-primary); color: #fff; }
+.wz-bar .wz-done { min-width: 52px; height: 44px; margin-left: 6px; font-size: 24px; font-weight: 800; background: #dc2626; border-color: #b91c1c; color: #fff; }
+.wz-bar .wz-done:hover { background: #b91c1c; }
+/* Modo solo edición de texto: fuera herramientas, propiedades y zoom del lienzo */
+body.wz-mode .toolbox,
+body.wz-mode .zoom-hud,
+body.wz-mode .mobile-fab,
+body.wz-mode .context-bar { visibility: hidden; pointer-events: none; }
 .wz-sep { width: 1px; height: 20px; margin: 0 3px; background: var(--border-medium); }
 .wz-color {
   width: 28px;

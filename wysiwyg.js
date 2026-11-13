@@ -340,7 +340,11 @@ function openWysiwyg(textId) {
     <span class="wz-sep"></span>
     <button type="button" data-cmd="clear" title="Quitar formato">⌫</button>
     <button type="button" data-cmd="unpage" title="Volver a texto normal (sin hoja)">Sin hoja</button>
-    <button type="button" class="wz-done" data-cmd="done" title="Cerrar la edición" aria-label="Cerrar la edición">✕</button>`;
+    <span class="wz-sep"></span>
+    <button type="button" data-cmd="zoom-out" title="Alejar">🔍−</button>
+    <button type="button" data-cmd="zoom-fit" title="Ver la hoja completa">Hoja completa</button>
+    <button type="button" data-cmd="zoom-in" title="Acercar">🔍+</button>
+    <button type="button" class="wz-done" data-cmd="done" title="Guardar y salir (Ctrl+Z en el lienzo lo revierte)" aria-label="Guardar y salir">✕</button>`;
 
   const surface = document.createElement('div');
   surface.className = 'wz-surface';
@@ -418,6 +422,9 @@ function openWysiwyg(textId) {
   const exec = (cmd) => {
     const sizeBox = bar.querySelector('.wz-size');
     if (cmd === 'done') { finishTextEdit(); return; }
+    if (cmd === 'zoom-in') { btnZoomIn.click(); return; }
+    if (cmd === 'zoom-out') { btnZoomOut.click(); return; }
+    if (cmd === 'zoom-fit') { wzCenterSheet(t); return; }
     if (cmd === 'unpage') { t.page = false; finishTextEdit(); return; }
     if (cmd === 'hl-none') { applyHighlight(null); return; }
     if (cmd === 'size+' || cmd === 'size-') {
@@ -488,13 +495,18 @@ function openWysiwyg(textId) {
   s.addRange(range);
   // La hoja se centra en pantalla y la edición es "modal": hacer clic en el lienzo no la cierra
   // Centrada en la pantalla completa (como una ventana modal), con el mismo margen arriba y abajo
-  requestAnimationFrame(() => {
-    const area = viewportArea.getBoundingClientRect();
-    const w = t.w, h = Math.round(t.w * 1.414);
-    const padY = Math.max(24, Math.min(90, area.height * 0.1)), padX = 24;
-    const z = Math.min(Math.max(Math.min((area.width - padX * 2) / w, (area.height - padY * 2) / h), ZOOM_CONFIG.MIN), ZOOM_CONFIG.MAX);
-    animateViewTo(z, (area.width - w * z) / 2 - t.x * z, (area.height - h * z) / 2 - t.y * z);
-  });
+  // Modo solo edición de texto: sin herramientas, propiedades ni zoom del lienzo
+  document.body.classList.add('wz-mode');
+  requestAnimationFrame(() => wzCenterSheet(t));
+}
+
+// Muestra la hoja completa, centrada en la pantalla
+function wzCenterSheet(t) {
+  const area = viewportArea.getBoundingClientRect();
+  const w = t.w, h = Math.round(t.w * 1.414);
+  const padY = Math.max(40, area.height * 0.06), padX = 24;
+  const z = Math.max(Math.min((area.width - padX * 2) / w, (area.height - padY * 2) / h), 0.01);
+  animateViewTo(z, (area.width - w * z) / 2 - t.x * z, (area.height - h * z) / 2 - t.y * z);
 }
 
 // Mientras se edita una hoja, los clics fuera de ella no hacen nada (solo el ✕ la cierra)
