@@ -6720,7 +6720,7 @@ html .webwin-resize {
 
 /* Texto en formato de hoja (editor WYSIWYG): fondo blanco, borde negro delgado */
 .canvas-text.is-page {
-  padding: 0.7em 0.9em;
+  padding: 0;
   background: #fff;
   color: #111;
   border: 1px solid #000;
@@ -6737,8 +6737,19 @@ html .webwin-resize {
   -webkit-user-select: text;
   overflow: visible;
 }
+/* Cuerpo de la hoja: alto de una página y scroll para las demás; una línea tenue marca cada salto de página */
+.canvas-text.is-page .page-body,
 .canvas-text.is-page .wz-surface {
-  min-height: 3em;
+  height: 100%;
+  padding: 0.7em 0.9em;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--page-h, 100%) - 2px), rgba(99, 102, 241, 0.45) calc(var(--page-h, 100%) - 2px), rgba(99, 102, 241, 0.45) var(--page-h, 100%));
+  background-attachment: local;
+}
+.canvas-text.is-page .wz-surface {
   outline: none;
   white-space: pre-wrap;
   cursor: text;
@@ -6809,9 +6820,9 @@ html .webwin-resize {
   cursor: pointer;
 }
 .wz-size {
-  width: 52px;
+  width: 76px;
   height: 28px;
-  padding: 0 4px;
+  padding: 0 2px 0 6px;
   background: var(--bg-surface-elevated);
   color: var(--text-main);
   border: 1px solid var(--border-medium);

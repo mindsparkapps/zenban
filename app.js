@@ -5158,6 +5158,15 @@ function applyTextStyle(el, t) {
   el.style.color = t.color || '';
   // Nota adhesiva: un texto con fondo de color (el selector de color de la barra cambia su fondo)
   el.classList.toggle('is-page', !!t.page);
+  // Hoja de tamaño de página (proporción A4): si el texto es más largo, se recorre con scroll
+  if (t.page) {
+    const pageH = Math.round(t.w * 1.414);
+    el.style.height = `${pageH}px`;
+    el.style.setProperty('--page-h', `${pageH - 2}px`);
+  } else {
+    el.style.height = '';
+    el.style.removeProperty('--page-h');
+  }
   el.classList.toggle('is-sticky', !!t.sticky && !t.page);
   el.style.background = t.page ? '' : (t.sticky || '');
 }
@@ -5425,6 +5434,15 @@ function renderTexts() {
     el.classList.toggle('is-ytprogress', isWidget);
     el.classList.toggle('is-webwin', isWeb);
     el.innerHTML = isWeb ? webWindowHtml(t) : isWidget ? ytProgressWidgetHtml(t) : linkify(t.text, t.linkNames, true) + youtubePreviews(t.text);
+    if (t.page && !isWeb && !isWidget) {
+      // La hoja tiene el tamaño de una página: el contenido va en un cuerpo con scroll
+      el.innerHTML = `<div class="page-body">${el.innerHTML}</div>`;
+      // La rueda recorre las páginas (con Ctrl sigue siendo el zoom del lienzo)
+      el.addEventListener('wheel', (e) => {
+        const body = el.querySelector('.page-body, .wz-surface');
+        if (!e.ctrlKey && body && body.scrollHeight > body.clientHeight + 1) e.stopPropagation();
+      }, { passive: true });
+    }
     const handle = document.createElement('div');
     handle.className = 'canvas-text-handle';
     handle.title = 'Arrastra para cambiar el ancho de la caja';
@@ -6876,7 +6894,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '150';
+const APP_VERSION = '151';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
