@@ -3322,9 +3322,14 @@ async function addBgImageFromFile(file, clientX = null, clientY = null, opts = {
 
 function deleteBgImage(id) {
   const project = getActiveProject();
-  const ref = bgImageRef(getBgImages().find(img => img.id === id));
+  const removed = getBgImages().find(img => img.id === id);
+  const ref = bgImageRef(removed);
   project.bgImages = getBgImages().filter(img => img.id !== id);
-  releaseImageFile(ref);
+  // La imagen no se borra de la Biblioteca aunque ya nada la use: queda guardada con su nombre
+  // (y aparece en la carpeta "Sin referencias")
+  if (ref && !isRemoteImage(ref)) {
+    if (!imageNameEntries().some(e => e.id === ref)) setSavedImageName(ref, (removed && removed.name) || nextImageName());
+  } else releaseImageFile(ref);
   selection.delete(`img:${id}`);
   persist();
   renderBgImages();
@@ -7692,7 +7697,7 @@ async function openInternalLink(url) {
   setTimeout(() => {
     const back = ref.projectId !== fromProjectId && getTexts().find(t => t.backFor && t.backFor.projectId === fromProjectId && t.backFor.url === url);
     const el = back && getTextEl(back.id);
-    if (back && el) { fitRectToScreen(back.x, back.y, el.offsetWidth, el.offsetHeight); setSelection([`text:${back.id}`]); return; }
+    if (back && el) { setSelection([`text:${back.id}`]); fitBoardToScreen(); return; }
     focusInternalTarget(ref);
   }, 60);
 }
@@ -7701,20 +7706,20 @@ function focusInternalTarget(ref) {
   if (ref.kind === 'b') {
     const b = boards.find(x => x.id === ref.id);
     const el = b && getBoardEl(b.id);
-    if (b && el) { fitRectToScreen(b.x, b.y, el.offsetWidth * boardScale(b), el.offsetHeight * boardScale(b)); setSelection([`board:${b.id}`]); return; }
+    if (b && el) { fitBoardToScreen(); setSelection([`board:${b.id}`]); return; }
   } else if (ref.kind === 't') {
     const t = getTexts().find(x => x.id === ref.id);
     const el = t && getTextEl(t.id);
-    if (t && el) { fitRectToScreen(t.x, t.y, el.offsetWidth, el.offsetHeight); setSelection([`text:${t.id}`]); return; }
+    if (t && el) { fitBoardToScreen(); setSelection([`text:${t.id}`]); return; }
   } else if (ref.kind === 'i') {
     const i = getBgImages().find(x => x.id === ref.id);
-    if (i) { fitRectToScreen(i.x, i.y, i.w, i.h); setSelection([`img:${i.id}`]); return; }
+    if (i) { fitBoardToScreen(); setSelection([`img:${i.id}`]); return; }
   } else if (ref.kind === 'k') {
     const task = tasks.find(x => x.id === ref.id);
     const col = task && columns.find(c => c.id === task.columnId);
     const b = col && boards.find(x => x.id === col.boardId);
     const el = b && getBoardEl(b.id);
-    if (b && el) fitRectToScreen(b.x, b.y, el.offsetWidth * boardScale(b), el.offsetHeight * boardScale(b));
+    if (b && el) fitBoardToScreen();
     const card = task && kanbanBoard.querySelector(`.kanban-card[data-task-id="${task.id}"]`);
     if (card) {
       card.scrollIntoView({ block: 'nearest' });
@@ -7729,7 +7734,7 @@ function focusInternalTarget(ref) {
 //       elegir una inserta una copia donde se abrió el menú (o al centro de la vista) -----
 function imagesOfProjects(list, spaceLabel, space) {
   const out = [];
-  const add = (ref, p, where, name = '', saved = false) => out.push({ ref, project: p, where, spaceLabel, space, name, saved });
+  const add = (ref, p, where, name = '', saved = false) => out.push({ ref, project: p, where, spaceLabel, space, name, saved, used: where !== 'Biblioteca' });
   list.forEach(p => {
     (p.bgImages || []).forEach(i => add(bgImageRef(i), p, 'Lienzo', i.name || ''));
     // Imágenes renombradas: siguen en la Biblioteca con su nombre aunque ya no se usen en ningún lugar
@@ -7763,7 +7768,10 @@ function libraryItems() {
   items.forEach(it => {
     const prev = byRef.get(it.ref);
     if (!prev) byRef.set(it.ref, it);
-    else if (it.saved || (!prev.name && it.name)) prev.name = it.name;
+    else {
+      if (it.saved || (!prev.name && it.name)) prev.name = it.name;
+      if (it.used) prev.used = true;
+    }
   });
   return [...byRef.values()];
 }
@@ -8110,6 +8118,8 @@ function openImageLibrary(point = null) {
     if (current === 'all') return true;
     if (it.space) return false; // las de otros espacios se ordenan en su propio espacio
     const f = imageFolderOf(it.ref);
+    // 'unref': imágenes que ya no se usan en ningún lugar y no están en una carpeta
+    if (current === 'unref') return !it.used && !f;
     return current === 'none' ? !f : f === current;
   };
   // Selección múltiple (por archivo): Ctrl+clic, Mayús+clic, un recuadro arrastrado sobre las imágenes o,
@@ -8261,7 +8271,7 @@ function openImageLibrary(point = null) {
         ${it.space ? '' : '<span class="image-finder-edit" role="button" data-edit title="Renombrar" aria-label="Renombrar">✏️</span>'}
         <span><b>${escapeHtml(label(it))}</b><small>${escapeHtml(it.project.name)} · ${escapeHtml(it.where)} · ${escapeHtml(it.spaceLabel)}</small></span>
       </button>`).join('')
-      : `<p class="image-finder-empty">${!items.length ? 'Todavía no hay imágenes.' : current !== 'all' && !q ? 'Esta carpeta está vacía. Arrastra imágenes hasta ella o usa clic derecho › Mover a carpeta.' : 'Ninguna imagen coincide.'}</p>`;
+      : `<p class="image-finder-empty">${!items.length ? 'Todavía no hay imágenes.' : current === 'unref' && !q ? 'No hay imágenes sin referencias.' : current !== 'all' && !q ? 'Esta carpeta está vacía. Arrastra imágenes hasta ella o usa clic derecho › Mover a carpeta.' : 'Ninguna imagen coincide.'}</p>`;
     grid.querySelectorAll('[data-i]').forEach(b => libraryThumb(b.querySelector('img'), items[Number(b.dataset.i)]));
     grid.classList.toggle('is-selecting', selectMode || picked.size > 0);
     paintSelbar();
@@ -8276,6 +8286,7 @@ function openImageLibrary(point = null) {
     foldersEl.innerHTML = chip('all', '🖼 Todas', items.length) +
       folders.map(f => chip(f.id, `${f.main ? '⭐' : '📁'} ${escapeHtml(f.name)}`, count(f.id))).join('') +
       (folders.length ? chip('none', 'Sin carpeta', own.filter(it => !imageFolderOf(it.ref)).length) : '') +
+      chip('unref', '🕳 Sin referencias', own.filter(it => !it.used && !imageFolderOf(it.ref)).length) +
       `<button type="button" class="image-folder-chip is-add" data-add-folder title="Crear una carpeta">＋ Carpeta</button>`;
   };
   // Nombre de una carpeta (nueva o existente) escrito en la misma fila
@@ -8369,7 +8380,7 @@ function openImageLibrary(point = null) {
     foldersEl.querySelectorAll('.is-drop').forEach(x => { if (x !== chipEl) x.classList.remove('is-drop'); });
     if (!dragged || !chipEl) return;
     const id = chipEl.dataset.folder;
-    const ok = dragged.kind === 'img' ? (id !== 'all') : (id.startsWith('lfolder') && id !== dragged.id);
+    const ok = dragged.kind === 'img' ? (id !== 'all' && id !== 'unref') : (id.startsWith('lfolder') && id !== dragged.id);
     if (!ok) return;
     e.preventDefault();
     chipEl.classList.add('is-drop');
