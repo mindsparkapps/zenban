@@ -5157,8 +5157,9 @@ function applyTextStyle(el, t) {
   el.style.fontSize = `${t.size}px`;
   el.style.color = t.color || '';
   // Nota adhesiva: un texto con fondo de color (el selector de color de la barra cambia su fondo)
-  el.classList.toggle('is-sticky', !!t.sticky);
-  el.style.background = t.sticky || '';
+  el.classList.toggle('is-page', !!t.page);
+  el.classList.toggle('is-sticky', !!t.sticky && !t.page);
+  el.style.background = t.page ? '' : (t.sticky || '');
 }
 
 const STICKY_DEFAULT = '#fde68a';
@@ -5341,7 +5342,9 @@ function commitEditingText() {
   const t = getTexts().find(x => x.id === id);
   const el = getTextEl(id);
   const ta = el && el.querySelector('textarea');
+  const wz = el && el.querySelector('.wz-surface');
   if (t && ta) t.text = ta.value.replace(/\s+$/, '');
+  else if (t && wz) t.text = wysiwygToMarks(wz);
   if (t && !t.text.trim()) {
     getActiveProject().texts = getTexts().filter(x => x.id !== id);
     selection.delete(`text:${id}`);
@@ -5360,6 +5363,11 @@ function editText(id) {
   const t = getTexts().find(x => x.id === id);
   const el = getTextEl(id);
   if (!t || !el) return;
+  // Un texto en formato de hoja se edita con el editor WYSIWYG
+  if (t.page && typeof openWysiwyg === 'function') {
+    if (editingTextId !== id) openWysiwyg(id);
+    return;
+  }
   setSelection([`text:${id}`]);
   editingTextId = id;
   el.classList.add('is-editing');
@@ -5616,7 +5624,7 @@ viewportArea.addEventListener('pointerdown', (e) => {
   if (currentTool !== 'select' || isSpacePressed || isPanModeActive || e.button !== 0) return;
   if (e.pointerType === 'touch' && !e.isPrimary) return; // segundo dedo: es para mover el lienzo
   const t = e.target;
-  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle, .frame-handle, .frame-scale-handle, .img-mark.is-selected, .sel-scale-handle, .connect-handle, .ytlist-handle, .webwin-resize')) return;
+  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle, .canvas-text.is-wz-editing, .frame-handle, .frame-scale-handle, .img-mark.is-selected, .sel-scale-handle, .connect-handle, .ytlist-handle, .webwin-resize')) return;
   // Un link dentro de un texto del lienzo también sirve para tomar y mover ese texto (un clic corto lo abre)
   if (t.closest('button, input, select, textarea, a, label') && !t.closest('.canvas-text a')) return;
 
@@ -6868,7 +6876,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '147';
+const APP_VERSION = '148';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -8486,7 +8494,7 @@ function richMarks(h) {
   // El código se aparta para que sus asteriscos o # no se vuelvan formato
   const code = [];
   const keep = (html) => `\u0005${code.push(html) - 1}\u0005`;
-  return h
+  let out = h
     .replace(/^[ \t]*```[^\n]*\n([\s\S]*?)\n?[ \t]*```[ \t]*$/gm, (m, c) => keep(`<code class="rt-code rt-block">${c}</code>`))
     .replace(/`([^`\n]+)`/g, (m, c) => keep(`<code class="rt-code">${c}</code>`))
     // Tablas (| a | b | con la fila |---|---|): se dibujan como tabla; sus celdas aceptan negrita, código, etc.
@@ -8513,6 +8521,18 @@ function richMarks(h) {
     .replace(/~~(?=\S)([^\n]*?\S)~~/g, '<s>$1</s>')
     .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, '$1<i>$2</i>')
     .replace(/\u0005(\d+)\u0005/g, (m, i) => code[i]);
+  // Color y tamaño en px de una parte del texto: {{color:#ff0000|texto}} y {{size:24|texto}} (se anidan)
+  let prev;
+  do {
+    prev = out;
+    out = out.replace(/\{\{(color|size):([^|{}\n]+)\|([^{}\n]*?)\}\}/g, (m, kind, val, inner) => {
+      val = val.trim();
+      if (kind === 'color') return /^#[0-9a-f]{3,8}$/i.test(val) ? `<span style="color:${val}">${inner}</span>` : inner;
+      const px = parseFloat(val);
+      return px >= 4 && px <= 400 ? `<span style="font-size:${px}px">${inner}</span>` : inner;
+    });
+  } while (out !== prev);
+  return out;
 }
 
 function linkify(str, names = null, rich = false) {
