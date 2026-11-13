@@ -1143,8 +1143,15 @@ setSelection = function (keys) {
 ['pointerup', 'keyup'].forEach(ev => window.addEventListener(ev, () => {
   if (openedFrameId) setTimeout(clipToOpenedFrame, 80);
 }));
+// Esc sale del lienzo del frame solo si no había nada seleccionado ni se estaba escribiendo: si había algo
+// seleccionado, ese mismo Esc ya lo deselecciona (otro manejador corre antes), y no debe además cerrar el lienzo
+let escHadSelection = false;
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && openedFrameId && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && !selection.size) closeFrameCanvas();
+  if (e.key === 'Escape') escHadSelection = selection.size > 0 || !!editingTextId;
+}, true);
+window.addEventListener('keydown', (e) => {
+  const a = document.activeElement;
+  if (e.key === 'Escape' && openedFrameId && !escHadSelection && !(a && (a.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(a.tagName)))) closeFrameCanvas();
 });
 
 // Cambiar de proyecto cierra el lienzo del frame abierto (devuelve lo guardado aparte)

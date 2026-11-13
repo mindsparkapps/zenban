@@ -36,8 +36,15 @@ async function checkForAppUpdate(force = false) {
 }
 
 // Escribiendo, arrastrando o con una ventana abierta no se recarga (se reintenta en unos segundos)
+// La rueda (zoom o scroll) no deja el puntero apretado: se anota para no recargar justo mientras se usa
+let lastWheelAt = 0;
+window.addEventListener('wheel', () => { lastWheelAt = Date.now(); }, { passive: true, capture: true });
+
 function appUpdateBlocked() {
   if (userIsInteracting() || SYNC.busy) return true;
+  if (Date.now() - lastWheelAt < 4000) return true;
+  // Con un frame abierto como lienzo aparte no se recarga: al recargar se saldría de ese lienzo
+  if (typeof openedFrameId !== 'undefined' && openedFrameId) return true;
   const a = document.activeElement;
   if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return true;
   return [...document.querySelectorAll('.modal-backdrop')].some(m => !m.hidden && m.getClientRects().length > 0);
