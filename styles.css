@@ -6820,10 +6820,10 @@ html .webwin-resize {
 
 /* Barra de herramientas sobre la hoja */
 .wz-bar {
-  position: absolute;
-  left: -1px;
-  bottom: 100%;
-  margin-bottom: 8px;
+  position: fixed;
+  left: 1rem;
+  top: 76px;
+  z-index: 300;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -6842,8 +6842,6 @@ html .webwin-resize {
   line-height: 1;
   white-space: nowrap;
   cursor: default;
-  transform: scale(var(--inv-zoom, 1));
-  transform-origin: left bottom;
 }
 .wz-bar button {
   min-width: 28px;
@@ -6910,11 +6908,13 @@ html .webwin-resize {
 /* Link a otro proyecto con el icono de link por defecto */
 .auto-link.internal-link.link-with-icon {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.35em;
+  gap: 0.25em;
   vertical-align: middle;
-  padding: 0.1em 0.55em 0.1em 0.4em;
-  border-radius: 999px;
+  padding: 0.35em 0.6em;
+  border-radius: 0.6em;
+  text-align: center;
   background: rgba(139, 92, 246, 0.18);
   border: 1px solid rgba(139, 92, 246, 0.45);
   color: #c4b5fd;
@@ -6922,6 +6922,6 @@ html .webwin-resize {
   font-weight: 600;
 }
 .auto-link.internal-link.link-with-icon:hover { background: rgba(139, 92, 246, 0.3); color: #ede9fe; }
-.link-default-icon { width: 1.3em; height: 1.3em; flex: none; }
+.link-default-icon { width: 2.6em; height: 2.6em; flex: none; }
 .auto-link.internal-link.link-with-icon.icon-only { padding: 0.25em; }
 .auto-link.internal-link.link-with-icon.icon-only .link-default-icon { width: 2.6em; height: 2.6em; }

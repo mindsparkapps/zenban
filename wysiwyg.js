@@ -347,7 +347,9 @@ function openWysiwyg(textId) {
   surface.contentEditable = 'true';
   surface.spellcheck = true;
   surface.innerHTML = richMarks(escapeHtml(t.text || ''));
-  el.appendChild(bar);
+  // La barra va fija sobre las herramientas del lienzo (no dentro de la hoja, que se mueve con el zoom)
+  document.querySelectorAll('.wz-bar').forEach(b => b.remove());
+  document.body.appendChild(bar);
   el.appendChild(surface);
 
   const restore = () => {
@@ -485,9 +487,13 @@ function openWysiwyg(textId) {
   s.removeAllRanges();
   s.addRange(range);
   // La hoja se centra en pantalla y la edición es "modal": hacer clic en el lienzo no la cierra
+  // Centrada en la pantalla completa (como una ventana modal), con el mismo margen arriba y abajo
   requestAnimationFrame(() => {
-    const cur = getTextEl(textId);
-    if (cur) fitRectToScreen(t.x, t.y, cur.offsetWidth, cur.offsetHeight);
+    const area = viewportArea.getBoundingClientRect();
+    const w = t.w, h = Math.round(t.w * 1.414);
+    const padY = Math.max(24, Math.min(90, area.height * 0.1)), padX = 24;
+    const z = Math.min(Math.max(Math.min((area.width - padX * 2) / w, (area.height - padY * 2) / h), ZOOM_CONFIG.MIN), ZOOM_CONFIG.MAX);
+    animateViewTo(z, (area.width - w * z) / 2 - t.x * z, (area.height - h * z) / 2 - t.y * z);
   });
 }
 
@@ -498,7 +504,7 @@ function openWysiwyg(textId) {
     const editing = document.querySelector('.canvas-text.is-wz-editing');
     if (!editing || editing.contains(e.target)) return;
     // Los avisos y cuadros de diálogo siguen funcionando
-    if (e.target.closest && e.target.closest('.modal-backdrop, .toast, #libraryMenu')) return;
+    if (e.target.closest && e.target.closest('.modal-backdrop, .toast, #libraryMenu, .wz-bar')) return;
     e.stopPropagation();
     e.preventDefault();
   }, true);

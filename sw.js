@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zenban-v158';
+const CACHE_NAME = 'zenban-v159';
 const STATIC_ASSETS = [
   './index.html',
   './styles.css',

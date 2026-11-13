@@ -5453,6 +5453,7 @@ function editText(id) {
 
 function renderTexts() {
   if (editingTextId) commitEditingText();
+  document.querySelectorAll('.wz-bar').forEach(b => b.remove());
   textLayer.innerHTML = '';
   getTexts().forEach(t => {
     const el = document.createElement('div');
@@ -5695,7 +5696,7 @@ viewportArea.addEventListener('pointerdown', (e) => {
   if (currentTool !== 'select' || isSpacePressed || isPanModeActive || e.button !== 0) return;
   if (e.pointerType === 'touch' && !e.isPrimary) return; // segundo dedo: es para mover el lienzo
   const t = e.target;
-  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle, .canvas-text.is-wz-editing, .frame-handle, .frame-scale-handle, .img-mark.is-selected, .sel-scale-handle, .connect-handle, .ytlist-handle, .webwin-resize')) return;
+  if (t.closest('.toolbox, .zoom-hud, .mobile-fab, .bg-image-handle, .bg-image-toolbar, .canvas-text-handle, .canvas-text.is-wz-editing, .wz-bar, .frame-handle, .frame-scale-handle, .img-mark.is-selected, .sel-scale-handle, .connect-handle, .ytlist-handle, .webwin-resize')) return;
   // Un link dentro de un texto del lienzo también sirve para tomar y mover ese texto (un clic corto lo abre)
   if (t.closest('button, input, select, textarea, a, label') && !t.closest('.canvas-text a')) return;
 
@@ -6950,7 +6951,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '158';
+const APP_VERSION = '159';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -8865,7 +8866,7 @@ function openLinkNamesDialog(urls, names, onSave) {
       <label for="linkName${i}" class="link-name-url" title="${escapeHtml(url)}">${escapeHtml(url)}</label>
       <input type="text" id="linkName${i}" data-url-index="${i}" placeholder="Texto a mostrar" value="${escapeHtml(state[i].text || '')}">
       <div class="link-name-options">
-        <label class="link-name-hide"><input type="checkbox" data-hide="${i}" ${state[i].hide ? 'checked' : ''}> No mostrar el link</label>
+        <label class="link-name-hide"><input type="checkbox" data-hide="${i}" ${state[i].hide ? 'checked' : ''}> No mostrar el link (para los videos de YouTube)</label>
         <label class="link-name-hide"><input type="checkbox" data-notext="${i}" ${state[i].noText ? 'checked' : ''}> Sin texto (solo la imagen)</label>
         <button type="button" class="btn btn-ghost btn-sm" data-pick-image="${i}">🖼 Imagen</button>
         <span class="link-name-thumb" data-thumb="${i}"></span>
