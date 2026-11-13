@@ -144,7 +144,14 @@ document.addEventListener('selectionchange', () => {
     wysiwygRange = r.cloneRange();
     const sizeInput = document.querySelector('.wz-size');
     if (sizeInput && document.activeElement !== sizeInput) {
-      const node = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+      // El texto real de la selección (los bordes del rango pueden ser el contenedor, no el texto)
+      let node = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+      if (!r.collapsed) {
+        const walker = document.createTreeWalker(r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentNode, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          if (n.nodeValue.trim() && r.intersectsNode(n)) { node = n.parentElement; break; }
+        }
+      }
       const base = parseFloat(getComputedStyle(surf).fontSize);
       if (node && base) sizeInput.value = Math.round(parseFloat(getComputedStyle(node).fontSize) / base * WZ_BASE_PT) || WZ_BASE_PT;
     }
