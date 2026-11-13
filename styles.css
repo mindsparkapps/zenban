@@ -6819,7 +6819,8 @@ html .webwin-resize {
   font: inherit;
   text-align: center;
 }
-.wz-px { color: var(--text-muted); }
+.wz-lbl { color: var(--text-muted); font-size: 11px; font-weight: 700; }
+.wz-bar .wz-hl-none { min-width: 22px; height: 22px; padding: 0; font-size: 11px; }
 @media (pointer: coarse) {
   .wz-bar button { min-width: 36px; height: 36px; }
   .wz-size, .wz-color { height: 36px; }

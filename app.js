@@ -6876,7 +6876,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '148';
+const APP_VERSION = '149';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -8521,15 +8521,20 @@ function richMarks(h) {
     .replace(/~~(?=\S)([^\n]*?\S)~~/g, '<s>$1</s>')
     .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, '$1<i>$2</i>')
     .replace(/\u0005(\d+)\u0005/g, (m, i) => code[i]);
-  // Color y tamaño en px de una parte del texto: {{color:#ff0000|texto}} y {{size:24|texto}} (se anidan)
+  // Formato de una parte del texto (se anidan): {{color:#ff0000|texto}}, {{bg:#fde047|texto}} (resaltado),
+  // {{pt:14|texto}} (tamaño estilo Office: 12 = normal) y {{size:24|texto}} (px, versión anterior)
   let prev;
   do {
     prev = out;
-    out = out.replace(/\{\{(color|size):([^|{}\n]+)\|([^{}\n]*?)\}\}/g, (m, kind, val, inner) => {
+    out = out.replace(/\{\{(color|bg|pt|size):([^|{}\n]+)\|([^{}\n]*?)\}\}/g, (m, kind, val, inner) => {
       val = val.trim();
-      if (kind === 'color') return /^#[0-9a-f]{3,8}$/i.test(val) ? `<span style="color:${val}">${inner}</span>` : inner;
-      const px = parseFloat(val);
-      return px >= 4 && px <= 400 ? `<span style="font-size:${px}px">${inner}</span>` : inner;
+      if (kind === 'color' || kind === 'bg') {
+        if (!/^#[0-9a-f]{3,8}$/i.test(val)) return inner;
+        return kind === 'color' ? `<span style="color:${val}">${inner}</span>` : `<span style="background-color:${val}">${inner}</span>`;
+      }
+      const n = parseFloat(val);
+      if (!(n >= 4 && n <= 400)) return inner;
+      return kind === 'pt' ? `<span style="font-size:${(n / 12).toFixed(3)}em">${inner}</span>` : `<span style="font-size:${n}px">${inner}</span>`;
     });
   } while (out !== prev);
   return out;

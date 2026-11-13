@@ -11,21 +11,29 @@ function wysiwygToMarks(root) {
   const wrap = (mark, inner) => (inner.trim() ? mark + inner + mark : inner);
 
   const toHex = (c) => {
+    c = String(c).trim();
+    if (!c || c === 'transparent' || /^rgba\(.*,\s*0\)$/.test(c)) return '';
     if (/^#[0-9a-f]{3,8}$/i.test(c)) return c;
-    const m = String(c).match(/\d+/g);
+    const m = c.match(/\d+/g);
     return m && m.length >= 3 ? '#' + m.slice(0, 3).map(v => (+v).toString(16).padStart(2, '0')).join('') : '';
   };
 
-  // Color y tamaño en px de la selección, línea por línea (la marca no cruza saltos de línea)
+  // Color, resaltado y tamaño de la selección, línea por línea (la marca no cruza saltos de línea).
+  // El tamaño se guarda como número estilo Office (12 = el tamaño base de la hoja): {{pt:14|texto}}
   function styledMd(n, inner) {
     const col = toHex(n.style.color || n.getAttribute('color') || '');
-    const px = /px$/.test(n.style.fontSize) ? Math.round(parseFloat(n.style.fontSize)) : 0;
-    if (!col && !px) return inner;
+    const bg = toHex(n.style.backgroundColor || '');
+    const fs = n.style.fontSize || '';
+    const pt = /em$/.test(fs) ? Math.round(parseFloat(fs) * 12) : 0;
+    const px = /px$/.test(fs) ? Math.round(parseFloat(fs)) : 0;
+    if (!col && !bg && !pt && !px) return inner;
     return inner.split('\n').map(line => {
       if (!line.trim()) return line;
       const pre = (line.match(/^\s*(?:[-*+]|\d{1,3}[.)]|#{1,6}|>)\s+/) || [''])[0];
       let body = line.slice(pre.length);
+      if (pt) body = '{{pt:' + pt + '|' + body + '}}';
       if (px) body = '{{size:' + px + '|' + body + '}}';
+      if (bg) body = '{{bg:' + bg + '|' + body + '}}';
       if (col) body = '{{color:' + col + '|' + body + '}}';
       return pre + body;
     }).join('\n');
@@ -121,6 +129,10 @@ function wysiwygToMarks(root) {
 }
 
 let wysiwygRange = null;
+// Tamaños como en Office: 12 es el tamaño base de la hoja (el que tiene el texto sin formato)
+const WZ_BASE_PT = 12;
+const WZ_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72, 96];
+const WZ_HIGHLIGHTS = ['#fde047', '#86efac', '#67e8f9', '#f9a8d4', '#fdba74'];
 
 // La selección se recuerda para poder aplicarle color o tamaño aunque el foco pase a la barra
 document.addEventListener('selectionchange', () => {
@@ -133,7 +145,8 @@ document.addEventListener('selectionchange', () => {
     const sizeInput = document.querySelector('.wz-size');
     if (sizeInput && document.activeElement !== sizeInput) {
       const node = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
-      if (node) sizeInput.value = Math.round(parseFloat(getComputedStyle(node).fontSize) || 0);
+      const base = parseFloat(getComputedStyle(surf).fontSize);
+      if (node && base) sizeInput.value = Math.round(parseFloat(getComputedStyle(node).fontSize) / base * WZ_BASE_PT) || WZ_BASE_PT;
     }
   }
 });
@@ -159,6 +172,8 @@ function openWysiwyg(textId) {
   bar.className = 'wz-bar';
   const swatches = ['#111111', '#dc2626', '#ea580c', '#ca8a04', '#16a34a', '#2563eb', '#9333ea']
     .map(c => `<button type="button" class="wz-sw" data-color="${c}" style="background:${c}" title="Colorear selección ${c}"></button>`).join('');
+  const highlights = WZ_HIGHLIGHTS
+    .map(c => `<button type="button" class="wz-sw wz-hl" data-hl="${c}" style="background:${c}" title="Resaltar selección"></button>`).join('');
   bar.innerHTML = `
     <button type="button" data-cmd="bold" title="Negrita (Ctrl+B)"><b>B</b></button>
     <button type="button" data-cmd="italic" title="Cursiva (Ctrl+I)"><i>I</i></button>
@@ -174,13 +189,19 @@ function openWysiwyg(textId) {
     <button type="button" data-cmd="quote" title="Cita">❝</button>
     <button type="button" data-cmd="link" title="Link">🔗</button>
     <span class="wz-sep"></span>
+    <span class="wz-lbl">Color</span>
     ${swatches}
     <input type="color" class="wz-color" value="#dc2626" title="Colorear selección (otro color)">
     <span class="wz-sep"></span>
-    <button type="button" data-cmd="size-" title="Reducir 2 px la selección">−</button>
-    <input type="number" class="wz-size" min="4" max="400" step="1" value="${Math.round(t.size)}" title="Tamaño de la selección en píxeles">
-    <span class="wz-px">px</span>
-    <button type="button" data-cmd="size+" title="Aumentar 2 px la selección">+</button>
+    <span class="wz-lbl">Resaltar</span>
+    ${highlights}
+    <button type="button" class="wz-hl-none" data-cmd="hl-none" title="Quitar resaltado">✕</button>
+    <span class="wz-sep"></span>
+    <span class="wz-lbl">Tamaño</span>
+    <button type="button" data-cmd="size-" title="Reducir tamaño de la selección">A−</button>
+    <input type="number" class="wz-size" list="wzSizes" min="4" max="400" step="1" value="${WZ_BASE_PT}" title="Tamaño de la selección (12 = normal)">
+    <datalist id="wzSizes">${WZ_SIZES.map(n => `<option value="${n}"></option>`).join('')}</datalist>
+    <button type="button" data-cmd="size+" title="Aumentar tamaño de la selección">A+</button>
     <span class="wz-sep"></span>
     <button type="button" data-cmd="clear" title="Quitar formato">⌫</button>
     <button type="button" data-cmd="unpage" title="Volver a texto normal (sin hoja)">Sin hoja</button>
@@ -204,23 +225,40 @@ function openWysiwyg(textId) {
     return window.getSelection();
   };
 
-  const applyColor = (c) => {
+  // Devuelve la selección con texto; si solo hay cursor, toma la palabra donde está
+  const textSelection = (what) => {
     const sel = restore();
-    if (!sel.rangeCount || sel.isCollapsed) { showToast('Selecciona el texto que quieres colorear', 'info'); return; }
+    if (!sel.rangeCount) return null;
+    if (sel.isCollapsed && sel.modify) {
+      sel.modify('move', 'backward', 'word');
+      sel.modify('extend', 'forward', 'word');
+    }
+    if (sel.isCollapsed) { showToast(`Selecciona el texto que quieres ${what}`, 'info'); return null; }
+    return sel;
+  };
+
+  const applyColor = (c) => {
+    if (!textSelection('colorear')) return;
     document.execCommand('styleWithCSS', false, true);
     document.execCommand('foreColor', false, c);
   };
 
-  const applySize = (px) => {
-    px = Math.max(4, Math.min(400, Math.round(px)));
-    const sel = restore();
-    if (!sel.rangeCount || sel.isCollapsed) { showToast('Selecciona el texto que quieres cambiar de tamaño', 'info'); return; }
+  const applyHighlight = (c) => {
+    if (!textSelection('resaltar')) return;
+    document.execCommand('styleWithCSS', false, true);
+    document.execCommand('hiliteColor', false, c || 'transparent');
+  };
+
+  // Tamaño estilo Office (12 = normal): la letra mide N/12 del tamaño base de la hoja
+  const applySize = (pt) => {
+    pt = Math.max(4, Math.min(400, Math.round(pt)));
+    if (!textSelection('cambiar de tamaño')) return;
     document.execCommand('styleWithCSS', false, false);
     document.execCommand('fontSize', false, '7');
     const made = [];
     surface.querySelectorAll('font[size="7"]').forEach(f => {
       const sp = document.createElement('span');
-      sp.style.fontSize = `${px}px`;
+      sp.style.fontSize = `${(pt / WZ_BASE_PT).toFixed(3)}em`;
       while (f.firstChild) sp.appendChild(f.firstChild);
       // Un tamaño anterior dentro de la selección no debe pisar el nuevo
       sp.querySelectorAll('span').forEach(x => { x.style.fontSize = ''; });
@@ -237,14 +275,21 @@ function openWysiwyg(textId) {
       s2.addRange(r);
       wysiwygRange = r.cloneRange();
     }
-    bar.querySelector('.wz-size').value = px;
+    bar.querySelector('.wz-size').value = pt;
   };
 
   const exec = (cmd) => {
     const sizeBox = bar.querySelector('.wz-size');
     if (cmd === 'done') { finishTextEdit(); return; }
     if (cmd === 'unpage') { t.page = false; finishTextEdit(); return; }
-    if (cmd === 'size+' || cmd === 'size-') { applySize((+sizeBox.value || t.size) + (cmd === 'size+' ? 2 : -2)); return; }
+    if (cmd === 'hl-none') { applyHighlight(null); return; }
+    if (cmd === 'size+' || cmd === 'size-') {
+      // Salta por la lista de tamaños, como los botones de aumentar y reducir fuente de Office
+      const cur = +sizeBox.value || WZ_BASE_PT;
+      const next = cmd === 'size+' ? WZ_SIZES.find(n => n > cur) : [...WZ_SIZES].reverse().find(n => n < cur);
+      applySize(next || cur + (cmd === 'size+' ? 4 : -1));
+      return;
+    }
     restore();
     if (cmd === 'h1' || cmd === 'h2') document.execCommand('formatBlock', false, cmd);
     else if (cmd === 'p') document.execCommand('formatBlock', false, 'div');
@@ -264,6 +309,7 @@ function openWysiwyg(textId) {
   bar.addEventListener('pointerdown', (e) => e.stopPropagation());
   bar.addEventListener('click', (e) => {
     const sw = e.target.closest('.wz-sw');
+    if (sw && sw.dataset.hl) { applyHighlight(sw.dataset.hl); return; }
     if (sw) { applyColor(sw.dataset.color); return; }
     const b = e.target.closest('button[data-cmd]');
     if (b) exec(b.dataset.cmd);
