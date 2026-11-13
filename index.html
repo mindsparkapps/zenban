@@ -1072,6 +1072,13 @@
             <input type="text" id="settingDailyText" placeholder="Ej.: Tomar la medicina" maxlength="120" autocomplete="off">
             <p class="setup-text">Muestra una barra bajo la cabecera con los siete días de la semana. No se puede cerrar hasta marcar el día de hoy; después se cierra y vuelve cada día a las 6:00. Sin texto no aparece.</p>
           </div>
+          <div class="form-group">
+            <label class="settings-check" for="settingDevTools">
+              <input type="checkbox" id="settingDevTools">
+              <span>Permitir las herramientas de desarrollo (DevTools)</span>
+            </label>
+            <p class="setup-text">Desactivado, las teclas F12, Ctrl+Mayús+I, Ctrl+Mayús+J, Ctrl+Mayús+C y Ctrl+U no hacen nada dentro de ZenBan. El menú del navegador puede seguir mostrando su propia opción.</p>
+          </div>
           <details class="settings-diag" id="settingsDiag">
             <summary>Diagnóstico de este proyecto</summary>
             <pre id="diagOutput">Calculando…</pre>
@@ -1098,7 +1105,7 @@
   <script src="sync-drive.js?v=1"></script>
   <script src="sync.js?v=3"></script>
   <script src="appupdate.js?v=2"></script>
-  <script src="app.js?v=157"></script>
+  <script src="app.js?v=158"></script>
   <script src="share.js?v=10"></script>
   <script src="transfer.js?v=8"></script>
   <script src="spaces.js?v=9"></script>

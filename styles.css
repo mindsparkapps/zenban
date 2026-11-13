@@ -6903,3 +6903,25 @@ html .webwin-resize {
   color: inherit;
   font: inherit;
 }
+
+.internal-link-item[hidden],
+.internal-link-section[hidden] { display: none; }
+
+/* Link a otro proyecto con el icono de link por defecto */
+.auto-link.internal-link.link-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  vertical-align: middle;
+  padding: 0.1em 0.55em 0.1em 0.4em;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.18);
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  color: #c4b5fd;
+  text-decoration: none;
+  font-weight: 600;
+}
+.auto-link.internal-link.link-with-icon:hover { background: rgba(139, 92, 246, 0.3); color: #ede9fe; }
+.link-default-icon { width: 1.3em; height: 1.3em; flex: none; }
+.auto-link.internal-link.link-with-icon.icon-only { padding: 0.25em; }
+.auto-link.internal-link.link-with-icon.icon-only .link-default-icon { width: 2.6em; height: 2.6em; }

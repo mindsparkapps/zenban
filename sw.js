@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zenban-v157';
+const CACHE_NAME = 'zenban-v158';
 const STATIC_ASSETS = [
   './index.html',
   './styles.css',
@@ -7,7 +7,8 @@ const STATIC_ASSETS = [
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './icons/favicon.png'
+  './icons/favicon.png',
+  './icons/link.svg'
 ];
 
 self.addEventListener('install', (e) => {

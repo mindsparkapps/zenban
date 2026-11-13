@@ -340,7 +340,7 @@ function openWysiwyg(textId) {
     <span class="wz-sep"></span>
     <button type="button" data-cmd="clear" title="Quitar formato">⌫</button>
     <button type="button" data-cmd="unpage" title="Volver a texto normal (sin hoja)">Sin hoja</button>
-    <button type="button" class="wz-done" data-cmd="done" title="Terminar (Esc)">Listo</button>`;
+    <button type="button" class="wz-done" data-cmd="done" title="Cerrar la edición" aria-label="Cerrar la edición">✕</button>`;
 
   const surface = document.createElement('div');
   surface.className = 'wz-surface';
@@ -459,10 +459,7 @@ function openWysiwyg(textId) {
 
   surface.addEventListener('keydown', (e) => {
     e.stopPropagation(); // que los atajos del lienzo no se activen mientras se escribe
-    if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
-      e.preventDefault();
-      finishTextEdit();
-    }
+    // La edición solo se cierra con el icono ✕ de la barra
   });
   surface.addEventListener('paste', (e) => {
     // Pegar como texto simple: el formato se hace con la barra
@@ -487,4 +484,22 @@ function openWysiwyg(textId) {
   const s = window.getSelection();
   s.removeAllRanges();
   s.addRange(range);
+  // La hoja se centra en pantalla y la edición es "modal": hacer clic en el lienzo no la cierra
+  requestAnimationFrame(() => {
+    const cur = getTextEl(textId);
+    if (cur) fitRectToScreen(t.x, t.y, cur.offsetWidth, cur.offsetHeight);
+  });
 }
+
+// Mientras se edita una hoja, los clics fuera de ella no hacen nada (solo el ✕ la cierra)
+['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu', 'touchstart'].forEach(type => {
+  window.addEventListener(type, (e) => {
+    if (typeof editingTextId === 'undefined' || !editingTextId) return;
+    const editing = document.querySelector('.canvas-text.is-wz-editing');
+    if (!editing || editing.contains(e.target)) return;
+    // Los avisos y cuadros de diálogo siguen funcionando
+    if (e.target.closest && e.target.closest('.modal-backdrop, .toast, #libraryMenu')) return;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
+});

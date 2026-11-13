@@ -397,6 +397,17 @@ const SETTINGS_KEY = 'zenban_settings_v1';
 const DEFAULT_SETTINGS = { zoomMin: 0.5, toolsAutoHide: false, toolsHiddenOpacity: 20 };
 let appSettings = { ...DEFAULT_SETTINGS, ...loadData(SETTINGS_KEY, {}) };
 
+// Las teclas que abren las herramientas de desarrollo están apagadas salvo que se activen en Configuración
+window.addEventListener('keydown', (e) => {
+  if (appSettings.devTools) return;
+  const k = String(e.key || '').toLowerCase();
+  const mod = e.ctrlKey || e.metaKey;
+  if (e.key === 'F12' || (mod && e.shiftKey && ['i', 'j', 'c'].includes(k)) || (mod && e.altKey && k === 'i') || (mod && !e.shiftKey && k === 'u')) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}, true);
+
 const ZOOM_CONFIG = {
   MIN: appSettings.zoomMin,
   MAX: 2.2,
@@ -5594,7 +5605,8 @@ viewportArea.addEventListener('dblclick', (e) => {
 // Tocar fuera del texto que se está escribiendo termina la edición
 // (el lienzo evita el cambio de foco normal, así que no basta con el blur)
 window.addEventListener('pointerdown', (e) => {
-  if (editingTextId && !e.target.closest('.canvas-text.is-editing')) finishTextEdit();
+  // La hoja WYSIWYG es modal: solo se cierra con su icono ✕
+  if (editingTextId && !e.target.closest('.canvas-text.is-editing') && !document.querySelector('.canvas-text.is-wz-editing')) finishTextEdit();
 }, true);
 
 viewportArea.addEventListener('pointermove', (e) => {
@@ -6938,7 +6950,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '157';
+const APP_VERSION = '158';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -7062,6 +7074,7 @@ function openSettings() {
   syncToolsOpacityField();
   document.getElementById('settingDailyOn').checked = !!appSettings.dailyOn;
   document.getElementById('settingDailyText').value = appSettings.dailyText || '';
+  document.getElementById('settingDevTools').checked = !!appSettings.devTools;
   settingsModal.style.display = 'flex';
 }
 
@@ -7270,6 +7283,7 @@ document.getElementById('settingsForm').addEventListener('submit', (e) => {
   appSettings.ytCheckColor = document.getElementById('settingYtCheckColor').value;
   appSettings.dailyOn = document.getElementById('settingDailyOn').checked;
   appSettings.dailyText = document.getElementById('settingDailyText').value.trim();
+  appSettings.devTools = document.getElementById('settingDevTools').checked;
   applyYtCheckStyle();
   saveData(SETTINGS_KEY, appSettings);
   if (typeof refreshDailyReminder === 'function') refreshDailyReminder();
@@ -8063,6 +8077,64 @@ function renameLibraryImage(item, name) {
   item.saved = !!name;
 }
 
+// Borra una imagen de la Biblioteca y de todos los lugares donde se usa: en el lienzo queda un texto
+// "Imagen borrada" en su lugar; en tareas, un renglón con ese texto; en tableros, frames, ventanas y
+// links, simplemente se quita
+function deleteImageEverywhere(ref) {
+  projects.forEach(p => {
+    const gone = [];
+    p.bgImages = (p.bgImages || []).filter(i => {
+      if (bgImageRef(i) !== ref) return true;
+      gone.push(i);
+      return false;
+    });
+    if (gone.length) {
+      if (!Array.isArray(p.texts)) p.texts = [];
+      gone.forEach(i => p.texts.push({
+        id: generateId('text'), x: i.x, y: i.y, w: Math.max(160, i.w),
+        size: Math.max(14, Math.round(Math.min(i.w, i.h) / 8)), color: null, text: 'Imagen borrada'
+      }));
+    }
+    (p.tasks || []).forEach(t => {
+      const before = (t.images || []).length;
+      t.images = (t.images || []).filter(i => i.id !== ref);
+      if (t.images.length !== before) t.description = `${t.description ? `${t.description}\n` : ''}Imagen borrada`;
+    });
+    (p.texts || []).forEach(t => { if (t.web && t.web.image === ref) delete t.web.image; });
+    (p.boards || []).forEach(b => { if (b.image === ref) delete b.image; });
+    (p.frames || []).forEach(f => { if (f.image === ref) delete f.image; });
+    [...(p.texts || []), ...(p.tasks || [])].forEach(o => Object.entries(o.linkNames || {}).forEach(([url, v]) => {
+      if (v && typeof v === 'object' && v.image === ref) o.linkNames[url] = { ...v, image: null, text: v.text || 'Imagen borrada' };
+    }));
+    if (Array.isArray(p.imageNames)) p.imageNames = p.imageNames.filter(x => x && x.id !== ref);
+    if (Array.isArray(p.imageFolders)) p.imageFolders = p.imageFolders.filter(x => x && x.id !== ref);
+  });
+  [ref, `${ref}@240`, `${ref}@480`, `${ref}@1200`].forEach(k => { try { ImageStore.del(k); } catch (e) {} });
+  const url = bgImageUrls.get(ref);
+  if (url) URL.revokeObjectURL(url);
+  bgImageUrls.delete(ref);
+}
+
+async function confirmDeleteLibraryImages(its) {
+  const uses = its.flatMap(it => imagesOfProjects(projects, '', null).filter(x => x.ref === it.ref && x.used));
+  const places = [...new Set(uses.map(u => `${u.project.name} · ${u.where}`))];
+  const ok = await askConfirm({
+    title: its.length === 1 ? '¿Borrar esta imagen?' : `¿Borrar ${its.length} imágenes?`,
+    message: (uses.length
+      ? `Se usa en ${uses.length} lugar${uses.length === 1 ? '' : 'es'}${places.length ? ` (${places.slice(0, 6).join('; ')}${places.length > 6 ? '…' : ''})` : ''}. En cada uno aparecerá el texto «Imagen borrada». `
+      : 'No se usa en ningún lugar. ') + 'No se puede deshacer.',
+    confirmText: 'Borrar', danger: true
+  });
+  if (!ok) return false;
+  its.forEach(it => deleteImageEverywhere(it.ref));
+  persist();
+  renderBgImages();
+  renderBoard();
+  renderTexts();
+  showToast(its.length === 1 ? 'Imagen borrada' : `${its.length} imágenes borradas`, 'warning');
+  return true;
+}
+
 // Menú contextual de la Biblioteca (clic derecho o mantener apretada una imagen)
 function openLibraryMenu(clientX, clientY, actions) {
   let menu = document.getElementById('libraryMenu');
@@ -8197,6 +8269,15 @@ function openImageLibrary(point = null) {
     const f = libraryFolders().find(g => g.id === id);
     showToast(`${refs.length} imagen${refs.length === 1 ? '' : 'es'} ${f ? `en «${f.name}»` : 'sin carpeta'}`, 'success');
     saveFolders();
+  };
+  const deleteItems = async (list) => {
+    if (!list.length || !await confirmDeleteLibraryImages(list)) return;
+    const gone = new Set(list.map(it => it.ref));
+    list.forEach(it => picked.delete(it.ref));
+    items = items.filter(it => !gone.has(it.ref));
+    numberItems();
+    paintFolders();
+    paint();
   };
   const folderPicker = (x, y, refs) => {
     const now = refs.length === 1 ? imageFolderOf(refs[0]) : null;
@@ -8521,6 +8602,7 @@ function openImageLibrary(point = null) {
       openLibraryMenu(x, y, [
         { icon: '📁', label: `Mover ${own.length} a carpeta…`, disabled: !own.length, run: () => folderPicker(x, y, own) },
         { icon: '➕', label: `Insertar ${picked.size} en el lienzo`, run: () => { const list = pickedItems(); clearPicked(); insertItems(list); } },
+        { icon: '🗑️', label: `Borrar ${own.length} imagen${own.length === 1 ? '' : 'es'}…`, disabled: !own.length, run: () => deleteItems(pickedItems().filter(p => !p.space)) },
         { icon: '✕', label: 'Quitar la selección', run: clearPicked }
       ]);
       return;
@@ -8538,7 +8620,8 @@ function openImageLibrary(point = null) {
           { icon: '＋', label: 'Nueva carpeta…', run: () => folderNameInput(foldersEl.querySelector('[data-add-folder]'), '', (name) => { const f = addLibraryFolder(name); setImageFolder(it.ref, f.id); current = f.id; saveFolders(); }) }
         ]);
       } },
-      { icon: '➕', label: 'Insertar en el lienzo', disabled: b.classList.contains('is-missing'), run: () => b.click() }
+      { icon: '➕', label: 'Insertar en el lienzo', disabled: b.classList.contains('is-missing'), run: () => b.click() },
+      { icon: '🗑️', label: 'Borrar imagen…', disabled: other, title: other ? `Es de «${it.spaceLabel}»: ábrelo para borrarla` : '', run: () => deleteItems([it]) }
     ]);
   };
   // Los otros espacios se leen de Drive (si hay sesión) y se suman al llegar
@@ -8679,14 +8762,19 @@ function linkify(str, names = null, rich = false) {
     const gdoc = !internal && !fileLink && googleDocKind(unescapeHtml(url));
     // Un link interno sin nombre propio muestra el proyecto al que salta; un PDF, su nombre;
     // un documento de Google, su tipo
-    if (internal && !opt.text && !opt.image) opt.text = internalLinkLabel(unescapeHtml(url));
+    // Un link a otro proyecto sale con el icono de link y el nombre del lugar al que va
+    if (internal && !opt.image) {
+      const label = opt.text || internalLinkLabel(unescapeHtml(url)).replace(/^↪\s*/, '');
+      const iconAttrs = `class="auto-link internal-link link-with-icon${opt.noText ? ' icon-only' : ''}" href="#" data-url="${url}" title="${escapeHtml(label)}"`;
+      return `<a ${iconAttrs}><img class="link-default-icon" src="icons/link.svg" alt="Link" draggable="false">${opt.noText ? '' : `<span>${escapeHtml(label)}</span>`}</a>${trail}`;
+    }
     if (fileLink && !opt.text && !opt.image) opt.text = `📄 ${(parseFileLink(unescapeHtml(url)) || {}).name || 'PDF'}`;
     if (gdoc && !opt.text && !opt.image) opt.text = `${GOOGLE_DOC_KINDS[gdoc].icon} ${GOOGLE_DOC_KINDS[gdoc].label}`;
     const kindClass = internal ? ' internal-link' : fileLink ? ' file-link' : gdoc ? ` gdoc-link gdoc-${gdoc}` : '';
     const attrs = `class="auto-link${opt.image ? ' link-image' : ''}${kindClass}" href="${linkHref(url)}" data-url="${url}"${internal || fileLink ? '' : ' target="_blank" rel="noopener noreferrer"'}`;
     if (opt.image) {
       // Con imagen y texto, el texto se ve encima de la imagen
-      const caption = opt.text ? `<span class="link-image-caption">${escapeHtml(opt.text)}</span>` : '';
+      const caption = opt.text && !opt.noText ? `<span class="link-image-caption">${escapeHtml(opt.text)}</span>` : '';
       return `<a ${attrs} title="${escapeHtml(opt.text || unescapeHtml(url))}"><img data-link-img="${escapeHtml(opt.image)}" alt="${escapeHtml(opt.text || 'Link')}" draggable="false">${caption}</a>${trail}`;
     }
     return `<a ${attrs}${opt.text ? ` title="${url}"` : ''}>${opt.text ? escapeHtml(opt.text) : url}</a>${trail}`;
@@ -8698,7 +8786,7 @@ function linkOption(names, url) {
   const v = names && names[url];
   if (!v) return {};
   if (typeof v === 'string') return { text: v.trim() };
-  return { text: (v.text || '').trim(), hide: !!v.hide, image: v.image || null };
+  return { text: (v.text || '').trim(), hide: !!v.hide, image: v.image || null, noText: !!v.noText };
 }
 
 // Una imagen puede ser una guardada en ZenBan (id) o una dirección web (traída de un navegador sin permiso para copiarla)
@@ -8778,6 +8866,7 @@ function openLinkNamesDialog(urls, names, onSave) {
       <input type="text" id="linkName${i}" data-url-index="${i}" placeholder="Texto a mostrar" value="${escapeHtml(state[i].text || '')}">
       <div class="link-name-options">
         <label class="link-name-hide"><input type="checkbox" data-hide="${i}" ${state[i].hide ? 'checked' : ''}> No mostrar el link</label>
+        <label class="link-name-hide"><input type="checkbox" data-notext="${i}" ${state[i].noText ? 'checked' : ''}> Sin texto (solo la imagen)</label>
         <button type="button" class="btn btn-ghost btn-sm" data-pick-image="${i}">🖼 Imagen</button>
         <span class="link-name-thumb" data-thumb="${i}"></span>
       </div>
@@ -8828,7 +8917,8 @@ function openLinkNamesDialog(urls, names, onSave) {
       const text = row.querySelector('input[type="text"]').value.trim();
       const hide = row.querySelector('[data-hide]').checked;
       const image = state[i].image;
-      if (hide || image) result[url] = { text, hide, image: image || null };
+      const noText = row.querySelector('[data-notext]').checked;
+      if (hide || image || noText) result[url] = { text, hide, image: image || null, noText };
       else if (text) result[url] = text;
     });
     m.style.display = 'none';
