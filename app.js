@@ -5422,6 +5422,18 @@ function renderTexts() {
     handle.title = 'Arrastra para cambiar el ancho de la caja';
     handle.addEventListener('pointerdown', (e) => startTextResize(e, t, el));
     el.appendChild(handle);
+    // Icono del editor WYSIWYG en la esquina superior izquierda (no en widgets ni ventanas web)
+    if (!isWidget && !isWeb && typeof openWysiwyg === 'function') {
+      const wz = document.createElement('button');
+      wz.type = 'button';
+      wz.className = 'canvas-text-wysiwyg';
+      wz.title = 'Editar con formato (editor WYSIWYG)';
+      wz.setAttribute('aria-label', 'Editar con formato');
+      wz.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
+      wz.addEventListener('pointerdown', (e) => e.stopPropagation());
+      wz.addEventListener('click', (e) => { e.stopPropagation(); openWysiwyg(t.id); });
+      el.appendChild(wz);
+    }
     textLayer.appendChild(el);
   });
   applySelectionVisuals();
