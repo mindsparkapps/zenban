@@ -198,6 +198,54 @@ function wzUpdatePageInfo(el) {
   const max = body.scrollHeight - body.clientHeight;
   const pct = max > 0 ? Math.round(body.scrollTop / max * 100) : 100;
   info.textContent = `Página ${cur} de ${g.pages} · ${pct}%`;
+
+  // Barra de scroll propia (la del navegador se ve diminuta con el zoom del lienzo): crece con la hoja
+  let track = el.querySelector(':scope > .wz-track');
+  if (!track) {
+    track = document.createElement('div');
+    track.className = 'wz-track';
+    track.innerHTML = '<div class="wz-thumb"></div>';
+    el.appendChild(track);
+    const thumb = track.firstChild;
+    const scroller = () => el.querySelector('.page-body, .wz-surface');
+    const geom = () => {
+      const b = scroller();
+      const trackH = track.clientHeight;
+      const thumbH = Math.max(24, trackH * b.clientHeight / b.scrollHeight);
+      return { b, trackH, thumbH, max: b.scrollHeight - b.clientHeight };
+    };
+    track.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const { b, trackH, thumbH, max } = geom();
+      if (max <= 0) return;
+      if (e.target === thumb) {
+        const startY = e.clientY;
+        const startTop = b.scrollTop;
+        const k = max / Math.max(1, trackH - thumbH);
+        thumb.setPointerCapture(e.pointerId);
+        const move = (ev) => { b.scrollTop = startTop + (ev.clientY - startY) / zoom * k; };
+        const up = () => {
+          thumb.removeEventListener('pointermove', move);
+          thumb.removeEventListener('pointerup', up);
+          thumb.removeEventListener('pointercancel', up);
+        };
+        thumb.addEventListener('pointermove', move);
+        thumb.addEventListener('pointerup', up);
+        thumb.addEventListener('pointercancel', up);
+      } else {
+        // Clic en el riel: salta a esa parte del documento
+        const r = track.getBoundingClientRect();
+        const frac = Math.max(0, Math.min(1, ((e.clientY - r.top) / r.height * trackH - thumbH / 2) / Math.max(1, trackH - thumbH)));
+        b.scrollTop = frac * max;
+      }
+    });
+  }
+  const thumbEl = track.firstChild;
+  const trackH = track.clientHeight;
+  const thumbH = body.scrollHeight > body.clientHeight ? Math.max(24, trackH * body.clientHeight / body.scrollHeight) : trackH;
+  thumbEl.style.height = `${thumbH}px`;
+  thumbEl.style.top = `${max > 0 ? body.scrollTop / max * (trackH - thumbH) : 0}px`;
 }
 
 // Prepara una hoja ya dibujada: pagina y sigue el scroll

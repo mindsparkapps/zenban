@@ -5162,9 +5162,11 @@ function applyTextStyle(el, t) {
   if (t.page) {
     el.style.height = `${Math.round(t.w * 1.414)}px`;
     el.style.setProperty('--page-m', `${Math.round(t.w * 0.07)}px`);
+    el.style.setProperty('--page-sb', `${Math.max(12, Math.round(t.w * 0.035))}px`);
   } else {
     el.style.height = '';
     el.style.removeProperty('--page-m');
+    el.style.removeProperty('--page-sb');
   }
   el.classList.toggle('is-sticky', !!t.sticky && !t.page);
   el.style.background = t.page ? '' : (t.sticky || '');
@@ -5437,10 +5439,15 @@ function renderTexts() {
       // La hoja tiene el tamaño de una página: el contenido va en un cuerpo con scroll
       el.innerHTML = `<div class="page-body">${el.innerHTML}</div>`;
       // La rueda recorre las páginas (con Ctrl sigue siendo el zoom del lienzo)
+      // El avance se mide en pantalla (no en px de la hoja), así que no depende del zoom del lienzo
       el.addEventListener('wheel', (e) => {
         const body = el.querySelector('.page-body, .wz-surface');
-        if (!e.ctrlKey && body && body.scrollHeight > body.clientHeight + 1) e.stopPropagation();
-      }, { passive: true });
+        if (e.ctrlKey || !body || body.scrollHeight <= body.clientHeight + 1) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const d = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * body.clientHeight : e.deltaY;
+        body.scrollTop += d * 1.6 / zoom;
+      }, { passive: false });
     }
     const handle = document.createElement('div');
     handle.className = 'canvas-text-handle';
@@ -5540,7 +5547,8 @@ viewportArea.addEventListener('dblclick', (e) => {
     e.preventDefault();
     setSelection([`text:${textObj.id}`]);
     const rect = objectRectAt(textEl);
-    if (rect) fitRectToScreen(rect.x, rect.y, rect.w, rect.h + 24, rect.whole);
+    // Toda la página en pantalla (con su etiqueta de abajo), aunque haga falta alejarse más que el zoom mínimo
+    if (rect) fitRectToScreen(rect.x, rect.y, rect.w, rect.h * 1.07, true);
     return;
   }
   if (textEl && textEl.classList.contains('is-wz-editing')) return; // dentro de la hoja en edición: selecciona la palabra
@@ -6906,7 +6914,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '152';
+const APP_VERSION = '153';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

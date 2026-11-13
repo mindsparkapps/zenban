@@ -6747,14 +6747,33 @@ html .webwin-resize {
   overflow-x: hidden;
   overflow-y: scroll;
   overscroll-behavior: contain;
-  scrollbar-color: #6366f1 #dfe3ea;
+  scrollbar-width: none;
 }
 .canvas-text.is-page .page-body::-webkit-scrollbar,
-.canvas-text.is-page .wz-surface::-webkit-scrollbar { width: 14px; }
-.canvas-text.is-page .page-body::-webkit-scrollbar-track,
-.canvas-text.is-page .wz-surface::-webkit-scrollbar-track { background: #dfe3ea; }
-.canvas-text.is-page .page-body::-webkit-scrollbar-thumb,
-.canvas-text.is-page .wz-surface::-webkit-scrollbar-thumb { background: #6366f1; border-radius: 7px; border: 2px solid #dfe3ea; }
+.canvas-text.is-page .wz-surface::-webkit-scrollbar { display: none; }
+/* Barra de scroll propia, al lado derecho; su ancho crece con la hoja para verse con cualquier zoom */
+.wz-track {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  bottom: 3px;
+  width: var(--page-sb, 14px);
+  z-index: 6;
+  background: rgba(0, 0, 0, 0.16);
+  border-radius: 999px;
+  cursor: pointer;
+  touch-action: none;
+}
+.wz-thumb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: #6366f1;
+  border: 1px solid #fff;
+  border-radius: 999px;
+  cursor: grab;
+  box-sizing: border-box;
+}
 .canvas-text.is-page .wz-surface {
   outline: none;
   white-space: pre-wrap;
