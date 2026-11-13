@@ -309,7 +309,7 @@ function openWysiwyg(textId) {
     .map(c => `<button type="button" class="wz-sw" data-color="${c}" style="background:${c}" title="Colorear selección ${c}"></button>`).join('');
   const highlights = WZ_HIGHLIGHTS
     .map(c => `<button type="button" class="wz-sw wz-hl" data-hl="${c}" style="background:${c}" title="Resaltar selección"></button>`).join('');
-  bar.innerHTML = `
+  bar.innerHTML = `<div class="wz-tools">
     <button type="button" data-cmd="bold" title="Negrita (Ctrl+B)"><b>B</b></button>
     <button type="button" data-cmd="italic" title="Cursiva (Ctrl+I)"><i>I</i></button>
     <button type="button" data-cmd="strikeThrough" title="Tachado"><s>S</s></button>
@@ -341,9 +341,21 @@ function openWysiwyg(textId) {
     <button type="button" data-cmd="clear" title="Quitar formato">⌫</button>
     <button type="button" data-cmd="unpage" title="Volver a texto normal (sin hoja)">Sin hoja</button>
     <span class="wz-sep"></span>
-    <button type="button" data-cmd="zoom-out" title="Alejar">🔍−</button>
+    <input type="search" class="wz-find" placeholder="Buscar…" autocomplete="off" title="Buscar en el texto (Enter: siguiente, Mayús+Enter: anterior)">
+    <span class="wz-find-count"></span>
+    <button type="button" data-cmd="find-prev" title="Anterior">↑</button>
+    <button type="button" data-cmd="find-next" title="Siguiente">↓</button>
+    <span class="wz-sep"></span>
+    <label class="wz-chk" title="Resalta la línea que vas leyendo y la marca en la barra izquierda"><input type="checkbox" class="wz-read"> Línea de lectura</label>
+    <div class="wz-dd">
+      <button type="button" data-cmd="marks-toggle" title="Textos resaltados">🔖 Marcadores ▾</button>
+      <div class="wz-dd-list" hidden></div>
+    </div>
+    <span class="wz-sep"></span>
+    <button type="button" data-cmd="zoom-out" title="Alejar la hoja">🔍−</button>
     <button type="button" data-cmd="zoom-fit" title="Ver la hoja completa">Hoja completa</button>
-    <button type="button" data-cmd="zoom-in" title="Acercar">🔍+</button>
+    <button type="button" data-cmd="zoom-in" title="Acercar la hoja">🔍+</button>
+    </div>
     <button type="button" class="wz-done" data-cmd="done" title="Guardar y salir (Ctrl+Z en el lienzo lo revierte)" aria-label="Guardar y salir">✕</button>`;
 
   const surface = document.createElement('div');
@@ -355,6 +367,11 @@ function openWysiwyg(textId) {
   document.querySelectorAll('.wz-bar').forEach(b => b.remove());
   document.body.appendChild(bar);
   el.appendChild(surface);
+  // El botón de cerrar es cuadrado: del alto de la barra
+  const doneBtn = bar.querySelector('.wz-done');
+  const syncDone = () => { doneBtn.style.width = `${bar.offsetHeight}px`; };
+  new ResizeObserver(syncDone).observe(bar);
+  syncDone();
 
   const restore = () => {
     surface.focus();
@@ -422,9 +439,12 @@ function openWysiwyg(textId) {
   const exec = (cmd) => {
     const sizeBox = bar.querySelector('.wz-size');
     if (cmd === 'done') { finishTextEdit(); return; }
-    if (cmd === 'zoom-in') { btnZoomIn.click(); return; }
-    if (cmd === 'zoom-out') { btnZoomOut.click(); return; }
+    if (cmd === 'zoom-in') { wzZoomBy(t, 1.2); return; }
+    if (cmd === 'zoom-out') { wzZoomBy(t, 1 / 1.2); return; }
     if (cmd === 'zoom-fit') { wzCenterSheet(t); return; }
+    if (cmd === 'find-next') { stepFind(1); return; }
+    if (cmd === 'find-prev') { stepFind(-1); return; }
+    if (cmd === 'marks-toggle') { toggleMarks(); return; }
     if (cmd === 'unpage') { t.page = false; finishTextEdit(); return; }
     if (cmd === 'hl-none') { applyHighlight(null); return; }
     if (cmd === 'size+' || cmd === 'size-') {
@@ -455,6 +475,8 @@ function openWysiwyg(textId) {
     const sw = e.target.closest('.wz-sw');
     if (sw && sw.dataset.hl) { applyHighlight(sw.dataset.hl); return; }
     if (sw) { applyColor(sw.dataset.color); return; }
+    const mk = e.target.closest('[data-mark]');
+    if (mk && mk.closest('.wz-dd-list')) { goMark(+mk.dataset.mark); toggleMarks(false); return; }
     const b = e.target.closest('button[data-cmd]');
     if (b) exec(b.dataset.cmd);
   });
@@ -468,6 +490,7 @@ function openWysiwyg(textId) {
 
   surface.addEventListener('keydown', (e) => {
     e.stopPropagation(); // que los atajos del lienzo no se activen mientras se escribe
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); findInput.focus(); findInput.select(); }
     // La edición solo se cierra con el icono ✕ de la barra
   });
   surface.addEventListener('paste', (e) => {
@@ -479,11 +502,170 @@ function openWysiwyg(textId) {
   });
 
   wzSetupPage(el, t);
+
+  // ----- Guardado automático: cada cambio queda guardado -----
+  let saveTimer = 0;
+  const autosave = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      if (editingTextId !== textId || !surface.isConnected) return;
+      const txt = wysiwygToMarks(surface);
+      if (!txt.trim()) return;
+      t.text = txt;
+      persist();
+    }, 500);
+  };
+
+  // ----- Buscador -----
+  const findInput = bar.querySelector('.wz-find');
+  const findCount = bar.querySelector('.wz-find-count');
+  const hlOK = typeof CSS !== 'undefined' && CSS.highlights && typeof Highlight !== 'undefined';
+  let findRanges = [], findIdx = -1;
+  const paintFind = (scroll) => {
+    if (hlOK) {
+      CSS.highlights.set('wz-find', new Highlight(...findRanges));
+      if (findIdx >= 0) CSS.highlights.set('wz-find-cur', new Highlight(findRanges[findIdx]));
+      else CSS.highlights.delete('wz-find-cur');
+    }
+    findCount.textContent = findInput.value ? `${findRanges.length ? findIdx + 1 : 0}/${findRanges.length}` : '';
+    if (scroll && findIdx >= 0) wzScrollToRange(surface, findRanges[findIdx], 0.35);
+  };
+  const runFind = (keepIdx) => {
+    findRanges = [];
+    const q = findInput.value.toLowerCase();
+    if (q) {
+      const walker = document.createTreeWalker(surface, NodeFilter.SHOW_TEXT, {
+        acceptNode: (n) => n.parentElement && n.parentElement.closest('.wz-aux') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+      });
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const low = n.nodeValue.toLowerCase();
+        for (let i = low.indexOf(q); i >= 0; i = low.indexOf(q, i + q.length)) {
+          const r = document.createRange();
+          r.setStart(n, i);
+          r.setEnd(n, i + q.length);
+          findRanges.push(r);
+        }
+      }
+    }
+    if (!findRanges.length) findIdx = -1;
+    else if (!keepIdx || findIdx < 0 || findIdx >= findRanges.length) findIdx = 0;
+    paintFind(!keepIdx);
+  };
+  const stepFind = (dir) => {
+    if (!findRanges.length) { runFind(false); return; }
+    findIdx = (findIdx + dir + findRanges.length) % findRanges.length;
+    paintFind(true);
+  };
+  findInput.addEventListener('input', () => runFind(false));
+  findInput.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); }
+  });
+
+  // ----- Marcadores: textos resaltados, en una lista y como iconos junto al scroll derecho -----
+  const marksList = bar.querySelector('.wz-dd-list');
+  const marksCol = document.createElement('div');
+  marksCol.className = 'wz-marks';
+  el.appendChild(marksCol);
+  let marks = [];
+  const toggleMarks = (open) => {
+    marksList.hidden = open === undefined ? !marksList.hidden : !open;
+  };
+  const goMark = (i) => {
+    const m = marks[i];
+    if (!m) return;
+    wzScrollToRange(surface, m, 0.3);
+    m.classList.add('wz-flash');
+    setTimeout(() => m.classList.remove('wz-flash'), 1200);
+  };
+  const refreshMarks = () => {
+    marks = [...surface.querySelectorAll('[style*="background"]')].filter(n => {
+      const bg = n.style.backgroundColor;
+      return !n.closest('.wz-aux') && n.textContent.trim() && bg && !/transparent|rgba\(0, 0, 0, 0\)/.test(bg);
+    });
+    marksList.innerHTML = marks.length
+      ? marks.map((m, i) => `<button type="button" data-mark="${i}"><i style="background:${m.style.backgroundColor}"></i><span>${escapeHtml(m.textContent.trim().slice(0, 48))}</span></button>`).join('')
+      : '<p class="wz-dd-empty">No hay textos resaltados</p>';
+    const total = Math.max(1, surface.scrollHeight);
+    const colH = marksCol.clientHeight;
+    const sr = surface.getBoundingClientRect();
+    marksCol.innerHTML = marks.map((m, i) => {
+      const y = surface.scrollTop + (m.getBoundingClientRect().top - sr.top) / zoom;
+      return `<span class="wz-mk" data-mark="${i}" style="top:${(y / total * colH).toFixed(1)}px;background:${m.style.backgroundColor}" title="${escapeHtml(m.textContent.trim().slice(0, 60))} (doble clic para ir)"></span>`;
+    }).join('');
+  };
+  marksCol.addEventListener('pointerdown', (e) => e.stopPropagation());
+  marksCol.addEventListener('dblclick', (e) => {
+    const mk = e.target.closest('[data-mark]');
+    if (mk) goMark(+mk.dataset.mark);
+  });
+
+  // ----- Línea de lectura (barra izquierda) -----
+  const band = document.createElement('div');
+  band.className = 'wz-readline';
+  const lrail = document.createElement('div');
+  lrail.className = 'wz-lrail';
+  lrail.innerHTML = '<div class="wz-lmark"></div>';
+  el.appendChild(band);
+  el.appendChild(lrail);
+  const lmark = lrail.firstChild;
+  const readChk = bar.querySelector('.wz-read');
+  try { readChk.checked = localStorage.getItem('zenban_wz_read') === '1'; } catch (e) {}
+  el.classList.toggle('wz-reading', readChk.checked);
+  let lastPt = null;
+  const placeBand = (rect) => {
+    if (!readChk.checked || !rect || !rect.height) return;
+    const er = el.getBoundingClientRect();
+    const sr = surface.getBoundingClientRect();
+    band.style.top = `${(rect.top - er.top) / zoom}px`;
+    band.style.height = `${rect.height / zoom}px`;
+    const docY = surface.scrollTop + (rect.top - sr.top) / zoom;
+    lmark.style.top = `${docY / Math.max(1, surface.scrollHeight) * lrail.clientHeight}px`;
+  };
+  const rectOfRange = (cr) => {
+    if (!cr || !surface.contains(cr.startContainer)) return null;
+    const r = cr.cloneRange();
+    const n = r.startContainer;
+    if (n.nodeType === 3 && r.startOffset < n.nodeValue.length) r.setEnd(n, r.startOffset + 1);
+    else if (n.nodeType === 3 && r.startOffset > 0) r.setStart(n, r.startOffset - 1);
+    const rects = r.getClientRects();
+    return rects.length ? rects[0] : null;
+  };
+  const bandAtPoint = () => {
+    if (!lastPt || !document.caretRangeFromPoint) return;
+    placeBand(rectOfRange(document.caretRangeFromPoint(lastPt.x, lastPt.y)));
+  };
+  const bandAtCaret = () => {
+    const sel = window.getSelection();
+    if (sel.rangeCount) placeBand(rectOfRange(sel.getRangeAt(0)));
+  };
+  let bandRaf = 0;
+  surface.addEventListener('pointermove', (e) => {
+    if (!readChk.checked) return;
+    lastPt = { x: e.clientX, y: e.clientY };
+    cancelAnimationFrame(bandRaf);
+    bandRaf = requestAnimationFrame(bandAtPoint);
+  });
+  surface.addEventListener('scroll', () => { if (readChk.checked) { cancelAnimationFrame(bandRaf); bandRaf = requestAnimationFrame(bandAtPoint); } }, { passive: true });
+  ['keyup', 'mouseup'].forEach(ev => surface.addEventListener(ev, () => { if (readChk.checked) { lastPt = null; bandAtCaret(); } }));
+  readChk.addEventListener('change', () => {
+    try { localStorage.setItem('zenban_wz_read', readChk.checked ? '1' : '0'); } catch (e) {}
+    el.classList.toggle('wz-reading', readChk.checked);
+    if (readChk.checked) bandAtCaret();
+  });
+
   let pagRaf = 0;
   surface.addEventListener('input', () => {
     cancelAnimationFrame(pagRaf);
-    pagRaf = requestAnimationFrame(() => wzPaginate(el, t));
+    pagRaf = requestAnimationFrame(() => {
+      wzPaginate(el, t);
+      refreshMarks();
+      if (findInput.value) runFind(true);
+    });
+    autosave();
   });
+  surface.addEventListener('scroll', () => { marksCol.classList.toggle('wz-mk-ready', true); }, { passive: true });
+  refreshMarks();
 
   wysiwygRange = null;
   surface.focus();
@@ -499,6 +681,45 @@ function openWysiwyg(textId) {
   document.body.classList.add('wz-mode');
   requestAnimationFrame(() => wzCenterSheet(t));
 }
+
+// Lleva el scroll de la hoja hasta un rango o elemento
+function wzScrollToRange(surface, target, ratio = 0.35) {
+  const r = target.getBoundingClientRect();
+  const sr = surface.getBoundingClientRect();
+  surface.scrollTop += (r.top - sr.top - sr.height * ratio) / zoom;
+}
+
+// Zoom de la hoja (único zoom que hay en este modo): se mantiene centrada a lo ancho
+function wzZoomBy(t, f) {
+  const area = viewportArea.getBoundingClientRect();
+  const w = t.w;
+  const z = Math.min(Math.max(zoom * f, 0.05), 8);
+  const wy = (area.height / 2 - panY) / zoom;
+  panY = area.height / 2 - wy * z;
+  panX = (area.width - w * z) / 2 - t.x * z;
+  zoom = z;
+  applyTransform();
+}
+
+// En el modo hoja el zoom y el movimiento del lienzo están apagados: la rueda recorre la hoja
+// (fuera de ella, mueve la vista de arriba abajo) y el pellizco no hace nada
+window.addEventListener('wheel', (e) => {
+  if (!document.body.classList.contains('wz-mode')) return;
+  if (e.target.closest && e.target.closest('.wz-bar')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.ctrlKey) return;
+  const d = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * window.innerHeight : e.deltaY;
+  const sheet = e.target.closest && e.target.closest('.canvas-text.is-wz-editing');
+  const body = sheet && sheet.querySelector('.wz-surface');
+  if (body) body.scrollTop += d * 1.6 / zoom;
+  else { panY -= d; applyTransform(); }
+}, { passive: false, capture: true });
+['touchstart', 'touchmove'].forEach(type => {
+  window.addEventListener(type, (e) => {
+    if (document.body.classList.contains('wz-mode') && e.touches && e.touches.length > 1) e.stopPropagation();
+  }, { capture: true, passive: true });
+});
 
 // Muestra la hoja completa, centrada en la pantalla
 function wzCenterSheet(t) {

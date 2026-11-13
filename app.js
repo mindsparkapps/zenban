@@ -5458,6 +5458,7 @@ function renderTexts() {
   if (editingTextId) commitEditingText();
   document.querySelectorAll('.wz-bar').forEach(b => b.remove());
   document.body.classList.remove('wz-mode');
+  if (window.CSS && CSS.highlights) { CSS.highlights.delete('wz-find'); CSS.highlights.delete('wz-find-cur'); }
   textLayer.innerHTML = '';
   getTexts().forEach(t => {
     const el = document.createElement('div');
@@ -6959,7 +6960,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '160';
+const APP_VERSION = '161';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
