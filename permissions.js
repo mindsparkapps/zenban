@@ -499,7 +499,7 @@ function putObjectLock(el, kind, key, detail) {
 
 // Mostrar u ocultar los candados de los objetos (casilla en la ventana de datos compartidos; se recuerda en este equipo)
 function locksVisible() {
-  try { return localStorage.getItem('zenban_show_locks') !== '0'; } catch (e) { return true; }
+  try { return localStorage.getItem('zenban_show_locks') === '1'; } catch (e) { return false; }
 }
 
 function markObjectLocks() {

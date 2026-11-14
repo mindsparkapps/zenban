@@ -3831,9 +3831,8 @@ select option:checked {
   color: var(--frame-title-color, #fff);
   font-weight: var(--frame-title-weight, 700);
   font-size: calc(var(--frame-title-size, 13px) * var(--inv-zoom, 1));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
   pointer-events: auto;
   /* Sobre los objetos de adentro (textos 2, dibujos 3), bajo las manijas de selección */
   z-index: 4;
