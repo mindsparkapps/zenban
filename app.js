@@ -6969,7 +6969,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '167';
+const APP_VERSION = '168';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
@@ -9208,7 +9208,7 @@ function linkAtEvent(e) {
   for (const n of document.elementsFromPoint(e.clientX, e.clientY)) {
     const a = n.closest && n.closest(LINK_SCOPE);
     if (a) return a;
-    if (n.closest && n.closest('.modal-backdrop .modal-card, .canvas-menu')) return null;
+    if (n.closest && n.closest('.modal-backdrop .modal-card, .canvas-menu, .lock-popover')) return null;
   }
   return null;
 }
