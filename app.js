@@ -523,6 +523,7 @@ function markCanvasTransforming(ms) {
 // la capa), para que se repinte una sola vez en vez de dos seguidas
 function settleCanvas() {
   applyInvZoom();
+  if (typeof scheduleFrameTitles === 'function') scheduleFrameTitles();
   zoomCanvas.classList.remove('is-transforming');
 }
 
@@ -6970,7 +6971,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '172';
+const APP_VERSION = '173';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

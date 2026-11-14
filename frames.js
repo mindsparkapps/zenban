@@ -120,6 +120,17 @@ function layoutFrameTitles() {
   });
 }
 
+// También al mover, agrandar o achicar un frame (cambia su estilo sin volver a dibujar todos) y al cambiar el tamaño de la ventana
+let frameTitlesRaf = 0;
+function scheduleFrameTitles() {
+  if (frameTitlesRaf) return;
+  frameTitlesRaf = requestAnimationFrame(() => { frameTitlesRaf = 0; layoutFrameTitles(); });
+}
+new MutationObserver((muts) => {
+  if (muts.some(m => m.type === 'childList' || (m.target.classList && m.target.classList.contains('canvas-frame')))) scheduleFrameTitles();
+}).observe(frameLayer, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'] });
+window.addEventListener('resize', scheduleFrameTitles);
+
 // Título e ícono de arrastre se ocultan por separado (antes era uno solo: hideLabels)
 function frameHides(f) {
   return { title: !!(f.hideTitle ?? f.hideLabels), tab: !!(f.hideTab ?? f.hideLabels) };
