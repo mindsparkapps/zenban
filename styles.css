@@ -3823,7 +3823,10 @@ select option:checked {
 .frame-title {
   position: absolute;
   left: calc(10px * var(--inv-zoom, 1));
-  top: calc(8px * var(--inv-zoom, 1));
+  top: calc(8px * var(--inv-zoom, 1) + var(--title-dy, 0px));
+  writing-mode: horizontal-tb;
+  width: max-content;
+  cursor: zoom-in;
   /* Sin ancho máximo: con el zoom mínimo el título (que se agranda para seguir legible) es más ancho que el frame y se cortaba */
   padding: calc(3px * var(--inv-zoom, 1)) calc(9px * var(--inv-zoom, 1));
   border-radius: calc(8px * var(--inv-zoom, 1));

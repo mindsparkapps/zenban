@@ -95,6 +95,31 @@ function applyFrameStyle(el, f) {
   el.dataset.titleAlign = f.titleAlign || 'left';
 }
 
+// Al alejar la vista los títulos se agrandan (para seguir legibles) y chocan entre sí: los que se tapan
+// se bajan, uno bajo otro, hasta que ninguno quede sobre otro. Doble clic en un título enfoca su frame.
+function layoutFrameTitles() {
+  const titles = Array.from(frameLayer.querySelectorAll('.frame-title'));
+  titles.forEach(t => t.style.removeProperty('--title-dy'));
+  if (titles.length < 2) return;
+  const z = (typeof zoom === 'number' && zoom > 0) ? zoom : 1;
+  const gap = 3;
+  const items = titles.map(el => ({ el, r: el.getBoundingClientRect() }))
+    .sort((a, b) => (a.r.top - b.r.top) || (a.r.left - b.r.left));
+  const placed = [];
+  items.forEach(it => {
+    let top = it.r.top;
+    const h = it.r.height, left = it.r.left, right = it.r.right;
+    for (let guard = 0; guard < 200; guard++) {
+      const hit = placed.find(p => left < p.right && right > p.left && top < p.bottom && top + h > p.top);
+      if (!hit) break;
+      top = hit.bottom + gap;
+    }
+    placed.push({ left, right, top, bottom: top + h });
+    const dy = (top - it.r.top) / z;
+    if (dy > 0.5) it.el.style.setProperty('--title-dy', `${dy}px`);
+  });
+}
+
 // Título e ícono de arrastre se ocultan por separado (antes era uno solo: hideLabels)
 function frameHides(f) {
   return { title: !!(f.hideTitle ?? f.hideLabels), tab: !!(f.hideTab ?? f.hideLabels) };
@@ -136,6 +161,7 @@ function renderFrames() {
     frameLayer.appendChild(el);
   });
   if (typeof hydrateBoardImages === 'function') hydrateBoardImages(frameLayer);
+  layoutFrameTitles();
   renderConnectors();
   applyFrameSelection();
 }
