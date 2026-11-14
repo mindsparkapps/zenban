@@ -100,9 +100,8 @@ function applyFrameStyle(el, f) {
 // se bajan, uno bajo otro, hasta que ninguno quede sobre otro. Doble clic en un título enfoca su frame.
 // Lo mismo con las imágenes (pestañas) de tableros y frames: todo lo que sirve para enfocar se ve del mismo
 // tamaño en pantalla y separado, aunque la vista esté muy alejada.
-// Si alguno se tapa con otro, TODOS se reparten en una cuadrícula de filas y columnas que ocupa la pantalla
-// (en el orden en que estaban), sin que ninguno quede sobre otro. Con el zoom lejano también entran los links
-// a otros proyectos de los textos, que se ven del mismo tamaño en pantalla.
+// Los títulos quedan sobre su frame y, si se tapan entre sí, se separan en horizontal. Con el zoom lejano
+// también entran los links a otros proyectos de los textos, que se ven del mismo tamaño en pantalla.
 const FOCUS_HANDLE_SEL = '.frame-title';
 const FOCUS_LINK_SEL = '.canvas-text a.internal-link.link-with-icon';
 function layoutFrameTitles() {
@@ -124,40 +123,24 @@ function layoutFrameTitles() {
     .filter(it => it.r.height > 0)
     .sort((a, b) => (Math.round(a.r.top / 6) - Math.round(b.r.top / 6)) || (a.r.left - b.r.left));
   if (items.length < 2) return;
-  // ¿Alguno tapa a otro?
-  let overlap = false;
-  for (let i = 0; i < items.length && !overlap; i++) {
-    for (let j = i + 1; j < items.length; j++) {
-      const a = items[i].r, b = items[j].r;
-      if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) { overlap = true; break; }
-    }
-  }
-  if (!overlap) return;
-  // Área libre de la pantalla (deja la barra de herramientas a la izquierda y los controles de zoom abajo)
-  const vp = viewportArea.getBoundingClientRect();
-  const x0 = vp.left + 72, y0 = vp.top + 16;
-  const W = Math.max(100, vp.right - 16 - x0), H = Math.max(60, vp.bottom - 110 - y0);
-  const n = items.length;
-  const maxW = Math.max(...items.map(it => it.r.width));
-  const maxH = Math.max(...items.map(it => it.r.height));
-  // Columnas: las que caben, pero sin pasar de las que hacen falta para que la cuadrícula quede proporcionada
-  const fit = Math.max(1, Math.floor((W + gap) / (maxW + gap)));
-  const cols = Math.max(1, Math.min(fit, Math.ceil(Math.sqrt(n * W / H))));
-  const rows = Math.ceil(n / cols);
-  // Separación para repartirlos por toda la pantalla (sin pasar de 3 veces el tamaño de una celda)
-  const colPitch = cols > 1 ? Math.min((W - maxW) / (cols - 1), (maxW + gap) * 3) : 0;
-  const rowPitch = rows > 1 ? Math.max(maxH + gap, Math.min((H - maxH) / (rows - 1), (maxH + gap) * 3)) : 0;
-  const gridW = (cols - 1) * colPitch + maxW, gridH = (rows - 1) * rowPitch + maxH;
-  const startX = x0 + Math.max(0, (W - gridW) / 2), startY = y0 + Math.max(0, (H - gridH) / 2);
+  // Cada uno se queda a la altura de su frame; el que tapa a otro se corre hacia la derecha, solo en horizontal
+  items.sort((a, b) => a.r.left - b.r.left);
+  const placed = [];
   const z = zoom > 0 ? zoom : 1;
-  items.forEach((it, i) => {
-    const x = startX + (i % cols) * colPitch, y = startY + Math.floor(i / cols) * rowPitch;
+  items.forEach(it => {
+    const w = it.r.width, y = it.r.top, h = it.r.height;
+    let x = it.r.left;
+    for (let guard = 0; guard < 600; guard++) {
+      const hit = placed.find(p => x < p.right && x + w > p.left && y < p.bottom && y + h > p.top);
+      if (!hit) break;
+      x = hit.right + gap;
+    }
+    placed.push({ left: x, right: x + w, top: y, bottom: y + h });
+    if (x - it.r.left < 0.5) return;
     const isLink = !it.el.matches(FOCUS_HANDLE_SEL);
     // De píxeles de pantalla a los del propio objeto (el lienzo tiene zoom; un tablero puede tener su escala)
-    const kx = isLink ? 1 / z : it.el.offsetWidth / it.r.width, ky = isLink ? 1 / z : it.el.offsetHeight / it.r.height;
-    const dx = (x - it.r.left) * kx, dy = (y - it.r.top) * ky;
+    const dx = (x - it.r.left) * (isLink ? 1 / z : it.el.offsetWidth / w);
     it.el.style.setProperty(isLink ? '--lk-dx' : '--title-dx', `${dx}px`);
-    it.el.style.setProperty(isLink ? '--lk-dy' : '--title-dy', `${dy}px`);
   });
 }
 
