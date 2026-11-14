@@ -30,7 +30,19 @@ function iAmSpaceOwner() {
 function restrictedUser() {
   if (!inShared() || !myEmail() || iAmSpaceOwner()) return false;
   const m = spacePerms && spacePerms.members && spacePerms.members[myEmail()];
-  return !!m && (m.level !== 'edit' || Object.values(m.boards || {}).some(l => l !== 'edit'));
+  return !!m && (m.level !== 'edit' || Object.values(m.boards || {}).some(l => l !== 'edit') || myObjectOverrides().some(l => l !== 'edit'));
+}
+
+// Permisos por objeto: pasan por encima de los del proyecto. Se guardan junto a los permisos del espacio:
+// spacePerms.objects = { 'texts:ID': { correo: 'edit' | 'create' | 'view' } } (la clave es la lista del proyecto y el id del objeto)
+function objectKey(arrayName, id) { return `${arrayName}:${id}`; }
+function myObjectLevel(key) {
+  const o = spacePerms && spacePerms.objects && spacePerms.objects[key];
+  return (o && o[myEmail()]) || null;
+}
+function myObjectOverrides() {
+  const objs = (spacePerms && spacePerms.objects) || {};
+  return Object.values(objs).map(o => o && o[myEmail()]).filter(Boolean);
 }
 
 function myPermLevel(boardId = null) {
@@ -69,7 +81,7 @@ async function loadSpacePerms(force = false) {
 
 async function saveSpacePerms(perms, members) {
   const name = `ZenBan permisos (${currentSpace().folderName || 'datos compartidos'}).json`;
-  const body = JSON.stringify({ v: 1, folderId: currentSpace().folderId, savedAt: Date.now(), members: perms.members });
+  const body = JSON.stringify({ v: 1, folderId: currentSpace().folderId, savedAt: Date.now(), members: perms.members, objects: perms.objects || {} });
   let { fileId } = await fetchPermFileId();
   if (fileId) {
     await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&supportsAllDrives=true`, {
@@ -92,7 +104,7 @@ async function saveSpacePerms(perms, members) {
     if (!email || readers.has(email) || m.role === 'owner') continue;
     await driveJson(`${DRIVE_API}/files/${fileId}/permissions?sendNotificationEmail=false&supportsAllDrives=true`, 'POST', { type: 'user', role: 'reader', emailAddress: email });
   }
-  spacePerms = { v: 1, members: perms.members };
+  spacePerms = { v: 1, members: perms.members, objects: perms.objects || {} };
   localStorage.setItem(permsCacheKey(), JSON.stringify(spacePerms));
 }
 
@@ -156,7 +168,8 @@ function enforcePermissions() {
   // Lo del lienzo (textos, notas, imágenes, dibujos, frames, conectores…): permiso general
   for (const k of Object.keys(project)) {
     if (['boards', 'columns', 'tasks'].includes(k) || !Array.isArray(project[k])) continue;
-    const fix = enforceList(prev[k], project[k], () => general, 'objetos del lienzo', denied);
+    // Un permiso puesto a un objeto en particular manda sobre el del proyecto
+    const fix = enforceList(prev[k], project[k], (it) => (it && myObjectLevel(objectKey(k, it.id))) || general, 'objetos del lienzo', denied);
     if (fix) project[k] = fix;
   }
   // Nombre, color y demás datos del proyecto: solo con "Editar todo"
@@ -266,7 +279,7 @@ async function enhanceMembersList() {
 
 function openPermsEditor(email, members) {
   const box = el('shareMembers');
-  const perms = { members: JSON.parse(JSON.stringify((spacePerms && spacePerms.members) || {})) };
+  const perms = { members: JSON.parse(JSON.stringify((spacePerms && spacePerms.members) || {})), objects: JSON.parse(JSON.stringify((spacePerms && spacePerms.objects) || {})) };
   const m = perms.members[email] || { level: 'edit', boards: {} };
   const person = members.find(p => (p.emailAddress || '').toLowerCase() === email) || {};
   const opts = (sel, withInherit) => (withInherit ? `<option value="">Igual que lo general</option>` : '') +
@@ -342,7 +355,15 @@ syncNow = async function () {
     .board-frame.is-perm-view::after { content: '🔒 Solo ver'; position: absolute; top: calc(-26px * var(--inv-zoom, 1)); right: 0; padding: 2px 8px; border-radius: 999px; background: #475569; color: #fff; font-size: calc(12px * var(--inv-zoom, 1)); pointer-events: none; }
     .board-frame.is-perm-create::after { content: '➕ Puedes agregar'; position: absolute; top: calc(-26px * var(--inv-zoom, 1)); right: 0; padding: 2px 8px; border-radius: 999px; background: #0f766e; color: #fff; font-size: calc(12px * var(--inv-zoom, 1)); pointer-events: none; }
     .perm-lock { position: absolute; top: calc(-22px * var(--inv-zoom, 1)); right: 0; width: calc(20px * var(--inv-zoom, 1)); height: calc(20px * var(--inv-zoom, 1)); padding: calc(2px * var(--inv-zoom, 1)); box-sizing: border-box; border-radius: 50%; background: var(--bg-surface, #fff); box-shadow: 0 1px 4px rgba(0,0,0,.3); display: flex; align-items: center; justify-content: center; z-index: 5; cursor: help; }
+    .perm-lock { pointer-events: auto; }
     .perm-lock svg { width: 100%; height: 100%; display: block; }
+    .lock-popover { position: fixed; z-index: 100000; width: 320px; max-width: calc(100vw - 16px); max-height: 70vh; overflow: auto; padding: 12px; border-radius: 12px; background: var(--bg-surface, #fff); color: var(--text-main, #111); border: 1px solid var(--border-medium, #ccc); box-shadow: 0 8px 28px rgba(0,0,0,.35); font-size: .85rem; }
+    .lock-pop-title { font-weight: 800; margin-bottom: 8px; }
+    .lock-pop-list { display: flex; flex-direction: column; gap: 10px; }
+    .lock-pop-row { display: flex; align-items: flex-start; gap: 8px; }
+    .lock-pop-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .lock-pop-who select { width: 100%; font: inherit; }
+    .lock-pop-who small { color: var(--text-muted, #666); }
     .perm-lock.is-full { color: #16a34a; }
     .perm-lock.is-own { color: #eab308; }
     .perm-lock.is-view { color: #dc2626; }
@@ -364,24 +385,26 @@ const LOCK_SVG = {
   closed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" fill="currentColor" fill-opacity=".25"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>'
 };
 
-function objectLockKind(item, boardId = null) {
-  const lvl = myPermLevel(boardId);
+function objectLockKind(item, boardId = null, key = null) {
+  const lvl = (key && myObjectLevel(key)) || myPermLevel(boardId);
   if (lvl === 'edit') return 'full';
   if (lvl === 'create' && item && item.createdBy && item.createdBy === myEmail()) return 'own';
   return 'view';
 }
 
-function putObjectLock(el, kind) {
+function putObjectLock(el, kind, key) {
   let b = el.querySelector(':scope > .perm-lock');
   if (!kind) { if (b) b.remove(); return; }
   if (!b) {
     b = document.createElement('span');
     b.addEventListener('pointerdown', (e) => e.stopPropagation());
+    b.addEventListener('click', (e) => { e.stopPropagation(); openLockPopover(b); });
     el.appendChild(b);
   }
+  b.dataset.key = key || '';
   const k = LOCK_KINDS[kind];
   b.className = `perm-lock ${k.cls}`;
-  b.title = k.title;
+  b.title = k.title + ' · toca para ver y cambiar los permisos de las personas';
   b.setAttribute('aria-label', k.title);
   b.innerHTML = kind === 'view' ? LOCK_SVG.closed : LOCK_SVG.open;
 }
@@ -391,19 +414,125 @@ function markObjectLocks() {
   const find = (list, id) => (list || []).find(x => x && String(x.id) === String(id));
   const project = on ? getActiveProject() : null;
   const sets = [
-    ['.canvas-text[data-text-id]', 'textId', () => getTexts(), false],
-    ['.bg-image[data-image-id]', 'imageId', () => getBgImages(), false],
-    ['.canvas-frame[data-frame-id]', 'frameId', () => getFrames(), false],
-    ['.board-frame[data-board-id]', 'boardId', () => (project && project.boards) || [], true]
+    ['.canvas-text[data-text-id]', 'textId', () => getTexts(), false, 'texts'],
+    ['.bg-image[data-image-id]', 'imageId', () => getBgImages(), false, 'bgImages'],
+    ['.canvas-frame[data-frame-id]', 'frameId', () => getFrames(), false, 'frames'],
+    ['.board-frame[data-board-id]', 'boardId', () => (project && project.boards) || [], true, 'boards']
   ];
-  sets.forEach(([sel, key, list, isBoard]) => {
+  sets.forEach(([sel, key, list, isBoard, arr]) => {
     let items = null;
     document.querySelectorAll(sel).forEach(el => {
       if (!on) { putObjectLock(el, null); return; }
       items = items || list();
       const item = find(items, el.dataset[key]);
-      putObjectLock(el, item ? objectLockKind(item, isBoard ? item.id : null) : null);
+      const k = item ? objectKey(arr, item.id) : null;
+      putObjectLock(el, item ? objectLockKind(item, isBoard ? item.id : null, isBoard ? null : k) : null, k);
     });
+  });
+}
+
+// ----- Al tocar el candado: las personas del proyecto y su permiso sobre ESE objeto -----
+// El dueño puede cambiar el permiso de cada persona para este objeto; vale por encima del que tiene en el proyecto.
+function lockObjectByKey(key) {
+  const i = key.indexOf(':');
+  const arr = key.slice(0, i), id = key.slice(i + 1);
+  const project = getActiveProject();
+  return { arr, id, item: ((project && project[arr]) || []).find(x => x && String(x.id) === id) || null };
+}
+
+function personLevelOnObject(email, role, key) {
+  if (role === 'owner') return { lvl: 'edit', over: null };
+  const { arr, id } = lockObjectByKey(key);
+  const m = (spacePerms && spacePerms.members && spacePerms.members[email]) || null;
+  const over = arr === 'boards' ? ((m && m.boards && m.boards[id]) || null) : (((spacePerms && spacePerms.objects) || {})[key] || {})[email] || null;
+  return { lvl: over || (m && m.level) || 'edit', over };
+}
+
+function lockLevelText(lvl, item, email) {
+  if (lvl === 'edit') return '🟢 Ver, editar y eliminar';
+  if (lvl === 'create' && item && item.createdBy && item.createdBy === email) return '🟡 Ver y editar (lo creó)';
+  return '🔴 Solo ver';
+}
+
+function closeLockPopover() {
+  const p = document.getElementById('lockPopover');
+  if (p) p.remove();
+  document.removeEventListener('pointerdown', onLockPopoverOutside, true);
+  document.removeEventListener('keydown', onLockPopoverKey, true);
+}
+function onLockPopoverOutside(e) { const p = document.getElementById('lockPopover'); if (p && !p.contains(e.target)) closeLockPopover(); }
+function onLockPopoverKey(e) { if (e.key === 'Escape') closeLockPopover(); }
+
+async function openLockPopover(lockEl) {
+  closeLockPopover();
+  const key = lockEl.dataset.key;
+  if (!key) return;
+  const owner = iAmSpaceOwner();
+  const pop = document.createElement('div');
+  pop.id = 'lockPopover';
+  pop.className = 'lock-popover';
+  pop.innerHTML = '<p class="share-note">Cargando personas…</p>';
+  document.body.appendChild(pop);
+  const r = lockEl.getBoundingClientRect();
+  pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 330))}px`;
+  pop.style.top = `${Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 120))}px`;
+  document.addEventListener('pointerdown', onLockPopoverOutside, true);
+  document.addEventListener('keydown', onLockPopoverKey, true);
+  const members = cachedMembers() || await refreshMembers() || [];
+  if (!document.getElementById('lockPopover')) return;
+  const { arr, item } = lockObjectByKey(key);
+  const generalWord = (lvl) => ({ edit: 'ver, editar y eliminar', create: 'crear (y editar lo suyo)', view: 'solo ver' }[lvl] || lvl);
+  if (!members.length) { pop.innerHTML = '<p class="share-note">No hay otras personas en este proyecto.</p>'; return; }
+  pop.innerHTML = `
+    <div class="lock-pop-title">Permisos de este objeto</div>
+    <div class="lock-pop-list">${members.map(p => {
+      const email = (p.emailAddress || '').toLowerCase();
+      const isOwner = p.role === 'owner';
+      const { lvl, over } = personLevelOnObject(email, p.role, key);
+      const general = ((spacePerms && spacePerms.members && spacePerms.members[email]) || {}).level || 'edit';
+      const control = owner && !isOwner
+        ? `<select data-lock-email="${shareEsc(email)}">
+            <option value="" ${over ? '' : 'selected'}>Igual que el proyecto (${generalWord(general)})</option>
+            <option value="edit" ${over === 'edit' ? 'selected' : ''}>Ver, editar y eliminar</option>
+            <option value="view" ${over === 'view' ? 'selected' : ''}>Solo ver</option></select>`
+        : `<small>${isOwner ? '🟢 Dueño: ve, edita y elimina todo' : shareEsc(lockLevelText(lvl, item, email))}${over ? ' · propio de este objeto' : ''}</small>`;
+      return `<div class="lock-pop-row">${avatarHtml(p)}<div class="lock-pop-who"><strong>${shareEsc(p.displayName || p.emailAddress || '')}</strong>${control}</div></div>`;
+    }).join('')}</div>
+    ${owner ? `<div class="share-actions"><button class="btn btn-ghost" type="button" id="lockPopCancel">Cerrar</button><button class="btn btn-primary" type="button" id="lockPopSave">Guardar</button></div>
+      <p class="share-note">Lo que pongas aquí vale por encima del permiso del proyecto, solo para este objeto.</p>`
+      : '<p class="share-note">Solo el dueño de los datos compartidos puede cambiar los permisos.</p>'}`;
+  const cancel = pop.querySelector('#lockPopCancel');
+  if (cancel) cancel.addEventListener('click', closeLockPopover);
+  const save = pop.querySelector('#lockPopSave');
+  if (save) save.addEventListener('click', async () => {
+    const perms = { members: JSON.parse(JSON.stringify((spacePerms && spacePerms.members) || {})), objects: JSON.parse(JSON.stringify((spacePerms && spacePerms.objects) || {})) };
+    const { id } = lockObjectByKey(key);
+    pop.querySelectorAll('select[data-lock-email]').forEach(s => {
+      const email = s.dataset.lockEmail;
+      if (arr === 'boards') {
+        const m = perms.members[email] || (perms.members[email] = { level: 'edit', boards: {} });
+        m.boards = m.boards || {};
+        if (s.value) m.boards[id] = s.value; else delete m.boards[id];
+      } else {
+        const o = perms.objects[key] || (perms.objects[key] = {});
+        if (s.value) o[email] = s.value; else delete o[email];
+        if (!Object.keys(o).length) delete perms.objects[key];
+      }
+    });
+    save.disabled = true;
+    save.textContent = 'Guardando…';
+    try {
+      await saveSpacePerms(perms, members);
+      showToast('Permisos del objeto guardados', 'success');
+      markObjectLocks();
+      markReadOnlyBoards();
+      closeLockPopover();
+    } catch (err) {
+      console.warn(err);
+      showToast('No se pudieron guardar los permisos', 'warning');
+      save.disabled = false;
+      save.textContent = 'Guardar';
+    }
   });
 }
 
