@@ -3824,15 +3824,14 @@ select option:checked {
   position: absolute;
   left: calc(10px * var(--inv-zoom, 1));
   top: calc(8px * var(--inv-zoom, 1));
-  max-width: calc(100% - 20px * var(--inv-zoom, 1));
+  /* Sin ancho máximo: con el zoom mínimo el título (que se agranda para seguir legible) es más ancho que el frame y se cortaba */
   padding: calc(3px * var(--inv-zoom, 1)) calc(9px * var(--inv-zoom, 1));
   border-radius: calc(8px * var(--inv-zoom, 1));
   background: var(--frame-title-bg, var(--frame-color, #6366f1));
   color: var(--frame-title-color, #fff);
   font-weight: var(--frame-title-weight, 700);
   font-size: calc(var(--frame-title-size, 13px) * var(--inv-zoom, 1));
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
   pointer-events: auto;
   /* Sobre los objetos de adentro (textos 2, dibujos 3), bajo las manijas de selección */
   z-index: 4;
