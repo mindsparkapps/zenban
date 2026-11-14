@@ -397,8 +397,6 @@ function putObjectLock(el, kind, key) {
   if (!kind) { if (b) b.remove(); return; }
   if (!b) {
     b = document.createElement('span');
-    b.addEventListener('pointerdown', (e) => e.stopPropagation());
-    b.addEventListener('click', (e) => { e.stopPropagation(); openLockPopover(b); });
     el.appendChild(b);
   }
   b.dataset.key = key || '';
@@ -430,6 +428,16 @@ function markObjectLocks() {
     });
   });
 }
+
+// El lienzo captura el puntero en pointerdown (mover, seleccionar), y entonces el click nunca llega al candado:
+// por eso el recuadro se abre en pointerdown, en la fase de captura de window, antes que cualquier otro manejador.
+window.addEventListener('pointerdown', (e) => {
+  const lock = e.target.closest && e.target.closest('.perm-lock');
+  if (!lock || e.button > 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openLockPopover(lock);
+}, true);
 
 // ----- Al tocar el candado: las personas del proyecto y su permiso sobre ESE objeto -----
 // El dueño puede cambiar el permiso de cada persona para este objeto; vale por encima del que tiene en el proyecto.
@@ -476,8 +484,12 @@ async function openLockPopover(lockEl) {
   const r = lockEl.getBoundingClientRect();
   pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 330))}px`;
   pop.style.top = `${Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 120))}px`;
-  document.addEventListener('pointerdown', onLockPopoverOutside, true);
-  document.addEventListener('keydown', onLockPopoverKey, true);
+  // Se agregan después de este toque, para que el mismo toque no cierre el recuadro
+  setTimeout(() => {
+    if (!document.getElementById('lockPopover')) return;
+    document.addEventListener('pointerdown', onLockPopoverOutside, true);
+    document.addEventListener('keydown', onLockPopoverKey, true);
+  }, 0);
   const members = cachedMembers() || await refreshMembers() || [];
   if (!document.getElementById('lockPopover')) return;
   const { arr, item } = lockObjectByKey(key);
