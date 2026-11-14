@@ -103,7 +103,7 @@ function applyFrameStyle(el, f) {
 // Si alguno se tapa con otro, TODOS se reparten en una cuadrícula de filas y columnas que ocupa la pantalla
 // (en el orden en que estaban), sin que ninguno quede sobre otro. Con el zoom lejano también entran los links
 // a otros proyectos de los textos, que se ven del mismo tamaño en pantalla.
-const FOCUS_HANDLE_SEL = '.frame-title, .board-far-title';
+const FOCUS_HANDLE_SEL = '.frame-title';
 const FOCUS_LINK_SEL = '.canvas-text a.internal-link.link-with-icon';
 function layoutFrameTitles() {
   const host = (typeof zoomCanvas !== 'undefined' && zoomCanvas) || frameLayer;

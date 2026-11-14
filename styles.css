@@ -3861,31 +3861,6 @@ select option:checked {
   left: calc(12px * var(--inv-zoom, 1));
 }
 
-/* Título del tablero con el zoom lejano: copia el aspecto del título de un frame (frames.js lo acomoda y
-   doble clic enfoca el tablero). Con zoom normal no se ve: ahí está el título de su encabezado. */
-.board-far-title {
-  display: none;
-  position: absolute;
-  --ti: var(--title-inv, var(--inv-zoom, 1));
-  left: calc(10px * var(--ti) + var(--title-dx, 0px));
-  top: calc(8px * var(--ti) + var(--title-dy, 0px));
-  padding: calc(3px * var(--ti)) calc(9px * var(--ti));
-  border-radius: calc(8px * var(--ti));
-  background: var(--board-color, #6366f1);
-  color: #fff;
-  font-weight: 700;
-  font-size: calc(13px * var(--ti));
-  white-space: nowrap;
-  writing-mode: horizontal-tb;
-  width: max-content;
-  cursor: pointer;
-  z-index: 4;
-}
-
-.titles-far .board-far-title {
-  display: block;
-}
-
 /* Links a otros proyectos con el zoom lejano: del mismo tamaño en pantalla y acomodados (frames.js) */
 .titles-far .canvas-text a.internal-link.link-with-icon {
   position: relative;
