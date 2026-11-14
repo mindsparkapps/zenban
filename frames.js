@@ -100,12 +100,15 @@ function applyFrameStyle(el, f) {
 // se bajan, uno bajo otro, hasta que ninguno quede sobre otro. Doble clic en un título enfoca su frame.
 // Lo mismo con las imágenes (pestañas) de tableros y frames: todo lo que sirve para enfocar se ve del mismo
 // tamaño en pantalla y separado, aunque la vista esté muy alejada.
-const FOCUS_HANDLE_SEL = '.frame-title, .frame-image-tab, .board-image-tab';
+const FOCUS_HANDLE_SEL = '.frame-title, .board-far-title';
 function layoutFrameTitles() {
   const host = (typeof zoomCanvas !== 'undefined' && zoomCanvas) || frameLayer;
   if (typeof zoom === 'number' && zoom > 0) {
     host.style.setProperty('--title-inv', 1 / zoom);
     host.classList.toggle('titles-far', zoom < 0.3);
+    // Bordes y manijas de las esquinas de los frames (usan --inv-zoom): se actualizan en cada cuadro del zoom
+    // solo dentro de la capa de frames; si no, se ven gigantes durante el enfoque y de golpe cambian al final
+    frameLayer.style.setProperty('--inv-zoom', 1 / zoom);
   }
   const els = Array.from(host.querySelectorAll(FOCUS_HANDLE_SEL));
   els.forEach(t => ['--title-dx', '--title-dy', '--tab-dx', '--tab-dy'].forEach(p => t.style.removeProperty(p)));
@@ -134,9 +137,8 @@ function layoutFrameTitles() {
     const dx = (x - it.r.left) * (it.el.offsetWidth / w);
     const dy = (y - it.r.top) * (it.el.offsetHeight / h);
     if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
-    const pre = it.el.classList.contains('frame-title') ? '--title' : '--tab';
-    it.el.style.setProperty(`${pre}-dx`, `${dx}px`);
-    it.el.style.setProperty(`${pre}-dy`, `${dy}px`);
+    it.el.style.setProperty('--title-dx', `${dx}px`);
+    it.el.style.setProperty('--title-dy', `${dy}px`);
   });
 }
 

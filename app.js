@@ -1552,6 +1552,7 @@ function renderBoardContent() {
         </div>
       </header>
       <div class="board-columns"></div>
+      <div class="board-far-title">${escapeHtml(board.title)}</div>
     `;
     // Imagen del tablero: pestaña arriba a la izquierda (para reconocerlo y arrastrarlo; no se achica demasiado al alejar)
     if (board.image) {
@@ -3657,7 +3658,7 @@ function imageDropTargetAt(clientX, clientY) {
         : card ? tasks.find(t => t.id === card.dataset.taskId) : null;
       if (owner) return { type: 'link', owner, url: unescapeHtml(link.dataset.url), el: link };
     }
-    const boardPart = n.closest('.board-image-tab, .board-header');
+    const boardPart = n.closest('.board-image-tab, .board-header, .board-far-title');
     if (boardPart) {
       const frame = boardPart.closest('.board-frame');
       const board = frame && boards.find(b => b.id === frame.dataset.boardId);
@@ -6980,7 +6981,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '176';
+const APP_VERSION = '177';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)
