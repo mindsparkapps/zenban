@@ -5683,6 +5683,15 @@ document.getElementById('ctxTextLinks').addEventListener('click', () => {
   });
 });
 document.getElementById('ctxTextBigger').addEventListener('click', () => scaleSelectedTexts(1.2));
+document.getElementById('ctxTextPlain').addEventListener('click', () => {
+  const sel = selectedTexts();
+  const pages = sel.filter(t => t.page);
+  if (!pages.length) { showToast('Este texto ya está sin hoja', 'info'); return; }
+  pages.forEach(t => { t.page = false; });
+  persist();
+  renderTexts();
+  showToast('Texto plano: para volver a la hoja usa el icono del editor', 'info');
+});
 document.getElementById('ctxTextSmaller').addEventListener('click', () => scaleSelectedTexts(1 / 1.2));
 ctxTextColor.addEventListener('input', () => {
   selectedTexts().forEach(t => {
@@ -6960,7 +6969,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '162';
+const APP_VERSION = '163';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

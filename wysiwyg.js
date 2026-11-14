@@ -423,6 +423,11 @@ function openWysiwyg(textId) {
       // Un tamaño anterior dentro de la selección no debe pisar el nuevo
       sp.querySelectorAll('span').forEach(x => { x.style.fontSize = ''; });
       f.replaceWith(sp);
+      // Una envoltura de tamaño anterior que solo contiene este texto se deshace: si no, su tamaño grande
+      // seguiría marcando la altura de la línea y de la selección
+      for (let p = sp.parentElement; p && p !== surface && p.tagName === 'SPAN' && p.style.fontSize && p.childNodes.length === 1; p = p.parentElement) {
+        p.style.fontSize = '';
+      }
       // El tamaño es absoluto (N/12 de la hoja) aunque quede dentro de otro tamaño anterior
       const parentPx = parseFloat(getComputedStyle(sp.parentElement).fontSize) || base;
       sp.style.fontSize = `${(pt / WZ_BASE_PT * base / parentPx).toFixed(3)}em`;
@@ -631,8 +636,23 @@ function openWysiwyg(textId) {
   const rtick = document.createElement('div');
   rtick.className = 'wz-rtick';
   lrail.appendChild(rtick);
+  const readCol = document.createElement('div');
+  readCol.className = 'wz-marks';
+  const rmarkR = document.createElement('span');
+  rmarkR.className = 'wz-mk wz-mk-read';
+  rmarkR.title = 'Hasta aquí llegué (doble clic para ir)';
+  readCol.appendChild(rmarkR);
+  el.appendChild(readCol);
+  readCol.addEventListener('pointerdown', (e) => e.stopPropagation());
+  readCol.addEventListener('dblclick', (e) => {
+    if (typeof t.readMark !== 'number') return;
+    e.stopPropagation();
+    surface.scrollTop = t.readMark - surface.clientHeight * 0.3;
+  });
   const placeReadMark = () => {
-    if (typeof t.readMark !== 'number') { rmark.style.display = 'none'; rtick.style.display = 'none'; return; }
+    if (typeof t.readMark !== 'number') { rmark.style.display = 'none'; rtick.style.display = 'none'; rmarkR.style.display = 'none'; return; }
+    rmarkR.style.display = 'block';
+    rmarkR.style.top = `${t.readMark / Math.max(1, surface.scrollHeight) * readCol.clientHeight}px`;
     const y = t.readMark - surface.scrollTop;
     rmark.style.display = y >= 0 && y <= surface.clientHeight ? 'block' : 'none';
     rmark.style.top = `${y}px`;

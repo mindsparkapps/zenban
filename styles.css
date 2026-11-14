@@ -7018,12 +7018,9 @@ body.wz-mode .context-bar { visibility: hidden; pointer-events: none; }
 
 /* Modo solo edición de hoja: fondo oscuro que aísla la hoja y nada más del lienzo a la vista */
 body.wz-mode .viewport-area { background: #0b0d12 !important; background-image: none !important; }
-body.wz-mode .frame-layer,
-body.wz-mode .connector-layer,
-body.wz-mode .bg-image-layer,
-body.wz-mode .kanban-board,
-body.wz-mode .draw-layer,
+body.wz-mode .zoom-canvas > :not(.text-layer),
 body.wz-mode .canvas-text:not(.is-wz-editing) { visibility: hidden; }
+.wz-mk.wz-mk-read { background: #dc2626; clip-path: polygon(0 0, 100% 0, 50% 100%); height: calc(var(--page-sb, 14px) * 1.1); transform: translateY(-100%); z-index: 2; }
 .wz-zoomgrp { display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
 /* Marcador de lectura: flecha roja hacia abajo en el borde izquierdo */
 .wz-readmark {
