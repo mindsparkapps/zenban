@@ -7,8 +7,7 @@
 //   comparten con cada persona solo para lectura: nadie más que el dueño puede cambiarlos.
 // - ZenBan los respeta en la app: si alguien sin permiso cambia algo, el cambio se deshace al guardar.
 
-const PERM_LEVELS = { edit: 'Editar todo', create: 'Crear (y editar lo suyo)', view: 'Solo ver' };
-const PERM_RANK = { view: 0, create: 1, edit: 2 };
+// (los niveles antiguos 'edit' | 'create' | 'view' se siguen leyendo; ver normPerm)
 const PERM_FILE_PROP = 'zenbanPermFile';
 const MEMBERS_CACHE_KEY = 'zenban_members:';
 const PERMS_CACHE_KEY = 'zenban_perms:';
@@ -22,34 +21,71 @@ function loadCachedPerms() {
   try { spacePerms = JSON.parse(localStorage.getItem(permsCacheKey()) || 'null'); } catch (e) { spacePerms = null; }
 }
 
+// ----- Permisos como casillas independientes: ver, editar, eliminar (y agregar, solo en lo general) -----
+// Cada persona tiene unas casillas en general, puede tener otras por tablero y otras por objeto (el objeto manda sobre
+// el tablero y el tablero sobre lo general). Lo que una persona crea ella misma siempre lo puede ver, editar y eliminar:
+// las casillas valen para lo que creó el dueño u otras personas.
+// Guardado: members[correo] = { perm: {ver,editar,eliminar,agregar}, level (para versiones antiguas), boards: { id: {ver,editar,eliminar} } }
+//           objects['texts:ID'] = { correo: {ver,editar,eliminar} }  (la clave es la lista del proyecto y el id del objeto)
+// Los permisos antiguos (texto 'edit' | 'create' | 'view') se leen y se convierten en casillas.
+const PERM_ALL = { ver: true, editar: true, eliminar: true, agregar: true };
+function normPerm(v) {
+  if (!v) return null;
+  let p;
+  if (typeof v === 'string') {
+    p = v === 'edit' ? { ...PERM_ALL } : v === 'create' ? { ver: true, editar: false, eliminar: false, agregar: true } : { ver: true, editar: false, eliminar: false, agregar: false };
+  } else {
+    p = { ver: v.ver !== false, editar: !!v.editar, eliminar: !!v.eliminar, agregar: !!v.agregar };
+  }
+  if (!p.ver) { p.editar = false; p.eliminar = false; p.agregar = false; }
+  return p;
+}
+const permIsFull = (p, conAgregar = true) => !!p && p.ver && p.editar && p.eliminar && (!conAgregar || p.agregar);
+// Texto antiguo equivalente (para versiones antiguas de ZenBan y para decirle a los plugins qué nivel tiene la persona)
+function levelOfPerm(p) {
+  if (permIsFull(p)) return 'edit';
+  return !p.editar && !p.agregar && !p.eliminar ? 'view' : 'create';
+}
+
+function objectKey(arrayName, id) { return `${arrayName}:${id}`; }
+function ownerEmailLower() { return (currentSpace().ownerEmail || '').toLowerCase(); }
+function memberPermOf(email) {
+  const m = spacePerms && spacePerms.members && spacePerms.members[email];
+  return (m && (normPerm(m.perm) || normPerm(m.level))) || { ...PERM_ALL };
+}
+function boardPermOf(email, boardId) {
+  const m = spacePerms && spacePerms.members && spacePerms.members[email];
+  return (m && m.boards && normPerm(m.boards[boardId])) || null;
+}
+function objectPermOf(email, key) {
+  const o = spacePerms && spacePerms.objects && spacePerms.objects[key];
+  return (o && normPerm(o[email])) || null;
+}
+// Permiso efectivo de una persona: dueño y creador del objeto, todo; si no, el del objeto, el del tablero o el general
+function permOf(email, { boardId = null, key = null, item = null } = {}) {
+  if (!inShared() || !email || email === ownerEmailLower()) return { ...PERM_ALL };
+  if (item && item.createdBy && item.createdBy === email) return { ...PERM_ALL };
+  return (key && objectPermOf(email, key)) || (boardId && boardPermOf(email, boardId)) || memberPermOf(email);
+}
+const myPerm = (opts) => permOf(myEmail(), opts);
+
 function iAmSpaceOwner() {
-  return (currentSpace().ownerEmail || '').toLowerCase() === myEmail();
+  return ownerEmailLower() === myEmail();
 }
 
 // ¿Esta persona tiene límites? (en datos personales o siendo el dueño, nunca)
 function restrictedUser() {
   if (!inShared() || !myEmail() || iAmSpaceOwner()) return false;
   const m = spacePerms && spacePerms.members && spacePerms.members[myEmail()];
-  return !!m && (m.level !== 'edit' || Object.values(m.boards || {}).some(l => l !== 'edit') || myObjectOverrides().some(l => l !== 'edit'));
+  const objs = Object.values((spacePerms && spacePerms.objects) || {}).map(o => o && normPerm(o[myEmail()])).filter(Boolean);
+  return (!!m && (!permIsFull(memberPermOf(myEmail())) || Object.values(m.boards || {}).some(b => !permIsFull(normPerm(b), false))))
+    || objs.some(p => !permIsFull(p, false));
 }
 
-// Permisos por objeto: pasan por encima de los del proyecto. Se guardan junto a los permisos del espacio:
-// spacePerms.objects = { 'texts:ID': { correo: 'edit' | 'create' | 'view' } } (la clave es la lista del proyecto y el id del objeto)
-function objectKey(arrayName, id) { return `${arrayName}:${id}`; }
-function myObjectLevel(key) {
-  const o = spacePerms && spacePerms.objects && spacePerms.objects[key];
-  return (o && o[myEmail()]) || null;
-}
-function myObjectOverrides() {
-  const objs = (spacePerms && spacePerms.objects) || {};
-  return Object.values(objs).map(o => o && o[myEmail()]).filter(Boolean);
-}
-
+// Nivel antiguo de la persona (se usa en la lista de personas, en los tableros y se le manda a los plugins)
 function myPermLevel(boardId = null) {
   if (!inShared() || iAmSpaceOwner()) return 'edit';
-  const m = spacePerms && spacePerms.members && spacePerms.members[myEmail()];
-  if (!m) return 'edit';
-  return (boardId && m.boards && m.boards[boardId]) || m.level || 'edit';
+  return levelOfPerm(myPerm({ boardId }));
 }
 
 // ----- Leer y guardar los permisos (archivo en el Drive personal del dueño) -----
@@ -112,7 +148,9 @@ async function saveSpacePerms(perms, members) {
 // Compara el proyecto con cómo estaba en el último guardado y deshace lo que esta persona no puede hacer.
 function itemKeyIds(arr) { return new Map((arr || []).filter(x => x && x.id != null).map(x => [x.id, x])); }
 
-function enforceList(prevArr, curArr, levelOf, label, denied) {
+// permOf(item, before) devuelve las casillas { agregar, editar, eliminar } que valen para ese elemento.
+// Lo que la persona creó ella misma siempre lo puede cambiar y borrar.
+function enforceList(prevArr, curArr, permFor, label, denied) {
   const prev = itemKeyIds(prevArr);
   const cur = itemKeyIds(curArr);
   const me = myEmail();
@@ -121,22 +159,20 @@ function enforceList(prevArr, curArr, levelOf, label, denied) {
   (curArr || []).forEach(item => {
     if (!item || item.id == null) { out.push(item); return; }
     const before = prev.get(item.id);
-    const lvl = levelOf(item, before);
     if (!before) {
-      if (PERM_RANK[lvl] >= PERM_RANK.create) { if (lvl !== 'edit' && !item.createdBy) item.createdBy = me; out.push(item); }
+      if (permFor(item, null).agregar) { if (!item.createdBy) item.createdBy = me; out.push(item); }
       else { changed = true; denied.add(`crear ${label}`); }
       return;
     }
     if (JSON.stringify(before) === JSON.stringify(item)) { out.push(item); return; }
     const own = before.createdBy && before.createdBy === me;
-    if (lvl === 'edit' || (lvl === 'create' && own)) out.push(item);
+    if (own || permFor(item, before).editar) out.push(item);
     else { out.push(before); changed = true; denied.add(`cambiar ${label}`); }
   });
   prev.forEach((item, id) => {
     if (cur.has(id)) return;
-    const lvl = levelOf(item, item);
     const own = item.createdBy && item.createdBy === me;
-    if (lvl === 'edit' || (lvl === 'create' && own)) return;
+    if (own || permFor(item, item).eliminar) return;
     out.push(item);
     changed = true;
     denied.add(`borrar ${label}`);
@@ -157,11 +193,11 @@ function enforcePermissions() {
   const general = myPermLevel();
   const colBoard = new Map([...(prev.columns || []), ...(project.columns || [])].map(c => [c.id, c.boardId]));
   // Tableros: agregarlos depende del permiso general; cambiarlos o borrarlos, del de ese tablero
-  const boardsFix = enforceList(prev.boards, project.boards, (b, before) => before ? myPermLevel(b.id) : general, 'tableros', denied);
-  // Columnas: son la estructura del tablero (solo con "Editar todo" en ese tablero)
-  const colsFix = enforceList(prev.columns, project.columns, (c) => (myPermLevel(c.boardId) === 'edit' ? 'edit' : 'view'), 'columnas', denied);
+  const boardsFix = enforceList(prev.boards, project.boards, (b, before) => before ? myPerm({ boardId: b.id }) : myPerm(), 'tableros', denied);
+  // Columnas: son la estructura del tablero (hace falta poder editar ese tablero; borrarlas, además poder eliminar)
+  const colsFix = enforceList(prev.columns, project.columns, (c) => { const p = myPerm({ boardId: c.boardId }); return { agregar: p.editar, editar: p.editar, eliminar: p.editar && p.eliminar }; }, 'columnas', denied);
   // Tareas: según el tablero de su columna
-  const tasksFix = enforceList(prev.tasks, project.tasks, (t, before) => myPermLevel(colBoard.get((before || t).columnId)), 'tareas', denied);
+  const tasksFix = enforceList(prev.tasks, project.tasks, (t, before) => myPerm({ boardId: colBoard.get((before || t).columnId) }), 'tareas', denied);
   if (boardsFix) project.boards = boardsFix;
   if (colsFix) { project.columns = colsFix; columns = colsFix; }
   if (tasksFix) { project.tasks = tasksFix; tasks = tasksFix; }
@@ -169,7 +205,7 @@ function enforcePermissions() {
   for (const k of Object.keys(project)) {
     if (['boards', 'columns', 'tasks'].includes(k) || !Array.isArray(project[k])) continue;
     // Un permiso puesto a un objeto en particular manda sobre el del proyecto
-    const fix = enforceList(prev[k], project[k], (it) => (it && myObjectLevel(objectKey(k, it.id))) || general, 'objetos del lienzo', denied);
+    const fix = enforceList(prev[k], project[k], (it) => myPerm({ key: it ? objectKey(k, it.id) : null }), 'objetos del lienzo', denied);
     if (fix) project[k] = fix;
   }
   // Nombre, color y demás datos del proyecto: solo con "Editar todo"
@@ -249,6 +285,45 @@ function renderMembersChip() {
   chip.hidden = false;
 }
 
+// ----- Casillas de permisos (ver, editar, eliminar y, en lo general, agregar) -----
+function permSummary(p) {
+  if (!p.ver) return 'No ve nada';
+  const rest = ['editar', 'eliminar', 'agregar'].filter(k => p[k]);
+  if (!rest.length) return 'Solo ver';
+  return 'Ver' + (rest.length > 1 ? `, ${rest.slice(0, -1).join(', ')} y ${rest[rest.length - 1]}` : ` y ${rest[0]}`);
+}
+
+// attrs: atributos del contenedor. inherit: null (sin opción) o { on, text } para la casilla «Igual que…».
+function permBoxesHtml(p, { agregar = false, inherit = null, disabled = false } = {}) {
+  const box = (k, label) => `<label class="perm-box"><input type="checkbox" data-p="${k}" ${p[k] ? 'checked' : ''} ${disabled || (inherit && inherit.on) ? 'disabled' : ''}> ${label}</label>`;
+  return `<div class="perm-boxes">
+    ${inherit ? `<label class="perm-box perm-inherit"><input type="checkbox" data-inherit ${inherit.on ? 'checked' : ''} ${disabled ? 'disabled' : ''}> ${shareEsc(inherit.text)}</label>` : ''}
+    <div class="perm-box-row">${box('ver', 'Ver')}${box('editar', 'Editar')}${box('eliminar', 'Eliminar')}${agregar ? box('agregar', 'Agregar nuevos') : ''}</div>
+  </div>`;
+}
+function readPermBoxes(root) {
+  const inh = root.querySelector('[data-inherit]');
+  if (inh && inh.checked) return null; // «igual que…»: sin permiso propio
+  const g = (k) => { const i = root.querySelector(`input[data-p="${k}"]`); return !!(i && i.checked); };
+  return normPerm({ ver: g('ver'), editar: g('editar'), eliminar: g('eliminar'), agregar: g('agregar') });
+}
+// Reglas entre casillas: sin «Ver» no hay nada más; marcar editar/eliminar/agregar marca «Ver»;
+// «Igual que…» deja las casillas sin poder tocarse
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (!t || !t.closest) return;
+  const root = t.closest('.perm-boxes');
+  if (!root) return;
+  if (t.matches('[data-inherit]')) {
+    root.querySelectorAll('input[data-p]').forEach(i => { i.disabled = t.checked; });
+    return;
+  }
+  if (!t.matches('input[data-p]')) return;
+  const ver = root.querySelector('input[data-p="ver"]');
+  if (t.dataset.p === 'ver' && !t.checked) root.querySelectorAll('input[data-p]').forEach(i => { i.checked = false; });
+  else if (t.checked && ver) ver.checked = true;
+});
+
 // ----- Ventana de datos compartidos: la lista de personas con fotos, número y permisos -----
 // (share.js la llama en vez de su lista simple)
 async function enhanceMembersList() {
@@ -262,13 +337,13 @@ async function enhanceMembersList() {
   const perms = (spacePerms && spacePerms.members) || {};
   box.innerHTML = members.map(p => {
     const email = (p.emailAddress || '').toLowerCase();
-    const lvl = p.role === 'owner' ? 'dueño' : PERM_LEVELS[(perms[email] || {}).level || 'edit'];
+    const lvl = p.role === 'owner' ? 'dueño' : permSummary(memberPermOf(email));
     return `<div class="share-row member-row">
       ${avatarHtml(p, 'is-big')}
       <div class="member-info"><strong>${shareEsc(p.displayName || p.emailAddress)}</strong><small>${shareEsc(p.emailAddress || '')} · ${shareEsc(lvl)}</small></div>
       ${owner && p.role !== 'owner' ? `<button class="btn btn-ghost share-btn-sm" data-perms="${shareEsc(email)}">Permisos</button><button class="btn btn-ghost share-btn-sm" data-remove="${shareEsc(p.id)}">Quitar</button>` : ''}
     </div>`;
-  }).join('') + (!owner ? `<p class="share-note">Tus permisos: ${shareEsc(PERM_LEVELS[myPermLevel()])}${spacePerms && spacePerms.members && spacePerms.members[myEmail()] && Object.keys(spacePerms.members[myEmail()].boards || {}).length ? ' (con cambios en algunos tableros)' : ''}. Solo el dueño los puede cambiar.</p>` : '');
+  }).join('') + (!owner ? `<p class="share-note">Tus permisos: ${shareEsc(permSummary(myPerm()))}${spacePerms && spacePerms.members && spacePerms.members[myEmail()] && Object.keys(spacePerms.members[myEmail()].boards || {}).length ? ' (con cambios en algunos tableros)' : ''}. Solo el dueño los puede cambiar.</p>` : '');
   box.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', async () => {
     b.disabled = true;
     try { await removeMember(b.dataset.remove); showToast('Acceso quitado', 'success'); } catch (e) { showToast('No se pudo quitar el acceso', 'warning'); }
@@ -280,26 +355,27 @@ async function enhanceMembersList() {
 function openPermsEditor(email, members) {
   const box = el('shareMembers');
   const perms = { members: JSON.parse(JSON.stringify((spacePerms && spacePerms.members) || {})), objects: JSON.parse(JSON.stringify((spacePerms && spacePerms.objects) || {})) };
-  const m = perms.members[email] || { level: 'edit', boards: {} };
+  const m = perms.members[email] || { boards: {} };
   const person = members.find(p => (p.emailAddress || '').toLowerCase() === email) || {};
-  const opts = (sel, withInherit) => (withInherit ? `<option value="">Igual que lo general</option>` : '') +
-    Object.entries(PERM_LEVELS).map(([v, t]) => `<option value="${v}" ${sel === v ? 'selected' : ''}>${t}</option>`).join('');
+  const general = memberPermOf(email);
   const boardsHtml = projects.map(p => (p.boards || []).length ? `<div class="perm-project">${shareEsc(p.name)}</div>` +
-    p.boards.map(b => `<label class="perm-board"><span>▦ ${shareEsc(b.title || 'Tablero')}</span><select data-board="${shareEsc(b.id)}">${opts((m.boards || {})[b.id] || '', true)}</select></label>`).join('') : '').join('');
+    p.boards.map(b => { const bp = normPerm((m.boards || {})[b.id]);
+      return `<div class="perm-board-block" data-board-block="${shareEsc(b.id)}"><div class="perm-board-name">▦ ${shareEsc(b.title || 'Tablero')}</div>${permBoxesHtml(bp || general, { inherit: { on: !bp, text: 'Igual que lo general' } })}</div>`; }).join('') : '').join('');
   box.innerHTML = `
     <div class="perm-editor">
       <div class="perm-head">${avatarHtml(person, 'is-big')}<div><strong>${shareEsc(person.displayName || email)}</strong><small>${shareEsc(email)}</small></div></div>
-      <label class="perm-board is-general"><span>En general (lienzo, proyectos y tableros nuevos)</span><select id="permGeneral">${opts(m.level || 'edit', false)}</select></label>
+      <div class="perm-board-block is-general" id="permGeneral"><div class="perm-board-name">En general (lienzo, proyectos y tableros nuevos)</div>${permBoxesHtml(general, { agregar: true })}</div>
       <div class="share-sep">Por tablero</div>
       ${boardsHtml || '<p class="share-note">No hay tableros.</p>'}
-      <p class="share-note">"Crear" permite agregar tareas y objetos y editar solo lo que esa persona creó. Los permisos quedan en tu Drive personal: solo tú los puedes cambiar.</p>
+      <p class="share-note">Marca lo que esta persona puede hacer con lo que creaste tú u otras personas. Lo que ella crea lo puede ver, editar y eliminar siempre. Para un objeto en particular, toca su candado. Los permisos quedan en tu Drive personal: solo tú los puedes cambiar.</p>
       <div class="share-actions"><button class="btn btn-ghost" id="permCancel">Volver</button><button class="btn btn-primary" id="permSave">Guardar permisos</button></div>
     </div>`;
   el('permCancel').addEventListener('click', enhanceMembersList);
   el('permSave').addEventListener('click', async (e) => {
     const boards = {};
-    box.querySelectorAll('[data-board]').forEach(s => { if (s.value) boards[s.dataset.board] = s.value; });
-    perms.members[email] = { level: el('permGeneral').value, boards };
+    box.querySelectorAll('[data-board-block]').forEach(b => { const p = readPermBoxes(b); if (p) boards[b.dataset.boardBlock] = { ver: p.ver, editar: p.editar, eliminar: p.eliminar }; });
+    const g = readPermBoxes(el('permGeneral'));
+    perms.members[email] = { perm: g, level: levelOfPerm(g), boards };
     e.target.disabled = true;
     e.target.textContent = 'Guardando…';
     try {
@@ -357,7 +433,7 @@ syncNow = async function () {
     .perm-lock { position: absolute; top: calc(-22px * var(--inv-zoom, 1)); right: 0; width: calc(20px * var(--inv-zoom, 1)); height: calc(20px * var(--inv-zoom, 1)); padding: calc(2px * var(--inv-zoom, 1)); box-sizing: border-box; border-radius: 50%; background: var(--bg-surface, #fff); box-shadow: 0 1px 4px rgba(0,0,0,.3); display: flex; align-items: center; justify-content: center; z-index: 5; cursor: help; }
     .perm-lock { pointer-events: auto; }
     .perm-lock svg { width: 100%; height: 100%; display: block; }
-    .lock-popover { position: fixed; z-index: 100000; width: 320px; max-width: calc(100vw - 16px); max-height: 70vh; overflow: auto; padding: 12px; border-radius: 12px; background: var(--bg-surface, #fff); color: var(--text-main, #111); border: 1px solid var(--border-medium, #ccc); box-shadow: 0 8px 28px rgba(0,0,0,.35); font-size: .85rem; }
+    .lock-popover { position: fixed; z-index: 100000; width: 340px; max-width: calc(100vw - 16px); max-height: 70vh; overflow: auto; padding: 12px; border-radius: 12px; background: var(--bg-surface, #fff); color: var(--text-main, #111); border: 1px solid var(--border-medium, #ccc); box-shadow: 0 8px 28px rgba(0,0,0,.35); font-size: .85rem; }
     .lock-pop-title { font-weight: 800; margin-bottom: 8px; }
     .lock-pop-list { display: flex; flex-direction: column; gap: 10px; }
     .lock-pop-row { display: flex; align-items: flex-start; gap: 8px; }
@@ -365,7 +441,15 @@ syncNow = async function () {
     .lock-pop-who select { width: 100%; font: inherit; }
     .lock-pop-who small { color: var(--text-muted, #666); }
     .perm-lock.is-full { color: #16a34a; }
-    .perm-lock.is-own { color: #eab308; }
+    .perm-lock.is-part { color: #eab308; }
+    .perm-hidden { display: none !important; }
+    .perm-boxes { display: flex; flex-direction: column; gap: 4px; }
+    .perm-box-row { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+    .perm-box { display: inline-flex; align-items: center; gap: 5px; font-size: .85rem; cursor: pointer; }
+    .perm-box input { accent-color: var(--accent-primary, #6366f1); }
+    .perm-inherit { color: var(--text-muted, #666); }
+    .perm-board-block { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; border-top: 1px solid var(--border-medium, #ddd); }
+    .perm-board-name { font-weight: 600; font-size: .85rem; }
     .perm-lock.is-view { color: #dc2626; }
     .board-frame > .perm-lock { right: auto; left: 0; }
   `;
@@ -373,11 +457,11 @@ syncNow = async function () {
 })();
 
 // ----- Candado en cada objeto del lienzo (solo en un espacio compartido) -----
-// Verde abierto: puedes ver, editar y eliminar · Amarillo abierto: puedes ver y editar (lo creaste tú, permiso "Crear")
-// · Rojo cerrado: solo puedes verlo.
+// Verde abierto: puedes ver, editar y eliminar · Amarillo abierto: puedes hacer solo una parte (por ejemplo ver y editar,
+// pero no eliminar) · Rojo cerrado: solo puedes verlo. Si no puedes ver un objeto, no se muestra.
 const LOCK_KINDS = {
   full: { cls: 'is-full', title: 'Candado verde: puedes ver, editar y eliminar este objeto' },
-  own: { cls: 'is-own', title: 'Candado amarillo: puedes ver y editar este objeto (lo creaste tú)' },
+  part: { cls: 'is-part', title: 'Candado amarillo: tienes solo parte de los permisos de este objeto' },
   view: { cls: 'is-view', title: 'Candado rojo: solo puedes ver este objeto' }
 };
 const LOCK_SVG = {
@@ -385,14 +469,12 @@ const LOCK_SVG = {
   closed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" fill="currentColor" fill-opacity=".25"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>'
 };
 
-function objectLockKind(item, boardId = null, key = null) {
-  const lvl = (key && myObjectLevel(key)) || myPermLevel(boardId);
-  if (lvl === 'edit') return 'full';
-  if (lvl === 'create' && item && item.createdBy && item.createdBy === myEmail()) return 'own';
-  return 'view';
+function lockKindOf(p) {
+  if (!p.editar && !p.eliminar) return 'view';
+  return p.editar && p.eliminar ? 'full' : 'part';
 }
 
-function putObjectLock(el, kind, key) {
+function putObjectLock(el, kind, key, detail) {
   let b = el.querySelector(':scope > .perm-lock');
   if (!kind) { if (b) b.remove(); return; }
   if (!b) {
@@ -402,7 +484,7 @@ function putObjectLock(el, kind, key) {
   b.dataset.key = key || '';
   const k = LOCK_KINDS[kind];
   b.className = `perm-lock ${k.cls}`;
-  b.title = k.title + ' · toca para ver y cambiar los permisos de las personas';
+  b.title = (detail || k.title) + ' · toca para ver y cambiar los permisos de las personas';
   b.setAttribute('aria-label', k.title);
   b.innerHTML = kind === 'view' ? LOCK_SVG.closed : LOCK_SVG.open;
 }
@@ -420,11 +502,14 @@ function markObjectLocks() {
   sets.forEach(([sel, key, list, isBoard, arr]) => {
     let items = null;
     document.querySelectorAll(sel).forEach(el => {
-      if (!on) { putObjectLock(el, null); return; }
+      if (!on) { putObjectLock(el, null); el.classList.remove('perm-hidden'); return; }
       items = items || list();
       const item = find(items, el.dataset[key]);
       const k = item ? objectKey(arr, item.id) : null;
-      putObjectLock(el, item ? objectLockKind(item, isBoard ? item.id : null, isBoard ? null : k) : null, k);
+      const p = item ? myPerm({ boardId: isBoard ? item.id : null, key: k, item }) : null;
+      // Sin la casilla «Ver» el objeto no se muestra
+      el.classList.toggle('perm-hidden', !!p && !p.ver);
+      putObjectLock(el, p ? lockKindOf(p) : null, k, p ? `${LOCK_KINDS[lockKindOf(p)].title.split(':')[0]}: ${permSummary(p).toLowerCase()}` : null);
     });
   });
 }
@@ -448,18 +533,16 @@ function lockObjectByKey(key) {
   return { arr, id, item: ((project && project[arr]) || []).find(x => x && String(x.id) === id) || null };
 }
 
-function personLevelOnObject(email, role, key) {
-  if (role === 'owner') return { lvl: 'edit', over: null };
+// Permiso de una persona sobre este objeto: el efectivo, y el propio del objeto (o del tablero) si lo tiene
+function personPermOnObject(email, role, key, item) {
   const { arr, id } = lockObjectByKey(key);
-  const m = (spacePerms && spacePerms.members && spacePerms.members[email]) || null;
-  const over = arr === 'boards' ? ((m && m.boards && m.boards[id]) || null) : (((spacePerms && spacePerms.objects) || {})[key] || {})[email] || null;
-  return { lvl: over || (m && m.level) || 'edit', over };
+  const over = role === 'owner' ? null : (arr === 'boards' ? boardPermOf(email, id) : objectPermOf(email, key));
+  return { perm: role === 'owner' ? { ...PERM_ALL } : permOf(email, { boardId: arr === 'boards' ? id : null, key: arr === 'boards' ? null : key, item }), over };
 }
 
-function lockLevelText(lvl, item, email) {
-  if (lvl === 'edit') return '🟢 Ver, editar y eliminar';
-  if (lvl === 'create' && item && item.createdBy && item.createdBy === email) return '🟡 Ver y editar (lo creó)';
-  return '🔴 Solo ver';
+function lockPermText(p) {
+  const dot = lockKindOf(p) === 'full' ? '🟢' : lockKindOf(p) === 'part' ? '🟡' : '🔴';
+  return `${p.ver ? dot : '⚫'} ${permSummary(p)}`;
 }
 
 function closeLockPopover() {
@@ -493,41 +576,47 @@ async function openLockPopover(lockEl) {
   const members = cachedMembers() || await refreshMembers() || [];
   if (!document.getElementById('lockPopover')) return;
   const { arr, item } = lockObjectByKey(key);
-  const generalWord = (lvl) => ({ edit: 'ver, editar y eliminar', create: 'crear (y editar lo suyo)', view: 'solo ver' }[lvl] || lvl);
   if (!members.length) { pop.innerHTML = '<p class="share-note">No hay otras personas en este proyecto.</p>'; return; }
   pop.innerHTML = `
     <div class="lock-pop-title">Permisos de este objeto</div>
     <div class="lock-pop-list">${members.map(p => {
       const email = (p.emailAddress || '').toLowerCase();
       const isOwner = p.role === 'owner';
-      const { lvl, over } = personLevelOnObject(email, p.role, key);
-      const general = ((spacePerms && spacePerms.members && spacePerms.members[email]) || {}).level || 'edit';
-      const control = owner && !isOwner
-        ? `<select data-lock-email="${shareEsc(email)}">
-            <option value="" ${over ? '' : 'selected'}>Igual que el proyecto (${generalWord(general)})</option>
-            <option value="edit" ${over === 'edit' ? 'selected' : ''}>Ver, editar y eliminar</option>
-            <option value="view" ${over === 'view' ? 'selected' : ''}>Solo ver</option></select>`
-        : `<small>${isOwner ? '🟢 Dueño: ve, edita y elimina todo' : shareEsc(lockLevelText(lvl, item, email))}${over ? ' · propio de este objeto' : ''}</small>`;
+      const { perm, over } = personPermOnObject(email, p.role, key, item);
+      const creator = !isOwner && item && item.createdBy && item.createdBy === email; // lo que uno crea, lo controla entero
+      const control = isOwner
+        ? '<small>🟢 Dueño: ve, edita y elimina todo</small>'
+        : creator
+          ? '<small>🟢 Lo creó esta persona: ve, edita y elimina</small>'
+          : owner
+            ? `<div data-lock-email="${shareEsc(email)}">${permBoxesHtml(over || perm, { inherit: { on: !over, text: `Igual que el proyecto${over ? '' : ` (${permSummary(perm).toLowerCase()})`}` } })}</div>`
+            : `<small>${shareEsc(lockPermText(perm))}${over ? ' · propio de este objeto' : ''}</small>`;
       return `<div class="lock-pop-row">${avatarHtml(p)}<div class="lock-pop-who"><strong>${shareEsc(p.displayName || p.emailAddress || '')}</strong>${control}</div></div>`;
     }).join('')}</div>
     ${owner ? `<div class="share-actions"><button class="btn btn-ghost" type="button" id="lockPopCancel">Cerrar</button><button class="btn btn-primary" type="button" id="lockPopSave">Guardar</button></div>
-      <p class="share-note">Lo que pongas aquí vale por encima del permiso del proyecto, solo para este objeto.</p>`
+      <p class="share-note">Lo que marques vale por encima del permiso del proyecto, solo para este objeto. Quien crea un objeto siempre tiene todos los permisos sobre él.</p>`
       : '<p class="share-note">Solo el dueño de los datos compartidos puede cambiar los permisos.</p>'}`;
+  // Con el contenido ya puesto, se acomoda para que quepa entero en la pantalla (si no cabe abajo, va arriba del candado)
+  const h = pop.offsetHeight, w = pop.offsetWidth;
+  pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
+  pop.style.top = `${r.bottom + 6 + h <= window.innerHeight - 8 ? r.bottom + 6 : Math.max(8, Math.min(r.top - h - 6, window.innerHeight - h - 8))}px`;
   const cancel = pop.querySelector('#lockPopCancel');
   if (cancel) cancel.addEventListener('click', closeLockPopover);
   const save = pop.querySelector('#lockPopSave');
   if (save) save.addEventListener('click', async () => {
     const perms = { members: JSON.parse(JSON.stringify((spacePerms && spacePerms.members) || {})), objects: JSON.parse(JSON.stringify((spacePerms && spacePerms.objects) || {})) };
     const { id } = lockObjectByKey(key);
-    pop.querySelectorAll('select[data-lock-email]').forEach(s => {
-      const email = s.dataset.lockEmail;
+    pop.querySelectorAll('[data-lock-email]').forEach(row => {
+      const email = row.dataset.lockEmail;
+      const p = readPermBoxes(row); // null = igual que el proyecto
+      const val = p ? { ver: p.ver, editar: p.editar, eliminar: p.eliminar } : null;
       if (arr === 'boards') {
-        const m = perms.members[email] || (perms.members[email] = { level: 'edit', boards: {} });
+        const m = perms.members[email] || (perms.members[email] = { boards: {} });
         m.boards = m.boards || {};
-        if (s.value) m.boards[id] = s.value; else delete m.boards[id];
+        if (val) m.boards[id] = val; else delete m.boards[id];
       } else {
         const o = perms.objects[key] || (perms.objects[key] = {});
-        if (s.value) o[email] = s.value; else delete o[email];
+        if (val) o[email] = val; else delete o[email];
         if (!Object.keys(o).length) delete perms.objects[key];
       }
     });

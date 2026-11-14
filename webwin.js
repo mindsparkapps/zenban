@@ -404,7 +404,7 @@ function pluginMembers() {
     if (typeof inShared !== 'function' || !inShared() || myPermLevel() !== 'edit' || typeof cachedMembers !== 'function') return [];
     return (cachedMembers() || []).filter(p => p.emailAddress).map(p => ({
       email: String(p.emailAddress).toLowerCase(), nombre: p.displayName || '', role: p.role || '',
-      nivel: p.role === 'owner' ? 'edit' : (((spacePerms && spacePerms.members) || {})[String(p.emailAddress).toLowerCase()] || {}).level || 'edit'
+      nivel: p.role === 'owner' ? 'edit' : levelOfPerm(memberPermOf(String(p.emailAddress).toLowerCase()))
     }));
   } catch (e) { return []; }
 }
