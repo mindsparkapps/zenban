@@ -448,6 +448,13 @@ function applyTransform(animate = false) {
   zoomCanvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
   markCanvasTransforming(animate ? 320 : 220);
   scheduleInvZoom();
+  // Títulos de frames: se mantienen del mismo tamaño en pantalla en cada cuadro del zoom (sin esperar a que
+  // se detenga), para que el enfoque a un frame sea suave; y de lejos (zoom bajo) con fondo sólido
+  if (typeof frameLayer !== 'undefined' && frameLayer) {
+    frameLayer.style.setProperty('--title-inv', 1 / zoom);
+    frameLayer.classList.toggle('titles-far', zoom < 0.3);
+    if (typeof layoutFrameTitles === 'function') layoutFrameTitles();
+  }
   const label = formatZoomPct(zoom);
   if (zoomPercentLabel.textContent !== label) zoomPercentLabel.textContent = label;
 }
@@ -6971,7 +6978,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '173';
+const APP_VERSION = '174';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

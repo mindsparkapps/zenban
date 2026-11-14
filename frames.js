@@ -89,6 +89,7 @@ function applyFrameStyle(el, f) {
   el.style.setProperty('--board-w', `${f.w}px`);
   // Estilo del título
   el.style.setProperty('--frame-title-bg', hexToRgba(f.titleBg || f.color, (f.titleFill ?? 100) / 100));
+  el.style.setProperty('--frame-title-bg-solid', hexToRgba(f.titleBg || f.color, 1));
   el.style.setProperty('--frame-title-color', f.titleColor || '#ffffff');
   el.style.setProperty('--frame-title-size', `${f.titleSize || 13}px`);
   el.style.setProperty('--frame-title-weight', f.titleBold === false ? '400' : '700');
@@ -98,6 +99,10 @@ function applyFrameStyle(el, f) {
 // Al alejar la vista los títulos se agrandan (para seguir legibles) y chocan entre sí: los que se tapan
 // se bajan, uno bajo otro, hasta que ninguno quede sobre otro. Doble clic en un título enfoca su frame.
 function layoutFrameTitles() {
+  if (typeof zoom === 'number' && zoom > 0) {
+    frameLayer.style.setProperty('--title-inv', 1 / zoom);
+    frameLayer.classList.toggle('titles-far', zoom < 0.3);
+  }
   const titles = Array.from(frameLayer.querySelectorAll('.frame-title'));
   titles.forEach(t => t.style.removeProperty('--title-dy'));
   if (titles.length < 2) return;

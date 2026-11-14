@@ -3744,7 +3744,7 @@ select option:checked {
 
 .canvas-frame[data-title-align="right"] .frame-title {
   left: auto;
-  right: calc(10px * var(--inv-zoom, 1));
+  right: calc(10px * var(--title-inv, var(--inv-zoom, 1)));
 }
 
 .ctx-align-group {
@@ -3822,23 +3822,31 @@ select option:checked {
 /* Título del frame: arriba a la izquierda, con su color (configurable: fondo, texto, tamaño y relleno) */
 .frame-title {
   position: absolute;
-  left: calc(10px * var(--inv-zoom, 1));
-  top: calc(8px * var(--inv-zoom, 1) + var(--title-dy, 0px));
+  /* --title-inv se actualiza en cada cuadro del zoom (app.js), así el título no se agranda ni encoge durante el viaje */
+  --ti: var(--title-inv, var(--inv-zoom, 1));
+  left: calc(10px * var(--ti));
+  top: calc(8px * var(--ti) + var(--title-dy, 0px));
   writing-mode: horizontal-tb;
   width: max-content;
   cursor: zoom-in;
   /* Sin ancho máximo: con el zoom mínimo el título (que se agranda para seguir legible) es más ancho que el frame y se cortaba */
-  padding: calc(3px * var(--inv-zoom, 1)) calc(9px * var(--inv-zoom, 1));
-  border-radius: calc(8px * var(--inv-zoom, 1));
+  padding: calc(3px * var(--ti)) calc(9px * var(--ti));
+  border-radius: calc(8px * var(--ti));
   background: var(--frame-title-bg, var(--frame-color, #6366f1));
   color: var(--frame-title-color, #fff);
   font-weight: var(--frame-title-weight, 700);
-  font-size: calc(var(--frame-title-size, 13px) * var(--inv-zoom, 1));
+  font-size: calc(var(--frame-title-size, 13px) * var(--ti));
   white-space: nowrap;
   pointer-events: auto;
   /* Sobre los objetos de adentro (textos 2, dibujos 3), bajo las manijas de selección */
   z-index: 4;
   opacity: var(--frame-opacity, 1);
+}
+
+/* Con el zoom lejano el título va con fondo sólido (sin transparencia) para que se lea y se pueda tocar */
+.titles-far .frame-title {
+  background: var(--frame-title-bg-solid, var(--frame-color, #6366f1));
+  opacity: 1;
 }
 
 .canvas-frame .frame-image-tab,
