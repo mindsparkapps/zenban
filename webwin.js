@@ -390,7 +390,8 @@ function sendPluginInit(id) {
   f.contentWindow.postMessage({
     type: 'zenban:init', id, state: t.web.state ?? null,
     theme: document.documentElement.dataset.theme || 'dark',
-    readOnly: typeof myPermLevel === 'function' && myPermLevel() === 'view'
+    readOnly: typeof myPermLevel === 'function' && myPermLevel() === 'view',
+    nivel: typeof myPermLevel === 'function' ? myPermLevel() : 'edit'
   }, '*');
 }
 

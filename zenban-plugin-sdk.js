@@ -23,7 +23,8 @@
     const msg = e.data;
     if (msg && msg.type === 'zenban:barClick') { barListeners.forEach(fn => { try { fn(); } catch (err) { console.error(err); } }); return; }
     if (!msg || msg.type !== 'zenban:init') return;
-    initData = { state: msg.state, theme: msg.theme, readOnly: !!msg.readOnly, id: msg.id };
+    // nivel: permiso del usuario en el espacio compartido ('edit' | 'create' | 'view'); lo usan los plugins para dar modos (p. ej. profe / alumno)
+    initData = { state: msg.state, theme: msg.theme, readOnly: !!msg.readOnly, id: msg.id, nivel: msg.nivel || null };
     listeners.forEach(fn => { try { fn(initData); } catch (err) { console.error(err); } });
   });
 

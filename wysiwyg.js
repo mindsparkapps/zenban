@@ -352,9 +352,11 @@ function openWysiwyg(textId) {
       <div class="wz-dd-list" hidden></div>
     </div>
     <span class="wz-sep"></span>
-    <button type="button" data-cmd="zoom-out" title="Alejar la hoja">🔍−</button>
-    <button type="button" data-cmd="zoom-fit" title="Ver la hoja completa">Hoja completa</button>
-    <button type="button" data-cmd="zoom-in" title="Acercar la hoja">🔍+</button>
+    <span class="wz-zoomgrp">
+      <button type="button" data-cmd="zoom-out" title="Alejar la hoja">🔍−</button>
+      <button type="button" data-cmd="zoom-fit" title="Ver la hoja completa">Hoja completa</button>
+      <button type="button" data-cmd="zoom-in" title="Acercar la hoja">🔍+</button>
+    </span>
     </div>
     <button type="button" class="wz-done" data-cmd="done" title="Guardar y salir (Ctrl+Z en el lienzo lo revierte)" aria-label="Guardar y salir">✕</button>`;
 
@@ -414,24 +416,33 @@ function openWysiwyg(textId) {
     document.execCommand('styleWithCSS', false, false);
     document.execCommand('fontSize', false, '7');
     const made = [];
+    const base = parseFloat(getComputedStyle(surface).fontSize) || 16;
     surface.querySelectorAll('font[size="7"]').forEach(f => {
       const sp = document.createElement('span');
-      sp.style.fontSize = `${(pt / WZ_BASE_PT).toFixed(3)}em`;
       while (f.firstChild) sp.appendChild(f.firstChild);
       // Un tamaño anterior dentro de la selección no debe pisar el nuevo
       sp.querySelectorAll('span').forEach(x => { x.style.fontSize = ''; });
       f.replaceWith(sp);
+      // El tamaño es absoluto (N/12 de la hoja) aunque quede dentro de otro tamaño anterior
+      const parentPx = parseFloat(getComputedStyle(sp.parentElement).fontSize) || base;
+      sp.style.fontSize = `${(pt / WZ_BASE_PT * base / parentPx).toFixed(3)}em`;
       made.push(sp);
     });
-    // La selección sigue sobre el texto cambiado, para poder colorearlo o ajustarlo después
+    // La selección sigue sobre el texto cambiado (de texto a texto), para poder cambiarlo otra vez
     if (made.length) {
-      const r = document.createRange();
-      r.setStartBefore(made[0]);
-      r.setEndAfter(made[made.length - 1]);
-      const s2 = window.getSelection();
-      s2.removeAllRanges();
-      s2.addRange(r);
-      wysiwygRange = r.cloneRange();
+      const first = document.createTreeWalker(made[0], NodeFilter.SHOW_TEXT).nextNode();
+      const tw = document.createTreeWalker(made[made.length - 1], NodeFilter.SHOW_TEXT);
+      let last = null;
+      for (let n = tw.nextNode(); n; n = tw.nextNode()) last = n;
+      if (first && last) {
+        const r = document.createRange();
+        r.setStart(first, 0);
+        r.setEnd(last, last.nodeValue.length);
+        const s2 = window.getSelection();
+        s2.removeAllRanges();
+        s2.addRange(r);
+        wysiwygRange = r.cloneRange();
+      }
     }
     bar.querySelector('.wz-size').value = pt;
   };
@@ -612,13 +623,53 @@ function openWysiwyg(textId) {
   const readChk = bar.querySelector('.wz-read');
   try { readChk.checked = localStorage.getItem('zenban_wz_read') === '1'; } catch (e) {}
   el.classList.toggle('wz-reading', readChk.checked);
+  // Marcador rojo (flecha hacia abajo): hasta dónde llegué; doble clic en el borde izquierdo lo pone, lo mueve o lo quita
+  const rmark = document.createElement('div');
+  rmark.className = 'wz-readmark';
+  rmark.title = 'Aquí quedó mi lectura';
+  el.appendChild(rmark);
+  const rtick = document.createElement('div');
+  rtick.className = 'wz-rtick';
+  lrail.appendChild(rtick);
+  const placeReadMark = () => {
+    if (typeof t.readMark !== 'number') { rmark.style.display = 'none'; rtick.style.display = 'none'; return; }
+    const y = t.readMark - surface.scrollTop;
+    rmark.style.display = y >= 0 && y <= surface.clientHeight ? 'block' : 'none';
+    rmark.style.top = `${y}px`;
+    rtick.style.display = 'block';
+    rtick.style.top = `${t.readMark / Math.max(1, surface.scrollHeight) * lrail.clientHeight}px`;
+  };
+  placeReadMark();
+  surface.addEventListener('scroll', placeReadMark, { passive: true });
+  el.addEventListener('dblclick', (e) => {
+    const er = el.getBoundingClientRect();
+    const margin = parseFloat(el.style.getPropertyValue('--page-m')) || 20;
+    if ((e.clientX - er.left) / zoom > margin) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const sr = surface.getBoundingClientRect();
+    let y = (e.clientY - sr.top) / zoom;
+    // Se pega al inicio de la línea donde se hizo doble clic
+    const cr = document.caretRangeFromPoint ? document.caretRangeFromPoint(sr.left + (margin + 6) * zoom, e.clientY) : null;
+    const lr = rectOfRange(cr);
+    if (lr) y = (lr.top - sr.top) / zoom;
+    const docY = surface.scrollTop + y;
+    if (typeof t.readMark === 'number' && Math.abs(t.readMark - docY) < 14) delete t.readMark;
+    else t.readMark = Math.round(docY);
+    persist();
+    placeReadMark();
+  });
   let lastPt = null;
   const placeBand = (rect) => {
     if (!readChk.checked || !rect || !rect.height) return;
     const er = el.getBoundingClientRect();
     const sr = surface.getBoundingClientRect();
-    band.style.top = `${(rect.top - er.top) / zoom}px`;
-    band.style.height = `${rect.height / zoom}px`;
+    // Una línea cortada por el borde de la hoja se marca solo en su parte visible
+    const top = Math.max(rect.top, sr.top), bottom = Math.min(rect.bottom, sr.bottom);
+    if (bottom - top < 1) { band.style.display = 'none'; return; }
+    band.style.display = '';
+    band.style.top = `${(top - er.top) / zoom}px`;
+    band.style.height = `${(bottom - top) / zoom}px`;
     const docY = surface.scrollTop + (rect.top - sr.top) / zoom;
     lmark.style.top = `${docY / Math.max(1, surface.scrollHeight) * lrail.clientHeight}px`;
   };
@@ -702,7 +753,7 @@ function wzZoomBy(t, f) {
 }
 
 // En el modo hoja el zoom y el movimiento del lienzo están apagados: la rueda recorre la hoja
-// (fuera de ella, mueve la vista de arriba abajo) y el pellizco no hace nada
+// (fuera de ella no hace nada) y el pellizco no hace nada
 window.addEventListener('wheel', (e) => {
   if (!document.body.classList.contains('wz-mode')) return;
   if (e.target.closest && e.target.closest('.wz-bar')) return;
@@ -713,7 +764,6 @@ window.addEventListener('wheel', (e) => {
   const sheet = e.target.closest && e.target.closest('.canvas-text.is-wz-editing');
   const body = sheet && sheet.querySelector('.wz-surface');
   if (body) body.scrollTop += d * 1.6 / zoom;
-  else { panY -= d; applyTransform(); }
 }, { passive: false, capture: true });
 ['touchstart', 'touchmove'].forEach(type => {
   window.addEventListener(type, (e) => {

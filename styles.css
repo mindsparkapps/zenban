@@ -7015,3 +7015,27 @@ body.wz-mode .context-bar { visibility: hidden; pointer-events: none; }
 .link-default-icon { width: 2.6em; height: 2.6em; flex: none; }
 .auto-link.internal-link.link-with-icon.icon-only { padding: 0.25em; }
 .auto-link.internal-link.link-with-icon.icon-only .link-default-icon { width: 2.6em; height: 2.6em; }
+
+/* Modo solo edición de hoja: fondo oscuro que aísla la hoja y nada más del lienzo a la vista */
+body.wz-mode .viewport-area { background: #0b0d12 !important; background-image: none !important; }
+body.wz-mode .frame-layer,
+body.wz-mode .connector-layer,
+body.wz-mode .bg-image-layer,
+body.wz-mode .kanban-board,
+body.wz-mode .draw-layer,
+body.wz-mode .canvas-text:not(.is-wz-editing) { visibility: hidden; }
+.wz-zoomgrp { display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
+/* Marcador de lectura: flecha roja hacia abajo en el borde izquierdo */
+.wz-readmark {
+  display: none;
+  position: absolute;
+  left: 2px;
+  width: calc(var(--page-m, 20px) * 0.8);
+  height: calc(var(--page-m, 20px) * 0.8);
+  transform: translateY(-100%);
+  background: #dc2626;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  z-index: 8;
+  pointer-events: none;
+}
+.wz-rtick { display: none; position: absolute; left: 0; right: 0; height: 3px; background: #dc2626; }
