@@ -100,45 +100,64 @@ function applyFrameStyle(el, f) {
 // se bajan, uno bajo otro, hasta que ninguno quede sobre otro. Doble clic en un título enfoca su frame.
 // Lo mismo con las imágenes (pestañas) de tableros y frames: todo lo que sirve para enfocar se ve del mismo
 // tamaño en pantalla y separado, aunque la vista esté muy alejada.
+// Si alguno se tapa con otro, TODOS se reparten en una cuadrícula de filas y columnas que ocupa la pantalla
+// (en el orden en que estaban), sin que ninguno quede sobre otro. Con el zoom lejano también entran los links
+// a otros proyectos de los textos, que se ven del mismo tamaño en pantalla.
 const FOCUS_HANDLE_SEL = '.frame-title, .board-far-title';
+const FOCUS_LINK_SEL = '.canvas-text a.internal-link.link-with-icon';
 function layoutFrameTitles() {
   const host = (typeof zoomCanvas !== 'undefined' && zoomCanvas) || frameLayer;
+  const far = typeof zoom === 'number' && zoom > 0 && zoom < 0.3;
   if (typeof zoom === 'number' && zoom > 0) {
     host.style.setProperty('--title-inv', 1 / zoom);
-    host.classList.toggle('titles-far', zoom < 0.3);
+    host.classList.toggle('titles-far', far);
     // Bordes y manijas de las esquinas de los frames (usan --inv-zoom): se actualizan en cada cuadro del zoom
     // solo dentro de la capa de frames; si no, se ven gigantes durante el enfoque y de golpe cambian al final
     frameLayer.style.setProperty('--inv-zoom', 1 / zoom);
   }
-  const els = Array.from(host.querySelectorAll(FOCUS_HANDLE_SEL));
-  els.forEach(t => ['--title-dx', '--title-dy', '--tab-dx', '--tab-dy'].forEach(p => t.style.removeProperty(p)));
+  const els = Array.from(host.querySelectorAll(far ? `${FOCUS_HANDLE_SEL}, ${FOCUS_LINK_SEL}` : FOCUS_HANDLE_SEL));
+  host.querySelectorAll(FOCUS_LINK_SEL).forEach(t => { t.style.removeProperty('--lk-dx'); t.style.removeProperty('--lk-dy'); });
+  els.forEach(t => { t.style.removeProperty('--title-dx'); t.style.removeProperty('--title-dy'); });
   if (els.length < 2) return;
-  const gap = 4;
-  // Se ordenan como al leer (de arriba abajo y de izquierda a derecha). El que no choca con nadie queda donde está;
-  // el que choca se corre a la derecha del que lo tapa y, si ya no cabe en el ancho de la pantalla, pasa a una
-  // fila nueva desde la izquierda: así se forma una matriz que va llenando la pantalla sin encimar nada.
-  const vp = viewportArea.getBoundingClientRect();
-  const vpLeft = vp.left + 8, vpRight = vp.right - 8;
+  const gap = 6;
   const items = els.map(el => ({ el, r: el.getBoundingClientRect() }))
     .filter(it => it.r.height > 0)
-    .sort((a, b) => (Math.round(a.r.top / 4) - Math.round(b.r.top / 4)) || (a.r.left - b.r.left));
-  const placed = [];
-  items.forEach(it => {
-    const w = it.r.width, h = it.r.height;
-    let x = it.r.left, y = it.r.top;
-    for (let guard = 0; guard < 600; guard++) {
-      const hit = placed.find(p => x < p.right && x + w > p.left && y < p.bottom && y + h > p.top);
-      if (!hit) break;
-      x = hit.right + gap;
-      if (x + w > vpRight) { x = vpLeft; y = hit.bottom + gap; }
+    .sort((a, b) => (Math.round(a.r.top / 6) - Math.round(b.r.top / 6)) || (a.r.left - b.r.left));
+  if (items.length < 2) return;
+  // ¿Alguno tapa a otro?
+  let overlap = false;
+  for (let i = 0; i < items.length && !overlap; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      const a = items[i].r, b = items[j].r;
+      if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) { overlap = true; break; }
     }
-    placed.push({ left: x, right: x + w, top: y, bottom: y + h });
-    // De píxeles de pantalla a los del propio objeto (el lienzo tiene zoom y un tablero puede tener su escala)
-    const dx = (x - it.r.left) * (it.el.offsetWidth / w);
-    const dy = (y - it.r.top) * (it.el.offsetHeight / h);
-    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
-    it.el.style.setProperty('--title-dx', `${dx}px`);
-    it.el.style.setProperty('--title-dy', `${dy}px`);
+  }
+  if (!overlap) return;
+  // Área libre de la pantalla (deja la barra de herramientas a la izquierda y los controles de zoom abajo)
+  const vp = viewportArea.getBoundingClientRect();
+  const x0 = vp.left + 72, y0 = vp.top + 16;
+  const W = Math.max(100, vp.right - 16 - x0), H = Math.max(60, vp.bottom - 110 - y0);
+  const n = items.length;
+  const maxW = Math.max(...items.map(it => it.r.width));
+  const maxH = Math.max(...items.map(it => it.r.height));
+  // Columnas: las que caben, pero sin pasar de las que hacen falta para que la cuadrícula quede proporcionada
+  const fit = Math.max(1, Math.floor((W + gap) / (maxW + gap)));
+  const cols = Math.max(1, Math.min(fit, Math.ceil(Math.sqrt(n * W / H))));
+  const rows = Math.ceil(n / cols);
+  // Separación para repartirlos por toda la pantalla (sin pasar de 3 veces el tamaño de una celda)
+  const colPitch = cols > 1 ? Math.min((W - maxW) / (cols - 1), (maxW + gap) * 3) : 0;
+  const rowPitch = rows > 1 ? Math.max(maxH + gap, Math.min((H - maxH) / (rows - 1), (maxH + gap) * 3)) : 0;
+  const gridW = (cols - 1) * colPitch + maxW, gridH = (rows - 1) * rowPitch + maxH;
+  const startX = x0 + Math.max(0, (W - gridW) / 2), startY = y0 + Math.max(0, (H - gridH) / 2);
+  const z = zoom > 0 ? zoom : 1;
+  items.forEach((it, i) => {
+    const x = startX + (i % cols) * colPitch, y = startY + Math.floor(i / cols) * rowPitch;
+    const isLink = !it.el.matches(FOCUS_HANDLE_SEL);
+    // De píxeles de pantalla a los del propio objeto (el lienzo tiene zoom; un tablero puede tener su escala)
+    const kx = isLink ? 1 / z : it.el.offsetWidth / it.r.width, ky = isLink ? 1 / z : it.el.offsetHeight / it.r.height;
+    const dx = (x - it.r.left) * kx, dy = (y - it.r.top) * ky;
+    it.el.style.setProperty(isLink ? '--lk-dx' : '--title-dx', `${dx}px`);
+    it.el.style.setProperty(isLink ? '--lk-dy' : '--title-dy', `${dy}px`);
   });
 }
 

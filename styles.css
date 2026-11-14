@@ -3886,6 +3886,14 @@ select option:checked {
   display: block;
 }
 
+/* Links a otros proyectos con el zoom lejano: del mismo tamaño en pantalla y acomodados (frames.js) */
+.titles-far .canvas-text a.internal-link.link-with-icon {
+  position: relative;
+  z-index: 4;
+  transform-origin: 0 0;
+  transform: translate(var(--lk-dx, 0px), var(--lk-dy, 0px)) scale(var(--title-inv, 1));
+}
+
 /* Manija para agrandar (solo con el frame seleccionado) */
 .frame-handle {
   position: absolute;
