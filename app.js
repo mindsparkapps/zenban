@@ -434,6 +434,8 @@ function formatZoomPct(z) {
   return `${text.replace('.', ',')}%`;
 }
 
+// Viaje animado de la vista en curso (ver animateViewTo)
+let viewAnimFrame = null, viewFadeTimer = null;
 // Update Transform on Canvas
 function applyTransform(animate = false) {
   if (animate) {
@@ -446,7 +448,9 @@ function applyTransform(animate = false) {
   }
 
   zoomCanvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
-  markCanvasTransforming(animate ? 320 : 220);
+  // Durante el viaje a un objeto no se usa la capa fija (will-change): congela la resolución con que se pintó al
+  // empezar, y al acercarse desde lejos todo se ve como una imagen gigante y borrosa hasta que se detiene.
+  if (!viewAnimFrame) markCanvasTransforming(animate ? 320 : 220);
   scheduleInvZoom();
   // Títulos de frames: se mantienen del mismo tamaño en pantalla en cada cuadro del zoom (sin esperar a que
   // se detenga), para que el enfoque a un frame sea suave; y de lejos (zoom bajo) con fondo sólido
@@ -460,7 +464,6 @@ function applyTransform(animate = false) {
 // desplazamiento y la escala en línea recta: el contenido se iba hacia un lado y entraba "recortado" al
 // final. Aquí el zoom cambia de forma pareja (en escala logarítmica) y el punto que se ve al centro viaja
 // derecho hacia el nuevo centro, cuadro a cuadro.
-let viewAnimFrame = null, viewFadeTimer = null;
 const IS_COARSE_VIEW = matchMedia('(pointer: coarse)').matches;
 function animateViewTo(toZoom, toPanX, toPanY, ms = 420) {
   cancelAnimationFrame(viewAnimFrame);
@@ -495,6 +498,7 @@ function animateViewTo(toZoom, toPanX, toPanY, ms = 420) {
     return;
   }
   const lz0 = Math.log(z0), lz1 = Math.log(z1);
+  zoomCanvas.classList.remove('is-transforming');
   const start = performance.now();
   const ease = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   const step = (now) => {
@@ -506,6 +510,7 @@ function animateViewTo(toZoom, toPanX, toPanY, ms = 420) {
     panY = t < 1 ? cy - wy * zoom : toPanY;
     applyTransform();
     viewAnimFrame = t < 1 ? requestAnimationFrame(step) : null;
+    if (t >= 1) markCanvasTransforming(220); // al llegar: se actualiza --inv-zoom como siempre
   };
   viewAnimFrame = requestAnimationFrame(step);
 }
@@ -6975,7 +6980,7 @@ setInterval(() => {
 
 // ----- Versión de la app (abajo a la derecha) -----
 // Al publicar cambios, subir APP_VERSION junto con CACHE_NAME de sw.js y los ?v= de index.html
-const APP_VERSION = '175';
+const APP_VERSION = '176';
 const APP_REPO = 'mindsparkapps/zenban';
 
 // Se muestra abajo a la derecha (PC) y en el globo que aparece al tocar el logo (también en el celular)

@@ -108,25 +108,35 @@ function layoutFrameTitles() {
     host.classList.toggle('titles-far', zoom < 0.3);
   }
   const els = Array.from(host.querySelectorAll(FOCUS_HANDLE_SEL));
-  els.forEach(t => { t.style.removeProperty('--title-dy'); t.style.removeProperty('--tab-dy'); });
+  els.forEach(t => ['--title-dx', '--title-dy', '--tab-dx', '--tab-dy'].forEach(p => t.style.removeProperty(p)));
   if (els.length < 2) return;
-  const gap = 3;
+  const gap = 4;
+  // Se ordenan como al leer (de arriba abajo y de izquierda a derecha). El que no choca con nadie queda donde está;
+  // el que choca se corre a la derecha del que lo tapa y, si ya no cabe en el ancho de la pantalla, pasa a una
+  // fila nueva desde la izquierda: así se forma una matriz que va llenando la pantalla sin encimar nada.
+  const vp = viewportArea.getBoundingClientRect();
+  const vpLeft = vp.left + 8, vpRight = vp.right - 8;
   const items = els.map(el => ({ el, r: el.getBoundingClientRect() }))
     .filter(it => it.r.height > 0)
-    .sort((a, b) => (a.r.top - b.r.top) || (a.r.left - b.r.left));
+    .sort((a, b) => (Math.round(a.r.top / 4) - Math.round(b.r.top / 4)) || (a.r.left - b.r.left));
   const placed = [];
   items.forEach(it => {
-    let top = it.r.top;
-    const h = it.r.height, left = it.r.left, right = it.r.right;
-    for (let guard = 0; guard < 300; guard++) {
-      const hit = placed.find(p => left < p.right && right > p.left && top < p.bottom && top + h > p.top);
+    const w = it.r.width, h = it.r.height;
+    let x = it.r.left, y = it.r.top;
+    for (let guard = 0; guard < 600; guard++) {
+      const hit = placed.find(p => x < p.right && x + w > p.left && y < p.bottom && y + h > p.top);
       if (!hit) break;
-      top = hit.bottom + gap;
+      x = hit.right + gap;
+      if (x + w > vpRight) { x = vpLeft; y = hit.bottom + gap; }
     }
-    placed.push({ left, right, top, bottom: top + h });
+    placed.push({ left: x, right: x + w, top: y, bottom: y + h });
     // De píxeles de pantalla a los del propio objeto (el lienzo tiene zoom y un tablero puede tener su escala)
-    const dy = (top - it.r.top) * (it.el.offsetHeight / h);
-    if (dy > 0.5) it.el.style.setProperty(it.el.classList.contains('frame-title') ? '--title-dy' : '--tab-dy', `${dy}px`);
+    const dx = (x - it.r.left) * (it.el.offsetWidth / w);
+    const dy = (y - it.r.top) * (it.el.offsetHeight / h);
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+    const pre = it.el.classList.contains('frame-title') ? '--title' : '--tab';
+    it.el.style.setProperty(`${pre}-dx`, `${dx}px`);
+    it.el.style.setProperty(`${pre}-dy`, `${dy}px`);
   });
 }
 

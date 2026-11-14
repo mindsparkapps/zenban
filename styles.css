@@ -550,7 +550,8 @@ body.theme-light .moon-icon { display: none; }
   min-width: 100%;
   min-height: 100%;
   position: relative;
-  z-index: 1;
+  /* Sin z-index: así las imágenes de los tableros (.board-image-tab, z-index 4) quedan sobre las tarjetas y
+     demás objetos del lienzo. Los tableros siguen sobre las imágenes de fondo por ir después en el HTML. */
   /* El espacio vacío del tablero deja pasar clics a las imágenes de fondo */
   pointer-events: none;
 }
@@ -3738,13 +3739,13 @@ select option:checked {
 
 /* Alineación del título */
 .canvas-frame[data-title-align="center"] .frame-title {
-  left: 50%;
+  left: calc(50% + var(--title-dx, 0px));
   transform: translateX(-50%);
 }
 
 .canvas-frame[data-title-align="right"] .frame-title {
   left: auto;
-  right: calc(10px * var(--title-inv, var(--inv-zoom, 1)));
+  right: calc(10px * var(--title-inv, var(--inv-zoom, 1)) - var(--title-dx, 0px));
 }
 
 .ctx-align-group {
@@ -3824,7 +3825,7 @@ select option:checked {
   position: absolute;
   /* --title-inv se actualiza en cada cuadro del zoom (app.js), así el título no se agranda ni encoge durante el viaje */
   --ti: var(--title-inv, var(--inv-zoom, 1));
-  left: calc(10px * var(--ti));
+  left: calc(10px * var(--ti) + var(--title-dx, 0px));
   top: calc(8px * var(--ti) + var(--title-dy, 0px));
   writing-mode: horizontal-tb;
   width: max-content;
@@ -5591,7 +5592,8 @@ select option:checked {
   bottom: calc(100% - 1px);
   /* Sin tope por el ancho del tablero: al alejar se agranda y frames.js las separa para que no se encimen */
   width: max(150px, calc(72px * var(--title-inv, var(--inv-zoom, 1))));
-  transform: translateY(var(--tab-dy, 0px));
+  transform: translate(var(--tab-dx, 0px), var(--tab-dy, 0px));
+  z-index: 4;
   aspect-ratio: 4 / 3;
   border: 3px solid var(--board-color);
   border-bottom: none;
