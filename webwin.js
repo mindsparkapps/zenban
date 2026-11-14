@@ -391,8 +391,22 @@ function sendPluginInit(id) {
     type: 'zenban:init', id, state: t.web.state ?? null,
     theme: document.documentElement.dataset.theme || 'dark',
     readOnly: typeof myPermLevel === 'function' && myPermLevel() === 'view',
-    nivel: typeof myPermLevel === 'function' ? myPermLevel() : 'edit'
+    nivel: typeof myPermLevel === 'function' ? myPermLevel() : 'edit',
+    email: typeof myEmail === 'function' ? myEmail() || '' : '',
+    miembros: pluginMembers()
   }, '*');
+}
+
+// Personas del espacio compartido con su permiso, para que un plugin (p. ej. el profe en MemoSpark) sepa quiénes son.
+// Solo se mandan a quien puede editar todo; los demás reciben una lista vacía.
+function pluginMembers() {
+  try {
+    if (typeof inShared !== 'function' || !inShared() || myPermLevel() !== 'edit' || typeof cachedMembers !== 'function') return [];
+    return (cachedMembers() || []).filter(p => p.emailAddress).map(p => ({
+      email: String(p.emailAddress).toLowerCase(), nombre: p.displayName || '', role: p.role || '',
+      nivel: p.role === 'owner' ? 'edit' : (((spacePerms && spacePerms.members) || {})[String(p.emailAddress).toLowerCase()] || {}).level || 'edit'
+    }));
+  } catch (e) { return []; }
 }
 
 // Guardado del estado de los plugins: se agrupan los cambios seguidos, pero nunca se pierden al cerrar

@@ -341,6 +341,93 @@ syncNow = async function () {
     .perm-board select { max-width: 55%; }
     .board-frame.is-perm-view::after { content: '🔒 Solo ver'; position: absolute; top: calc(-26px * var(--inv-zoom, 1)); right: 0; padding: 2px 8px; border-radius: 999px; background: #475569; color: #fff; font-size: calc(12px * var(--inv-zoom, 1)); pointer-events: none; }
     .board-frame.is-perm-create::after { content: '➕ Puedes agregar'; position: absolute; top: calc(-26px * var(--inv-zoom, 1)); right: 0; padding: 2px 8px; border-radius: 999px; background: #0f766e; color: #fff; font-size: calc(12px * var(--inv-zoom, 1)); pointer-events: none; }
+    .perm-lock { position: absolute; top: calc(-22px * var(--inv-zoom, 1)); right: 0; width: calc(20px * var(--inv-zoom, 1)); height: calc(20px * var(--inv-zoom, 1)); padding: calc(2px * var(--inv-zoom, 1)); box-sizing: border-box; border-radius: 50%; background: var(--bg-surface, #fff); box-shadow: 0 1px 4px rgba(0,0,0,.3); display: flex; align-items: center; justify-content: center; z-index: 5; cursor: help; }
+    .perm-lock svg { width: 100%; height: 100%; display: block; }
+    .perm-lock.is-full { color: #16a34a; }
+    .perm-lock.is-own { color: #eab308; }
+    .perm-lock.is-view { color: #dc2626; }
+    .board-frame > .perm-lock { right: auto; left: 0; }
   `;
   document.head.appendChild(style);
 })();
+
+// ----- Candado en cada objeto del lienzo (solo en un espacio compartido) -----
+// Verde abierto: puedes ver, editar y eliminar · Amarillo abierto: puedes ver y editar (lo creaste tú, permiso "Crear")
+// · Rojo cerrado: solo puedes verlo.
+const LOCK_KINDS = {
+  full: { cls: 'is-full', title: 'Candado verde: puedes ver, editar y eliminar este objeto' },
+  own: { cls: 'is-own', title: 'Candado amarillo: puedes ver y editar este objeto (lo creaste tú)' },
+  view: { cls: 'is-view', title: 'Candado rojo: solo puedes ver este objeto' }
+};
+const LOCK_SVG = {
+  open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" fill="currentColor" fill-opacity=".25"></rect><path d="M8 11V7a4 4 0 0 1 7.5-2"></path></svg>',
+  closed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" fill="currentColor" fill-opacity=".25"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>'
+};
+
+function objectLockKind(item, boardId = null) {
+  const lvl = myPermLevel(boardId);
+  if (lvl === 'edit') return 'full';
+  if (lvl === 'create' && item && item.createdBy && item.createdBy === myEmail()) return 'own';
+  return 'view';
+}
+
+function putObjectLock(el, kind) {
+  let b = el.querySelector(':scope > .perm-lock');
+  if (!kind) { if (b) b.remove(); return; }
+  if (!b) {
+    b = document.createElement('span');
+    b.addEventListener('pointerdown', (e) => e.stopPropagation());
+    el.appendChild(b);
+  }
+  const k = LOCK_KINDS[kind];
+  b.className = `perm-lock ${k.cls}`;
+  b.title = k.title;
+  b.setAttribute('aria-label', k.title);
+  b.innerHTML = kind === 'view' ? LOCK_SVG.closed : LOCK_SVG.open;
+}
+
+function markObjectLocks() {
+  const on = inShared() && !!myEmail();
+  const find = (list, id) => (list || []).find(x => x && String(x.id) === String(id));
+  const project = on ? getActiveProject() : null;
+  const sets = [
+    ['.canvas-text[data-text-id]', 'textId', () => getTexts(), false],
+    ['.bg-image[data-image-id]', 'imageId', () => getBgImages(), false],
+    ['.canvas-frame[data-frame-id]', 'frameId', () => getFrames(), false],
+    ['.board-frame[data-board-id]', 'boardId', () => (project && project.boards) || [], true]
+  ];
+  sets.forEach(([sel, key, list, isBoard]) => {
+    let items = null;
+    document.querySelectorAll(sel).forEach(el => {
+      if (!on) { putObjectLock(el, null); return; }
+      items = items || list();
+      const item = find(items, el.dataset[key]);
+      putObjectLock(el, item ? objectLockKind(item, isBoard ? item.id : null) : null);
+    });
+  });
+}
+
+['renderTexts', 'renderBgImages', 'renderFrames'].forEach(name => {
+  const base = window[name];
+  if (typeof base !== 'function') return;
+  window[name] = function () {
+    const r = base.apply(this, arguments);
+    try { markObjectLocks(); } catch (e) { console.warn('Candados', e); }
+    return r;
+  };
+});
+{
+  const baseRenderBoardForLocks = renderBoard; // ya envuelta arriba para los permisos de tableros
+  renderBoard = function () {
+    const r = baseRenderBoardForLocks.apply(this, arguments);
+    try { markObjectLocks(); } catch (e) { console.warn('Candados', e); }
+    return r;
+  };
+}
+// Los permisos llegan después de dibujar el lienzo (se leen de Drive): al llegar se vuelven a poner los candados
+const baseLoadSpacePermsForLocks = loadSpacePerms;
+loadSpacePerms = async function () {
+  const r = await baseLoadSpacePermsForLocks.apply(this, arguments);
+  try { markObjectLocks(); } catch (e) {}
+  return r;
+};
