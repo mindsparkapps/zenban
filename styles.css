@@ -6237,13 +6237,14 @@ select option:checked {
   flex-shrink: 0;
 }
 
-/* Tiempo desde la última sincronización, a la izquierda de la foto */
+/* Tiempo desde la última sincronización, debajo de la foto */
 .sync-age {
   position: absolute;
-  right: calc(100% + 6px);
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 0.68rem;
+  left: 50%;
+  top: calc(100% + 1px);
+  transform: translateX(-50%);
+  line-height: 1;
+  font-size: 0.62rem;
   font-weight: 600;
   color: var(--text-muted);
   white-space: nowrap;

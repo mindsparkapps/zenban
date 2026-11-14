@@ -340,10 +340,16 @@ async function enhanceMembersList() {
     const lvl = p.role === 'owner' ? 'dueño' : permSummary(memberPermOf(email));
     return `<div class="share-row member-row">
       ${avatarHtml(p, 'is-big')}
-      <div class="member-info"><strong>${shareEsc(p.displayName || p.emailAddress)}</strong><small>${shareEsc(p.emailAddress || '')} · ${shareEsc(lvl)}</small></div>
+      <div class="member-info"><strong>${shareEsc(p.displayName || p.emailAddress)}</strong><small>${shareEsc(p.emailAddress || '')} · ${shareEsc(lvl)}</small>${p.role === 'owner' ? `<label class="lock-toggle"><input type="checkbox" id="showLocksChk"${locksVisible() ? ' checked' : ''}> Modificar permisos individuales</label>` : ''}</div>
       ${owner && p.role !== 'owner' ? `<button class="btn btn-ghost share-btn-sm" data-perms="${shareEsc(email)}">Permisos</button><button class="btn btn-ghost share-btn-sm" data-remove="${shareEsc(p.id)}">Quitar</button>` : ''}
     </div>`;
   }).join('') + (!owner ? `<p class="share-note">Tus permisos: ${shareEsc(permSummary(myPerm()))}${spacePerms && spacePerms.members && spacePerms.members[myEmail()] && Object.keys(spacePerms.members[myEmail()].boards || {}).length ? ' (con cambios en algunos tableros)' : ''}. Solo el dueño los puede cambiar.</p>` : '');
+  const locksChk = box.querySelector('#showLocksChk');
+  if (locksChk) locksChk.addEventListener('change', () => {
+    try { localStorage.setItem('zenban_show_locks', locksChk.checked ? '1' : '0'); } catch (e) {}
+    if (!locksChk.checked) closeLockPopover();
+    markObjectLocks();
+  });
   box.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', async () => {
     b.disabled = true;
     try { await removeMember(b.dataset.remove); showToast('Acceso quitado', 'success'); } catch (e) { showToast('No se pudo quitar el acceso', 'warning'); }
@@ -440,6 +446,8 @@ syncNow = async function () {
     .lock-pop-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
     .lock-pop-who select { width: 100%; font: inherit; }
     .lock-pop-who small { color: var(--text-muted, #666); }
+    .lock-toggle { display: flex !important; align-items: center; gap: 6px; margin-top: 4px; font-size: 0.78rem; color: var(--text-main); cursor: pointer; }
+    .lock-toggle input { margin: 0; }
     .perm-lock.is-full { color: #16a34a; }
     .perm-lock.is-part { color: #eab308; }
     .perm-hidden { display: none !important; }
@@ -489,6 +497,11 @@ function putObjectLock(el, kind, key, detail) {
   b.innerHTML = kind === 'view' ? LOCK_SVG.closed : LOCK_SVG.open;
 }
 
+// Mostrar u ocultar los candados de los objetos (casilla en la ventana de datos compartidos; se recuerda en este equipo)
+function locksVisible() {
+  try { return localStorage.getItem('zenban_show_locks') !== '0'; } catch (e) { return true; }
+}
+
 function markObjectLocks() {
   const on = inShared() && !!myEmail();
   const find = (list, id) => (list || []).find(x => x && String(x.id) === String(id));
@@ -509,7 +522,7 @@ function markObjectLocks() {
       const p = item ? myPerm({ boardId: isBoard ? item.id : null, key: k, item }) : null;
       // Sin la casilla «Ver» el objeto no se muestra
       el.classList.toggle('perm-hidden', !!p && !p.ver);
-      putObjectLock(el, p ? lockKindOf(p) : null, k, p ? `${LOCK_KINDS[lockKindOf(p)].title.split(':')[0]}: ${permSummary(p).toLowerCase()}` : null);
+      putObjectLock(el, p && locksVisible() ? lockKindOf(p) : null, k, p ? `${LOCK_KINDS[lockKindOf(p)].title.split(':')[0]}: ${permSummary(p).toLowerCase()}` : null);
     });
   });
 }
