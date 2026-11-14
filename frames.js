@@ -98,30 +98,35 @@ function applyFrameStyle(el, f) {
 
 // Al alejar la vista los títulos se agrandan (para seguir legibles) y chocan entre sí: los que se tapan
 // se bajan, uno bajo otro, hasta que ninguno quede sobre otro. Doble clic en un título enfoca su frame.
+// Lo mismo con las imágenes (pestañas) de tableros y frames: todo lo que sirve para enfocar se ve del mismo
+// tamaño en pantalla y separado, aunque la vista esté muy alejada.
+const FOCUS_HANDLE_SEL = '.frame-title, .frame-image-tab, .board-image-tab';
 function layoutFrameTitles() {
+  const host = (typeof zoomCanvas !== 'undefined' && zoomCanvas) || frameLayer;
   if (typeof zoom === 'number' && zoom > 0) {
-    frameLayer.style.setProperty('--title-inv', 1 / zoom);
-    frameLayer.classList.toggle('titles-far', zoom < 0.3);
+    host.style.setProperty('--title-inv', 1 / zoom);
+    host.classList.toggle('titles-far', zoom < 0.3);
   }
-  const titles = Array.from(frameLayer.querySelectorAll('.frame-title'));
-  titles.forEach(t => t.style.removeProperty('--title-dy'));
-  if (titles.length < 2) return;
-  const z = (typeof zoom === 'number' && zoom > 0) ? zoom : 1;
+  const els = Array.from(host.querySelectorAll(FOCUS_HANDLE_SEL));
+  els.forEach(t => { t.style.removeProperty('--title-dy'); t.style.removeProperty('--tab-dy'); });
+  if (els.length < 2) return;
   const gap = 3;
-  const items = titles.map(el => ({ el, r: el.getBoundingClientRect() }))
+  const items = els.map(el => ({ el, r: el.getBoundingClientRect() }))
+    .filter(it => it.r.height > 0)
     .sort((a, b) => (a.r.top - b.r.top) || (a.r.left - b.r.left));
   const placed = [];
   items.forEach(it => {
     let top = it.r.top;
     const h = it.r.height, left = it.r.left, right = it.r.right;
-    for (let guard = 0; guard < 200; guard++) {
+    for (let guard = 0; guard < 300; guard++) {
       const hit = placed.find(p => left < p.right && right > p.left && top < p.bottom && top + h > p.top);
       if (!hit) break;
       top = hit.bottom + gap;
     }
     placed.push({ left, right, top, bottom: top + h });
-    const dy = (top - it.r.top) / z;
-    if (dy > 0.5) it.el.style.setProperty('--title-dy', `${dy}px`);
+    // De píxeles de pantalla a los del propio objeto (el lienzo tiene zoom y un tablero puede tener su escala)
+    const dy = (top - it.r.top) * (it.el.offsetHeight / h);
+    if (dy > 0.5) it.el.style.setProperty(it.el.classList.contains('frame-title') ? '--title-dy' : '--tab-dy', `${dy}px`);
   });
 }
 
@@ -129,11 +134,14 @@ function layoutFrameTitles() {
 let frameTitlesRaf = 0;
 function scheduleFrameTitles() {
   if (frameTitlesRaf) return;
-  frameTitlesRaf = requestAnimationFrame(() => { frameTitlesRaf = 0; layoutFrameTitles(); });
+  // requestAnimationFrame no corre si la pestaña está oculta: el temporizador asegura que igual se acomode
+  const run = () => { if (!frameTitlesRaf) return; frameTitlesRaf = 0; layoutFrameTitles(); };
+  frameTitlesRaf = requestAnimationFrame(run);
+  setTimeout(run, 120);
 }
 new MutationObserver((muts) => {
-  if (muts.some(m => m.type === 'childList' || (m.target.classList && m.target.classList.contains('canvas-frame')))) scheduleFrameTitles();
-}).observe(frameLayer, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'] });
+  if (muts.some(m => m.type === 'childList' || (m.target.classList && (m.target.classList.contains('canvas-frame') || m.target.classList.contains('board-frame'))))) scheduleFrameTitles();
+}).observe(typeof zoomCanvas !== 'undefined' && zoomCanvas ? zoomCanvas : frameLayer, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'] });
 window.addEventListener('resize', scheduleFrameTitles);
 
 // Título e ícono de arrastre se ocultan por separado (antes era uno solo: hideLabels)

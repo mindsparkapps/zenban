@@ -3828,7 +3828,7 @@ select option:checked {
   top: calc(8px * var(--ti) + var(--title-dy, 0px));
   writing-mode: horizontal-tb;
   width: max-content;
-  cursor: zoom-in;
+  cursor: pointer; /* doble clic: enfoca el frame */
   /* Sin ancho máximo: con el zoom mínimo el título (que se agranda para seguir legible) es más ancho que el frame y se cortaba */
   padding: calc(3px * var(--ti)) calc(9px * var(--ti));
   border-radius: calc(8px * var(--ti));
@@ -3857,7 +3857,7 @@ select option:checked {
 /* La pestaña con imagen usa el estilo de la de los tableros (--board-color) */
 .canvas-frame .frame-image-tab {
   --board-color: var(--frame-color, #6366f1);
-  left: calc(12px * var(--inv-zoom, 1));
+  left: calc(12px * var(--title-inv, var(--inv-zoom, 1)));
 }
 
 /* Manija para agrandar (solo con el frame seleccionado) */
@@ -5589,7 +5589,9 @@ select option:checked {
   position: absolute;
   left: 18px;
   bottom: calc(100% - 1px);
-  width: min(max(150px, calc(72px * var(--inv-zoom, 1))), calc(var(--board-w, 1000px) * 0.5));
+  /* Sin tope por el ancho del tablero: al alejar se agranda y frames.js las separa para que no se encimen */
+  width: max(150px, calc(72px * var(--title-inv, var(--inv-zoom, 1))));
+  transform: translateY(var(--tab-dy, 0px));
   aspect-ratio: 4 / 3;
   border: 3px solid var(--board-color);
   border-bottom: none;
